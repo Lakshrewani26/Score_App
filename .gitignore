@@ -1,0 +1,38 @@
+.dart_tool/
+.idea/
+.vscode/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+build/
+
+
+
+# Local environment and generated files
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local data and database backups
+backend/data/
+*.sql
+*.dump
+*.backup
+
+# Python and test artifacts
+backend/.venv/
+backend/venv/
+**/__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Flutter and IDE generated files
+.dart_tool/
+.idea/
+.vscode/
+build/

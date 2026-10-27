@@ -1,0 +1,209 @@
+import 'package:flutter/material.dart';
+
+import '../../../../core/models/admin_order_models.dart';
+
+class AdminOrderCard extends StatelessWidget {
+  const AdminOrderCard({
+    super.key,
+    required this.order,
+    required this.onTap,
+  });
+
+  final AdminOrderSummary order;
+  final VoidCallback onTap;
+
+  static const _deepBlue = Color(0xFF072763);
+  static const _royalBlue = Color(0xFF083FA5);
+
+  Color _getStatusBgColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending_approval':
+        return const Color(0xFFFFF3E0);
+      case 'approved_processing':
+        return const Color(0xFFE1F5FE);
+      case 'dispatched':
+        return const Color(0xFFEDE7F6);
+      case 'delivered':
+        return const Color(0xFFE8F8EE);
+      case 'rejected':
+        return const Color(0xFFFFEBEE);
+      default:
+        return const Color(0xFFECEFF1);
+    }
+  }
+
+  Color _getStatusTextColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending_approval':
+        return const Color(0xFFE65100);
+      case 'approved_processing':
+        return const Color(0xFF0277BD);
+      case 'dispatched':
+        return const Color(0xFF512DA8);
+      case 'delivered':
+        return const Color(0xFF2E7D32);
+      case 'rejected':
+        return const Color(0xFFC62828);
+      default:
+        return const Color(0xFF455A64);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final statusBg = _getStatusBgColor(order.status);
+    final statusFg = _getStatusTextColor(order.status);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFCBEBFF), width: 1.3),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x100755B5),
+            blurRadius: 8,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Line 1: Order number and Status Badge
+                Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: statusBg,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        Icons.shopping_bag_rounded,
+                        color: statusFg,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            order.orderNumber,
+                            style: const TextStyle(
+                              color: _deepBlue,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            order.displayDate,
+                            style: const TextStyle(
+                              color: Color(0xFF78909C),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                      decoration: BoxDecoration(
+                        color: statusBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: statusFg.withAlpha(70), width: 1),
+                      ),
+                      child: Text(
+                        order.displayStatus.toUpperCase(),
+                        style: TextStyle(
+                          color: statusFg,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Divider(height: 1, color: Color(0xFFF0F7FC)),
+                const SizedBox(height: 8),
+
+                // Line 2: Partner / Business info
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.storefront_rounded,
+                      size: 16,
+                      color: Color(0xFF607D8B),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        order.businessName != null && order.businessName!.isNotEmpty
+                            ? '${order.businessName} (${order.partnerName})'
+                            : order.partnerName,
+                        style: const TextStyle(
+                          color: _royalBlue,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+
+                // Line 3: Item count, Quantity and Total Amount
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${order.itemCount} items • ${order.totalQuantity} pcs',
+                      style: const TextStyle(
+                        color: Color(0xFF546E7A),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          order.displayOrderTotal,
+                          style: const TextStyle(
+                            color: _deepBlue,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: Color(0xFFB0BEC5),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
