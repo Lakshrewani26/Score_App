@@ -1,9 +1,12 @@
 import ast
+import importlib.util
 from pathlib import Path
 
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import Numeric, UniqueConstraint
+from sqlalchemy import Numeric, String, UniqueConstraint, create_engine, inspect
 from sqlalchemy.orm import configure_mappers
 
 from app.db.base import Base
@@ -93,6 +96,14 @@ def test_money_columns_use_fixed_precision_numeric_types() -> None:
     ) == (12, 2)
 
 
+def test_product_package_quantity_is_nullable_string() -> None:
+    package_quantity = Product.__table__.c.package_quantity
+
+    assert isinstance(package_quantity.type, String)
+    assert package_quantity.type.length == 100
+    assert package_quantity.nullable
+
+
 def test_supported_vehicle_types_and_price_checks_are_declared() -> None:
     constraints = {
         constraint.name: str(constraint.sqltext)
@@ -114,7 +125,11 @@ def test_single_initial_alembic_revision_is_available() -> None:
     scripts = ScriptDirectory.from_config(config)
 
     assert len(scripts.get_heads()) == 1
-    assert len(list(scripts.walk_revisions())) == 4
+    assert len(list(scripts.walk_revisions())) == 5
+    latest_revision = scripts.get_revision("c9a4f0e2b713")
+    assert latest_revision is not None
+    assert latest_revision.down_revision == "b2c3d4e5f6a7"
+    assert scripts.get_heads() == ["c9a4f0e2b713"]
     revision = scripts.get_revision("56ecec28acb3")
     assert revision is not None
     assert revision.down_revision is None
@@ -131,3 +146,42 @@ def test_single_initial_alembic_revision_is_available() -> None:
         and isinstance(node.args[0], ast.Constant)
     }
     assert created_tables == INITIAL_EXPECTED_TABLES
+
+
+def test_package_quantity_migration_upgrade_and_downgrade() -> None:
+    backend_dir = Path(__file__).resolve().parents[1]
+    migration_path = (
+        backend_dir
+        / "migrations"
+        / "versions"
+        / "c9a4f0e2b713_add_package_quantity_to_products.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "package_quantity_migration", migration_path
+    )
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql("CREATE TABLE products (id INTEGER PRIMARY KEY)")
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+
+        column = next(
+            column
+            for column in inspect(connection).get_columns("products")
+            if column["name"] == "package_quantity"
+        )
+        assert isinstance(column["type"], String)
+        assert column["type"].length == 100
+        assert column["nullable"]
+
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+
+        assert "package_quantity" not in {
+            column["name"] for column in inspect(connection).get_columns("products")
+        }
+    engine.dispose()

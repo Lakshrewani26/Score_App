@@ -139,6 +139,7 @@ class Product(Base):
     product_code: Mapped[str] = mapped_column(String(50), nullable=False)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
+    package_quantity: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     vehicle_type: Mapped[str] = mapped_column(String(20), nullable=False)
     price: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
     image_url: Mapped[Optional[str]] = mapped_column(String(2048))
@@ -638,4 +639,3 @@ class QrCode(Base):
     product: Mapped[Optional[Product]] = relationship()
     target_user: Mapped[Optional[User]] = relationship(foreign_keys=[target_user_id])
     redeemer: Mapped[Optional[User]] = relationship(foreign_keys=[redeemed_by])
-

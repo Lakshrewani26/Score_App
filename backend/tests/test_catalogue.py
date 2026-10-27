@@ -69,6 +69,7 @@ def test_products_filters_before_pagination_and_keeps_decimal_price(
                     product_code="MATCH-1",
                     name="Brake lever",
                     description="Front part",
+                    package_quantity="10 PC",
                     vehicle_type="2-Wheeler",
                     price=Decimal("12.30"),
                     is_active=True,
@@ -122,6 +123,7 @@ def test_products_filters_before_pagination_and_keeps_decimal_price(
     body = response.json()
     assert [product["id"] for product in body["items"]] == [1]
     assert body["items"][0]["category_name"] == "Parts"
+    assert body["items"][0]["package_quantity"] == "10 PC"
     assert body["items"][0]["price"] == "12.30"
     assert body["pagination"] == {
         "total": 2,
@@ -200,6 +202,7 @@ def test_product_detail_returns_public_product_fields(client: TestClient) -> Non
                 product_code="PART-001",
                 name="Brake lever",
                 description="Front part",
+                package_quantity="15 PC",
                 vehicle_type="2-Wheeler",
                 price=Decimal("12.30"),
                 image_url=None,
@@ -218,6 +221,7 @@ def test_product_detail_returns_public_product_fields(client: TestClient) -> Non
         "product_code": "PART-001",
         "name": "Brake lever",
         "description": "Front part",
+        "package_quantity": "15 PC",
         "vehicle_type": "2-Wheeler",
         "price": "12.30",
         "image_url": None,
@@ -252,12 +256,14 @@ def test_products_with_null_price_serializes_successfully_regression(
     assert len(data["items"]) == 1
     assert data["items"][0]["id"] == 100
     assert data["items"][0]["price"] is None
+    assert data["items"][0]["package_quantity"] is None
     assert data["items"][0]["category_name"] == "Accessories"
 
     # Verify single product detail endpoint also serializes price as null
     detail_res = client.get("/api/v1/products/100")
     assert detail_res.status_code == 200
     assert detail_res.json()["price"] is None
+    assert detail_res.json()["package_quantity"] is None
     assert detail_res.json()["product_code"] == "UNPRICED-01"
 
 

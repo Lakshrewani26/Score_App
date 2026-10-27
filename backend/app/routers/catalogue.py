@@ -24,6 +24,7 @@ def _product_response(product: Product, category_name: str | None) -> ProductRes
         product_code=product.product_code,
         name=product.name,
         description=product.description,
+        package_quantity=product.package_quantity,
         vehicle_type=product.vehicle_type,
         price=product.price,
         image_url=product.image_url,

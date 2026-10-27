@@ -176,10 +176,10 @@ def _build_report_for_workbook(workbook_name: str, filename: str, sheet_name: st
 
         if side_price is not None:
             updated_side_prices += 1
-        elif list_price is None:
-            missing_prices += 1
-        else:
+        elif list_price is not None:
             printed_prices += 1
+        else:
+            missing_prices += 1
 
         if len(price_values) > 2:
             ambiguous_prices += 1
@@ -192,9 +192,6 @@ def _build_report_for_workbook(workbook_name: str, filename: str, sheet_name: st
                 package_quantity = text
             elif vehicle_type is None and not re.search(r"(pc|set|kit|rate)", text.lower()):
                 vehicle_type = text
-
-        if list_price is None:
-            missing_prices += 1
 
         candidate = ProductCandidate(
             workbook=workbook_name,
@@ -243,6 +240,9 @@ def _build_report_for_workbook(workbook_name: str, filename: str, sheet_name: st
         "products_with_missing_prices": missing_prices,
         "ambiguous_prices": ambiguous_prices,
         "repeated_product_codes": repeated_code_count,
+        "repeated_product_code_values": sorted(
+            code for code, count in repeated_codes.items() if count > 1
+        ),
         "affected_repeat_rows": duplicate_code_rows,
         "rows_excluded_as_headings_or_non_products": excluded_rows,
         "invalid_or_incomplete_rows": invalid_rows,
@@ -264,6 +264,11 @@ def _render_report(report: dict[str, Any]) -> None:
     print(f"Products with missing prices (NULL candidates): {report['products_with_missing_prices']}")
     print(f"Ambiguous prices requiring review: {report['ambiguous_prices']}")
     print(f"Repeated product codes: {report['repeated_product_codes']}")
+    if report["repeated_product_code_values"]:
+        print(
+            "Repeated product codes for review: "
+            + ", ".join(report["repeated_product_code_values"])
+        )
     print(f"Affected repeated rows: {report['affected_repeat_rows']}")
     print(f"Rows excluded as headings or non-products: {report['rows_excluded_as_headings_or_non_products']}")
     print(f"Invalid or incomplete rows: {report['invalid_or_incomplete_rows']}")
@@ -347,6 +352,7 @@ def _import_workbooks() -> None:
                             product_code,
                             name,
                             description,
+                            package_quantity,
                             vehicle_type,
                             price,
                             image_url,
@@ -356,6 +362,7 @@ def _import_workbooks() -> None:
                             :product_code,
                             :name,
                             :description,
+                            :package_quantity,
                             :vehicle_type,
                             :price,
                             NULL,
@@ -368,6 +375,7 @@ def _import_workbooks() -> None:
                         "product_code": product_code,
                         "name": product_name,
                         "description": candidate.description if candidate.description else None,
+                        "package_quantity": candidate.package_quantity,
                         "vehicle_type": vehicle_type,
                         "price": None if product_price is None else Decimal(str(product_price)),
                     },

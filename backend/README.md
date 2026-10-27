@@ -90,6 +90,7 @@ The read-only catalogue endpoints are currently public because authentication en
         "product_code": "PART-001",
         "name": "Example product",
         "description": null,
+        "package_quantity": "10 PC",
         "vehicle_type": "2-Wheeler",
         "price": "125.50",
         "image_url": null
@@ -108,6 +109,7 @@ The read-only catalogue endpoints are currently public because authentication en
 - `GET /api/v1/products/{product_id}` returns one active product using the same product fields, or HTTP 404 if it is missing or inactive.
 
 Prices use fixed-precision `NUMERIC(12,2)` values and are serialized as decimal strings to preserve precision. These endpoints expose only catalogue fields.
+`package_quantity` is a nullable string containing the source package text when available (for example, `"10 PC"`).
 
 ### Tests and API
 
