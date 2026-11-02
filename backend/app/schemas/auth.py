@@ -116,3 +116,43 @@ class StaffTokenResponse(BaseModel):
     expires_in: int
     user: StaffUserResponse
 
+
+class CustomerLoginRequest(BaseModel):
+    mobile: str = Field(..., min_length=1, max_length=20, description="Customer mobile number")
+    password: str = Field(..., min_length=1, description="Customer password")
+
+
+class CustomerRegisterRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150, description="Customer full name")
+    mobile: str = Field(..., min_length=10, max_length=20, description="Customer mobile number")
+    password: str = Field(..., min_length=6, max_length=128, description="Customer password (min 6 characters)")
+    state: str | None = Field(default=None, max_length=100, description="Customer state")
+    city: str | None = Field(default=None, max_length=100, description="Customer city")
+    segment: str | None = Field(default=None, max_length=100, description="Customer vehicle segment")
+
+
+class CustomerProfileData(BaseModel):
+    state: str | None = None
+    city: str | None = None
+    segment: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerUserResponse(BaseModel):
+    id: int
+    name: str
+    mobile: str
+    role: str
+    is_active: bool
+    created_at: datetime
+    customer_profile: CustomerProfileData | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: CustomerUserResponse

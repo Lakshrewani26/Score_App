@@ -1,13 +1,19 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/services/customer_session_manager.dart';
 import '../catalogue/customer_catalogue_screen.dart';
 import '../profile/customer_profile_screen.dart';
 import '../qr_scanner/customer_qr_scanner.dart';
 import '../transfer_history/customer_transfer_history_screen.dart';
 
 class CustomerHomeScreen extends StatefulWidget {
-  const CustomerHomeScreen({super.key});
+  const CustomerHomeScreen({
+    super.key,
+    this.sessionManager,
+  });
+
+  final CustomerSessionManager? sessionManager;
 
   @override
   State<CustomerHomeScreen> createState() => _CustomerHomeScreenState();
@@ -15,6 +21,9 @@ class CustomerHomeScreen extends StatefulWidget {
 
 class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   static const _royalBlue = Color(0xFF083FA5);
+
+  CustomerSessionManager get _session =>
+      widget.sessionManager ?? CustomerSessionManager.instance;
 
   @override
   Widget build(BuildContext context) {
@@ -47,10 +56,12 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                               SizedBox(height: height * 0.055),
                               _buildHeaderRow(context, width),
                               const SizedBox(height: 12),
-                              const Text(
-                                'Welcome, Customer',
+                              Text(
+                                _session.currentUser?.name.isNotEmpty == true
+                                    ? 'Welcome, ${_session.currentUser!.name}'
+                                    : 'Welcome, Customer',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   color: _royalBlue,
                                   fontSize: 32,
                                   fontWeight: FontWeight.w800,
@@ -683,7 +694,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const CustomerProfileScreen(),
+                    builder: (_) =>
+                        CustomerProfileScreen(sessionManager: _session),
                   ),
                 );
               },

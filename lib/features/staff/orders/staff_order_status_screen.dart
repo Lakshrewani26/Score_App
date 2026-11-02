@@ -1,23 +1,22 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/models/partner_order_models.dart';
+import '../../../core/services/staff_api.dart';
+import '../../../core/services/staff_session_manager.dart';
+import '../../partner/orders/partner_order_summary_screen.dart';
 import '../home/staff_home_screen.dart';
 import '../profile/staff_profile_screen.dart';
 
-class PendingInvoiceItem {
-  final String dealerName;
-  final String invoiceNumber;
-  final IconData icon;
-
-  const PendingInvoiceItem({
-    required this.dealerName,
-    required this.invoiceNumber,
-    this.icon = Icons.storefront_rounded,
-  });
-}
-
 class StaffOrderStatusScreen extends StatefulWidget {
-  const StaffOrderStatusScreen({super.key});
+  const StaffOrderStatusScreen({
+    super.key,
+    this.api,
+    this.sessionManager,
+  });
+
+  final StaffApi? api;
+  final StaffSessionManager? sessionManager;
 
   @override
   State<StaffOrderStatusScreen> createState() => _StaffOrderStatusScreenState();
@@ -28,14 +27,21 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
 
   final TextEditingController _searchController = TextEditingController();
 
-  static const List<PendingInvoiceItem> _allInvoices = [];
+  late final StaffApi _api;
+  late final StaffSessionManager _sessionManager;
 
-  late List<PendingInvoiceItem> _filteredInvoices;
+  List<PartnerOrderResponse> _allOrders = [];
+  List<PartnerOrderResponse> _filteredOrders = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+  int? _actionOrderId;
 
   @override
   void initState() {
     super.initState();
-    _filteredInvoices = List.from(_allInvoices);
+    _sessionManager = widget.sessionManager ?? StaffSessionManager.instance;
+    _api = widget.api ?? StaffApi(sessionManager: _sessionManager);
+    _loadOrders();
   }
 
   @override
@@ -44,19 +50,207 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
     super.dispose();
   }
 
+  Future<void> _loadOrders() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final orders = await _api.getOrders(status: 'pending_approval');
+      if (!mounted) return;
+      setState(() {
+        _allOrders = orders;
+        _applySearch(_searchController.text);
+        _isLoading = false;
+      });
+    } on StaffApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = e.message;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Failed to load orders: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _applySearch(String query) {
+    final trimmed = query.trim().toLowerCase();
+    if (trimmed.isEmpty) {
+      _filteredOrders = List.from(_allOrders);
+    } else {
+      _filteredOrders = _allOrders.where((order) {
+        final dealerName =
+            (order.businessName ?? order.partnerName).toLowerCase();
+        final orderNumber = order.orderNumber.toLowerCase();
+        return dealerName.contains(trimmed) || orderNumber.contains(trimmed);
+      }).toList();
+    }
+  }
+
   void _onSearchChanged(String query) {
     setState(() {
-      final trimmed = query.trim();
-      if (trimmed.isEmpty) {
-        _filteredInvoices = List.from(_allInvoices);
-      } else {
-        final lowerQuery = trimmed.toLowerCase();
-        _filteredInvoices = _allInvoices.where((item) {
-          return item.dealerName.toLowerCase().contains(lowerQuery) ||
-              item.invoiceNumber.toLowerCase().contains(lowerQuery);
-        }).toList();
-      }
+      _applySearch(query);
     });
+  }
+
+  Future<void> _handleApprove(PartnerOrderResponse order) async {
+    if (_actionOrderId != null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Approve Order'),
+        content: Text('Approve order ${order.orderNumber} for processing?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            key: const Key('confirm-approve-order-button'),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2E7D32),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Approve'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _actionOrderId = order.id);
+
+    try {
+      await _api.approveOrder(order.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Order ${order.orderNumber} approved successfully.'),
+          backgroundColor: const Color(0xFF059669),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      await _loadOrders();
+    } on StaffApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to approve order: ${e.message}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to approve order: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _actionOrderId = null);
+      }
+    }
+  }
+
+  Future<void> _handleReject(PartnerOrderResponse order) async {
+    if (_actionOrderId != null) return;
+
+    final remarksController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Reject Order'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Are you sure you want to reject order ${order.orderNumber}?'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: remarksController,
+              decoration: const InputDecoration(
+                labelText: 'Remarks / Reason (Optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            key: const Key('confirm-reject-order-button'),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE53935),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _actionOrderId = order.id);
+
+    try {
+      await _api.rejectOrder(order.id, remarks: remarksController.text.trim());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Order ${order.orderNumber} rejected.'),
+          backgroundColor: const Color(0xFFDC2626),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      await _loadOrders();
+    } on StaffApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to reject order: ${e.message}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to reject order: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _actionOrderId = null);
+      }
+    }
   }
 
   @override
@@ -115,7 +309,9 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
                               _buildSearchField(),
                               const SizedBox(height: 16),
                               Text(
-                                'Invoice data is not available yet.',
+                                _isLoading
+                                    ? 'Loading pending orders...'
+                                    : '${_filteredOrders.length} pending order${_filteredOrders.length == 1 ? '' : 's'}',
                                 style: const TextStyle(
                                   color: _royalBlue,
                                   fontSize: 16,
@@ -268,151 +464,225 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: _filteredInvoices.isEmpty
-            ? _buildEmptyState()
-            : ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.zero,
-                itemCount: _filteredInvoices.length,
-                separatorBuilder: (context, index) => const Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: Color(0xFFEAF4FB),
-                  indent: 16,
-                  endIndent: 16,
+        child: _isLoading
+            ? const Padding(
+                padding: EdgeInsets.all(36),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    key: Key('staff-orders-loading'),
+                  ),
                 ),
-                itemBuilder: (context, index) {
-                  return _buildInvoiceRow(context, _filteredInvoices[index]);
-                },
-              ),
+              )
+            : _errorMessage != null
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.error_outline_rounded,
+                              color: Colors.redAccent, size: 36),
+                          const SizedBox(height: 8),
+                          Text(
+                            _errorMessage!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: _royalBlue,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton(
+                            onPressed: _loadOrders,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : _filteredOrders.isEmpty
+                    ? _buildEmptyState()
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: EdgeInsets.zero,
+                        itemCount: _filteredOrders.length,
+                        separatorBuilder: (context, index) => const Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: Color(0xFFEAF4FB),
+                          indent: 16,
+                          endIndent: 16,
+                        ),
+                        itemBuilder: (context, index) {
+                          return _buildOrderRow(
+                              context, _filteredOrders[index]);
+                        },
+                      ),
       ),
     );
   }
 
-  Widget _buildInvoiceRow(BuildContext context, PendingInvoiceItem item) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      child: Row(
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Color(0xFFD4F0FF),
-            ),
-            child: Icon(
-              item.icon,
-              color: const Color(0xFF0755C7),
-              size: 28,
+  Widget _buildOrderRow(BuildContext context, PartnerOrderResponse order) {
+    final dealerName = order.businessName ?? order.partnerName;
+
+    return InkWell(
+      onTap: () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PartnerOrderSummaryScreen(
+              orderId: order.id,
+              existingOrder: order,
             ),
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  item.dealerName,
-                  style: const TextStyle(
-                    color: _royalBlue,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    height: 1.15,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  item.invoiceNumber,
-                  style: const TextStyle(
-                    color: _royalBlue,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    height: 1.15,
-                  ),
-                ),
-              ],
+        );
+        if (mounted) {
+          _loadOrders();
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFFD4F0FF),
+              ),
+              child: const Icon(
+                Icons.storefront_rounded,
+                color: Color(0xFF0755C7),
+                size: 28,
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Semantics(
-            label: 'Reject invoice',
-            button: true,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                          'Order rejection is not connected to the backend.'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                },
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFFFEBEB),
-                    border: Border.all(
-                      color: const Color(0xFFFFCDD2),
-                      width: 1.2,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    dealerName,
+                    style: const TextStyle(
+                      color: _royalBlue,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
                     ),
                   ),
-                  child: const Icon(
-                    Icons.close_rounded,
-                    color: Color(0xFFE53935),
-                    size: 22,
+                  const SizedBox(height: 4),
+                  Text(
+                    order.orderNumber,
+                    style: const TextStyle(
+                      color: _royalBlue,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      height: 1.15,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${order.itemCount} items · ${order.displayGrandTotal}',
+                    style: const TextStyle(
+                      color: Color(0xFF6782A0),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Semantics(
+              label: 'Reject invoice',
+              button: true,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  key: Key('staff-order-reject-${order.id}'),
+                  onTap: _actionOrderId != null
+                      ? null
+                      : () => _handleReject(order),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFFFEBEB),
+                      border: Border.all(
+                        color: const Color(0xFFFFCDD2),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: _actionOrderId == order.id
+                        ? const Center(
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFFE53935),
+                              ),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.close_rounded,
+                            color: Color(0xFFE53935),
+                            size: 22,
+                          ),
                   ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Semantics(
-            label: 'Approve invoice',
-            button: true,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                          'Order approval is not connected to the backend.'),
-                      duration: Duration(seconds: 2),
+            const SizedBox(width: 10),
+            Semantics(
+              label: 'Approve invoice',
+              button: true,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  key: Key('staff-order-approve-${order.id}'),
+                  onTap: _actionOrderId != null
+                      ? null
+                      : () => _handleApprove(order),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFE8F8EE),
+                      border: Border.all(
+                        color: const Color(0xFFA5D6A7),
+                        width: 1.2,
+                      ),
                     ),
-                  );
-                },
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFE8F8EE),
-                    border: Border.all(
-                      color: const Color(0xFFA5D6A7),
-                      width: 1.2,
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    color: Color(0xFF2E7D32),
-                    size: 22,
+                    child: _actionOrderId == order.id
+                        ? const Center(
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF2E7D32),
+                              ),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.check_rounded,
+                            color: Color(0xFF2E7D32),
+                            size: 22,
+                          ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -422,7 +692,8 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
       padding: EdgeInsets.symmetric(vertical: 36, horizontal: 16),
       child: Center(
         child: Text(
-          'Invoice status is not available yet.',
+          'No pending orders.',
+          key: Key('staff-orders-empty-state'),
           style: TextStyle(
             color: Color(0xFF6782A0),
             fontSize: 15,

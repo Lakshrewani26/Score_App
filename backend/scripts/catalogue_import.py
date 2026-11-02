@@ -117,6 +117,7 @@ def _build_report_for_workbook(workbook_name: str, filename: str, sheet_name: st
     repeated_codes: dict[str, int] = {}
     representative_rows: list[dict[str, Any]] = []
     invalid_row_details: list[dict[str, Any]] = []
+    ambiguous_price_details: list[dict[str, Any]] = []
     current_section = "Uncategorised"
 
     for row_index, row in enumerate(sheet.iter_rows(values_only=True), start=1):
@@ -158,8 +159,14 @@ def _build_report_for_workbook(workbook_name: str, filename: str, sheet_name: st
         if not description:
             invalid_rows += 1
             invalid_row_details.append({
+                "workbook": workbook_name,
+                "worksheet_name": sheet_name,
                 "row_number": row_index,
+                "vehicle_type": workbook_name,
+                "category_name": current_section,
                 "code": code,
+                "description": description or None,
+                "source_row": source_values,
                 "reason": "description missing",
             })
             continue
@@ -183,6 +190,21 @@ def _build_report_for_workbook(workbook_name: str, filename: str, sheet_name: st
 
         if len(price_values) > 2:
             ambiguous_prices += 1
+            ambiguous_price_details.append(
+                {
+                    "workbook": workbook_name,
+                    "worksheet_name": sheet_name,
+                    "row_number": row_index,
+                    "vehicle_type": workbook_name,
+                    "category_name": current_section,
+                    "code": code,
+                    "description": description,
+                    "printed_price": list_price,
+                    "side_price": side_price,
+                    "additional_price_values": price_values[2:],
+                    "source_row": source_values,
+                }
+            )
 
         for token in trailing_text:
             text = _clean_text(token)
@@ -239,6 +261,7 @@ def _build_report_for_workbook(workbook_name: str, filename: str, sheet_name: st
         "products_using_updated_side_prices": updated_side_prices,
         "products_with_missing_prices": missing_prices,
         "ambiguous_prices": ambiguous_prices,
+        "ambiguous_price_details": ambiguous_price_details,
         "repeated_product_codes": repeated_code_count,
         "repeated_product_code_values": sorted(
             code for code, count in repeated_codes.items() if count > 1
@@ -248,6 +271,7 @@ def _build_report_for_workbook(workbook_name: str, filename: str, sheet_name: st
         "invalid_or_incomplete_rows": invalid_rows,
         "invalid_row_details": invalid_row_details,
         "section_values": sorted(sections)[:25],
+        "all_section_values": sorted(sections),
         "representative_rows": representative_rows,
         "valid_products": valid_products,
     }

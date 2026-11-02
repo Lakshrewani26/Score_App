@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
 import '../profile/staff_profile_screen.dart';
 import '../dealers/staff_dealers_associated_screen.dart';
@@ -9,9 +10,10 @@ import '../payment_status/staff_payment_status_screen.dart';
 import '../points_history/staff_points_history_screen.dart';
 
 class StaffHomeScreen extends StatefulWidget {
-  const StaffHomeScreen({super.key, this.sessionManager});
+  const StaffHomeScreen({super.key, this.sessionManager, this.api});
 
   final StaffSessionManager? sessionManager;
+  final StaffApi? api;
 
   @override
   State<StaffHomeScreen> createState() => _StaffHomeScreenState();
@@ -20,14 +22,40 @@ class StaffHomeScreen extends StatefulWidget {
 class _StaffHomeScreenState extends State<StaffHomeScreen> {
   static const _royalBlue = Color(0xFF083FA5);
 
-  late final StaffSessionManager _sessionManager =
-      widget.sessionManager ?? StaffSessionManager.instance;
+  late final StaffSessionManager _sessionManager;
+  late final StaffApi _api;
+  StaffDashboardStats? _stats;
+
   String get _greeting =>
       'Welcome, ${_sessionManager.currentUser?.name ?? 'Staff'}';
   final String _subtitle = 'Thank you for being our valuable staff';
-  final String _dealersValue = '—';
-  final String _pendingOrdersValue = '—';
-  final String _pendingPaymentsValue = '—';
+
+  String get _dealersValue =>
+      _stats != null ? _stats!.dealersCount.toString() : '—';
+  String get _pendingOrdersValue =>
+      _stats != null ? _stats!.pendingOrdersCount.toString() : '—';
+  String get _pendingPaymentsValue =>
+      _stats != null ? _stats!.pendingPaymentsCount.toString() : '—';
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionManager = widget.sessionManager ?? StaffSessionManager.instance;
+    _api = widget.api ?? StaffApi(sessionManager: _sessionManager);
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    try {
+      final stats = await _api.getDashboardStats();
+      if (!mounted) return;
+      setState(() {
+        _stats = stats;
+      });
+    } catch (_) {
+      // Fallback preserves '—' placeholder
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -304,14 +332,17 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
               iconBgColor: const Color(0xFFD4F0FF),
               label: 'Dealers\nAssociated',
               accentColor: const Color(0xFF00B0FF),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => StaffDealersAssociatedScreen(
                       sessionManager: _sessionManager,
                     ),
                   ),
                 );
+                if (mounted) {
+                  _loadStats();
+                }
               },
             ),
             const SizedBox(width: 14),
@@ -324,12 +355,18 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
               iconBgColor: const Color(0xFFFFDDE2),
               label: 'Order\nStatus',
               accentColor: const Color(0xFFFF4081),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const StaffOrderStatusScreen(),
+                    builder: (_) => StaffOrderStatusScreen(
+                      api: _api,
+                      sessionManager: _sessionManager,
+                    ),
                   ),
                 );
+                if (mounted) {
+                  _loadStats();
+                }
               },
             ),
           ],
@@ -346,12 +383,15 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
               iconBgColor: const Color(0xFFEADBFF),
               label: 'Payment\nStatus',
               accentColor: const Color(0xFF9C27B0),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const StaffPaymentStatusScreen(),
                   ),
                 );
+                if (mounted) {
+                  _loadStats();
+                }
               },
             ),
             const SizedBox(width: 14),
@@ -364,12 +404,15 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
               iconBgColor: const Color(0xFFD2F5EC),
               label: 'Points\nHistory',
               accentColor: const Color(0xFF00B0FF),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const StaffPointsHistoryScreen(),
                   ),
                 );
+                if (mounted) {
+                  _loadStats();
+                }
               },
             ),
           ],

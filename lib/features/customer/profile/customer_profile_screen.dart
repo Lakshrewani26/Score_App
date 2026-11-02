@@ -1,11 +1,17 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/services/customer_session_manager.dart';
 import '../home/customer_home_screen.dart';
 import '../../welcome/welcome_screen.dart';
 
 class CustomerProfileScreen extends StatefulWidget {
-  const CustomerProfileScreen({super.key});
+  const CustomerProfileScreen({
+    super.key,
+    this.sessionManager,
+  });
+
+  final CustomerSessionManager? sessionManager;
 
   @override
   State<CustomerProfileScreen> createState() => _CustomerProfileScreenState();
@@ -14,6 +20,9 @@ class CustomerProfileScreen extends StatefulWidget {
 class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   static const _royalBlue = Color(0xFF083FA5);
   static const _cardBorderBlue = Color(0xFFCBEBFF);
+
+  CustomerSessionManager get _session =>
+      widget.sessionManager ?? CustomerSessionManager.instance;
 
   @override
   Widget build(BuildContext context) {
@@ -144,10 +153,12 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Customer',
-                      style: TextStyle(
+                      _session.currentUser?.name.isNotEmpty == true
+                          ? _session.currentUser!.name
+                          : 'Customer',
+                      style: const TextStyle(
                         color: _royalBlue,
                         fontSize: 26,
                         fontWeight: FontWeight.w800,
@@ -199,25 +210,33 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                   _buildDetailRow(
                     icon: Icons.smartphone_rounded,
                     label: 'Phone Number',
-                    value: 'Not available',
+                    value: _session.currentUser?.mobile.isNotEmpty == true
+                        ? _session.currentUser!.mobile
+                        : 'Not available',
                   ),
                   const _RowDivider(),
                   _buildDetailRow(
                     icon: Icons.two_wheeler_rounded,
                     label: 'Segment',
-                    value: 'Not available',
+                    value: _session.currentUser?.segment?.isNotEmpty == true
+                        ? _session.currentUser!.segment!
+                        : 'Not available',
                   ),
                   const _RowDivider(),
                   _buildDetailRow(
                     icon: Icons.location_on_rounded,
                     label: 'State',
-                    value: 'Not available',
+                    value: _session.currentUser?.state?.isNotEmpty == true
+                        ? _session.currentUser!.state!
+                        : 'Not available',
                   ),
                   const _RowDivider(),
                   _buildDetailRow(
                     icon: Icons.location_city_rounded,
                     label: 'City',
-                    value: 'Not available',
+                    value: _session.currentUser?.city?.isNotEmpty == true
+                        ? _session.currentUser!.city!
+                        : 'Not available',
                   ),
                   const _RowDivider(),
                   _buildDetailRow(
@@ -446,7 +465,9 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: () {
+                onTap: () async {
+                  await _session.clearSession();
+                  if (!mounted) return;
                   Navigator.of(context).pushAndRemoveUntil(
                     MaterialPageRoute(
                       builder: (_) => const WelcomeScreen(),

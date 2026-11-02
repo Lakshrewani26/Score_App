@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -237,6 +237,15 @@ void main() {
       );
 
       // Test Download PDF button
+      const fileDialogChannel = MethodChannel('flutter_file_dialog');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(fileDialogChannel, (call) async {
+        return 'content://downloads/document/order.pdf';
+      });
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(fileDialogChannel, null));
+
       final downloadPdfButton = find.byKey(const Key('download-pdf-button'));
       await tester.ensureVisible(downloadPdfButton);
       await tester.tap(downloadPdfButton);

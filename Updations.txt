@@ -1,0 +1,16 @@
+Website for Admin 
+
+
+Printout of sales order
+Vehicle Model (add new product)
+Discount for partner - while creating partner
+Customer only MRP, partner both MRP + list
+Invoice should be created from list
+
+New product on Dashboard - for ALL
+Same login for everyone
+
+
+
+
+

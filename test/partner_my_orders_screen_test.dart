@@ -23,23 +23,73 @@ Future<PartnerOrderApi> _createOrderApi(
     ),
   );
   final client = MockClient((request) async {
-    expect(request.method, 'GET');
-    expect(request.url.path, '/api/v1/orders');
     expect(request.headers['Authorization'], 'Bearer test-token');
-    return http.Response(jsonEncode(orders ?? _orderFixtures), 200);
+    if (request.method == 'GET' && request.url.path == '/api/v1/orders') {
+      return http.Response(jsonEncode(orders ?? _orderFixtures), 200);
+    }
+    if (request.method == 'GET' &&
+        request.url.path.startsWith('/api/v1/orders/')) {
+      final orderId = int.tryParse(request.url.pathSegments.last) ?? 1;
+      return http.Response(
+        jsonEncode({
+          'id': orderId,
+          'order_number': 'INV-000123',
+          'partner_id': 7,
+          'partner_name': 'Test Partner',
+          'partner_mobile': '9876543210',
+          'status': 'delivered',
+          'created_at': '2025-09-26T10:00:00',
+          'item_count': 5,
+          'total_quantity': 5,
+          'order_total': '100.00',
+          'items': [
+            {
+              'id': 1,
+              'product_id': 101,
+              'product_code': 'P-001',
+              'product_name': 'Tyre',
+              'vehicle_type': '2-Wheeler',
+              'quantity': 5,
+              'unit_price': '20.00',
+              'subtotal': '100.00',
+            }
+          ],
+        }),
+        200,
+      );
+    }
+    if (request.method == 'POST' && request.url.path.endsWith('/cancel')) {
+      return http.Response(
+        jsonEncode({
+          'id': 4,
+          'order_number': 'INV-000126',
+          'partner_id': 7,
+          'partner_name': 'Test Partner',
+          'partner_mobile': '9876543210',
+          'status': 'cancelled',
+          'created_at': '2025-09-18T10:00:00',
+          'item_count': 2,
+          'total_quantity': 2,
+          'order_total': '100.00',
+          'items': [],
+        }),
+        200,
+      );
+    }
+    return http.Response('Not found', 404);
   });
   return PartnerOrderApi(client: client, sessionManager: session);
 }
 
 final List<Map<String, dynamic>> _orderFixtures = [
-  ['INV-000123', 5, '2025-09-26T10:00:00', 'delivered'],
-  ['INV-000124', 3, '2025-09-24T10:00:00', 'approved_processing'],
-  ['INV-000125', 8, '2025-09-20T10:00:00', 'delivered'],
-  ['INV-000126', 2, '2025-09-18T10:00:00', 'pending_approval'],
-  ['INV-000127', 6, '2025-09-15T10:00:00', 'approved_processing'],
+  ['INV-000123', 5, '2025-09-26T10:00:00', 'delivered', 1],
+  ['INV-000124', 3, '2025-09-24T10:00:00', 'approved_processing', 2],
+  ['INV-000125', 8, '2025-09-20T10:00:00', 'delivered', 3],
+  ['INV-000126', 2, '2025-09-18T10:00:00', 'pending_approval', 4],
+  ['INV-000127', 6, '2025-09-15T10:00:00', 'approved_processing', 5],
 ].map((order) {
   return {
-    'id': 1,
+    'id': order[4],
     'order_number': order[0],
     'partner_id': 7,
     'partner_name': 'Test Partner',
@@ -116,50 +166,92 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('tapping View shows placeholder SnackBar',
+    testWidgets('tapping View opens PartnerOrderSummaryScreen with order details',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      final api = await _createOrderApi();
       await tester.pumpWidget(
         MaterialApp(
-          home: PartnerMyOrdersScreen(api: await _createOrderApi()),
+          home: PartnerMyOrdersScreen(api: api),
         ),
       );
       await tester.pumpAndSettle();
 
-      final viewButton = find.text('View').first;
+      final viewButton = find.byKey(const Key('partner-order-view-1'));
       await tester.ensureVisible(viewButton);
       await tester.tap(viewButton);
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      expect(
-          find.text('Order details are not implemented yet'), findsOneWidget);
+      expect(find.text('Order Summary'), findsWidgets);
+      expect(find.text('Tyre'), findsOneWidget);
+      expect(find.text('Download Order PDF'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PartnerMyOrdersScreen), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('tapping Cancel shows placeholder SnackBar',
+    testWidgets('tapping Cancel on non-pending order shows status SnackBar',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      final api = await _createOrderApi();
       await tester.pumpWidget(
         MaterialApp(
-          home: PartnerMyOrdersScreen(api: await _createOrderApi()),
+          home: PartnerMyOrdersScreen(api: api),
         ),
       );
       await tester.pumpAndSettle();
 
-      final cancelButton = find.text('Cancel').first;
+      final cancelButton = find.byKey(const Key('partner-order-cancel-1'));
       await tester.ensureVisible(cancelButton);
       await tester.tap(cancelButton);
       await tester.pump();
 
-      expect(find.text('Order cancellation is not implemented yet'),
+      expect(find.text('Orders in Delivered status cannot be cancelled.'),
+          findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+        'tapping Cancel on pending order opens confirmation dialog and cancels order',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final api = await _createOrderApi();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PartnerMyOrdersScreen(api: api),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final pendingCancelButton = find.byKey(const Key('partner-order-cancel-4'));
+      await tester.ensureVisible(pendingCancelButton);
+      await tester.tap(pendingCancelButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cancel Order'), findsOneWidget);
+      expect(find.text('Are you sure you want to cancel order INV-000126?'),
+          findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('confirm-cancel-order-button')));
+      await tester.pumpAndSettle();
+
+      expect(
+          find.text('Order INV-000126 has been cancelled successfully.'),
           findsOneWidget);
       expect(tester.takeException(), isNull);
     });

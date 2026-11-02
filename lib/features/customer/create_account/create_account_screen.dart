@@ -1,11 +1,20 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/services/customer_api.dart';
+import '../../../core/services/customer_session_manager.dart';
 import '../home/customer_home_screen.dart';
 import '../login/customer_login_screen.dart';
 
 class CreateAccountScreen extends StatefulWidget {
-  const CreateAccountScreen({super.key});
+  const CreateAccountScreen({
+    super.key,
+    this.customerApi,
+    this.sessionManager,
+  });
+
+  final CustomerApi? customerApi;
+  final CustomerSessionManager? sessionManager;
 
   @override
   State<CreateAccountScreen> createState() => _CreateAccountScreenState();
@@ -18,6 +27,9 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  late final CustomerApi _api;
+  late final CustomerSessionManager _session;
+  bool _isLoading = false;
 
   String? _selectedState;
   String? _selectedCity;
@@ -50,11 +62,125 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _session = widget.sessionManager ?? CustomerSessionManager.instance;
+    _api = widget.customerApi ?? CustomerApi();
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleRegister() async {
+    if (_isLoading) return;
+
+    final name = _nameController.text.trim();
+    final mobile = _phoneController.text.trim();
+    final password = _passwordController.text;
+
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Full name is required'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (mobile.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Phone number is required'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (mobile.length < 10) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a valid phone number (at least 10 digits)'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (password.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password is required'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (password.length < 6) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password must be at least 6 characters long'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final auth = await _api.register(
+        name: name,
+        mobile: mobile,
+        password: password,
+        state: _selectedState,
+        city: _selectedCity,
+        segment: _selectedSegment,
+      );
+
+      await _session.saveSession(token: auth.accessToken, user: auth.user);
+
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => CustomerHomeScreen(sessionManager: _session),
+        ),
+        (route) => false,
+      );
+    } on CustomerApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('An unexpected error occurred. Please try again.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -373,26 +499,26 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Account creation is not connected to the backend yet.',
-                ),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
-          },
-          child: const Center(
-            child: Text(
-              'Create Account',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 19,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.2,
-              ),
-            ),
+          onTap: _isLoading ? null : _handleRegister,
+          child: Center(
+            child: _isLoading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text(
+                    'Create Account',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
           ),
         ),
       ),

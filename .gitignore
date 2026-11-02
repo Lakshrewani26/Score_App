@@ -19,6 +19,7 @@ build/
 
 # Local data and database backups
 backend/data/
+backend/reports/catalogue_review/
 *.sql
 *.dump
 *.backup

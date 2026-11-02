@@ -5,6 +5,7 @@ import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/partner_order_api.dart';
 import '../../../core/services/partner_session_manager.dart';
 import '../catalogue/partner_two_wheeler_catalogue_screen.dart';
+import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 
 class PartnerOrderSummaryScreen extends StatefulWidget {
   const PartnerOrderSummaryScreen({
@@ -14,6 +15,8 @@ class PartnerOrderSummaryScreen extends StatefulWidget {
     this.onOrderSuccess,
     this.api,
     this.sessionManager,
+    this.orderId,
+    this.existingOrder,
   });
 
   final List<CartItem>? cartItems;
@@ -21,6 +24,8 @@ class PartnerOrderSummaryScreen extends StatefulWidget {
   final VoidCallback? onOrderSuccess;
   final PartnerOrderApi? api;
   final PartnerSessionManager? sessionManager;
+  final int? orderId;
+  final PartnerOrderResponse? existingOrder;
 
   @override
   State<PartnerOrderSummaryScreen> createState() =>
@@ -39,15 +44,207 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
   late List<CartItem> _items;
   bool _isSubmitting = false;
 
+  PartnerOrderResponse? _loadedOrder;
+  bool _isLoadingOrder = false;
+  String? _loadOrderErrorMessage;
+  bool _isCancelling = false;
+  bool _isDownloadingPdf = false;
+
   bool get _isDynamicMode => widget.cartItems != null;
+  bool get _isViewMode => widget.orderId != null || widget.existingOrder != null;
 
   @override
   void initState() {
     super.initState();
-    _api = widget.api ?? PartnerOrderApi();
     _sessionManager = widget.sessionManager ?? PartnerSessionManager.instance;
+    _api = widget.api ?? PartnerOrderApi(sessionManager: _sessionManager);
     _items =
         widget.cartItems != null ? List<CartItem>.from(widget.cartItems!) : [];
+
+    if (widget.existingOrder != null) {
+      _loadedOrder = widget.existingOrder;
+    } else if (widget.orderId != null) {
+      _loadExistingOrder(widget.orderId!);
+    }
+  }
+
+  Future<void> _loadExistingOrder(int orderId) async {
+    setState(() {
+      _isLoadingOrder = true;
+      _loadOrderErrorMessage = null;
+    });
+
+    try {
+      final order = await _api.getOrder(orderId);
+      if (!mounted) return;
+      setState(() {
+        _loadedOrder = order;
+        _isLoadingOrder = false;
+      });
+    } on PartnerOrderApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadOrderErrorMessage = e.message;
+        _isLoadingOrder = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadOrderErrorMessage = 'Failed to load order: $e';
+        _isLoadingOrder = false;
+      });
+    }
+  }
+
+  Future<void> _handleCancelLoadedOrder() async {
+    if (_loadedOrder == null || _isCancelling) return;
+
+    if (_loadedOrder!.status != 'pending_approval') {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Orders in ${_formatStatus(_loadedOrder!.status)} status cannot be cancelled.',
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Cancel Order'),
+        content: Text(
+          'Are you sure you want to cancel order ${_loadedOrder!.orderNumber}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('No'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF1725),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Yes, Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isCancelling = true);
+
+    try {
+      final updatedOrder = await _api.cancelOrder(_loadedOrder!.id);
+      if (!mounted) return;
+      setState(() {
+        _loadedOrder = updatedOrder;
+        _isCancelling = false;
+      });
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Order ${updatedOrder.orderNumber} has been cancelled successfully.',
+          ),
+          backgroundColor: const Color(0xFF059669),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } on PartnerOrderApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _isCancelling = false);
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to cancel order: ${e.message}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isCancelling = false);
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to cancel order: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  Future<void> _downloadPdfForOrder(PartnerOrderResponse order) async {
+    setState(() => _isDownloadingPdf = true);
+
+    try {
+      final pdfBytes = await _api.downloadOrderPdf(order.id);
+
+      if (!mounted) return;
+
+      final fileName = 'Score_Order_${order.orderNumber}.pdf';
+
+      final savedPath = await FlutterFileDialog.saveFile(
+        params: SaveFileDialogParams(
+          data: pdfBytes,
+          fileName: fileName,
+        ),
+      );
+
+      if (!mounted) return;
+
+      setState(() => _isDownloadingPdf = false);
+
+      if (savedPath == null || savedPath.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF save cancelled.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('PDF saved successfully: $savedPath'),
+          backgroundColor: const Color(0xFF059669),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _isDownloadingPdf = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save PDF: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  String _formatStatus(String status) {
+    return switch (status) {
+      'pending_approval' => 'Pending Approval',
+      'approved_processing' => 'Approved / Processing',
+      'dispatched' => 'Dispatched',
+      'delivered' => 'Delivered',
+      'rejected' => 'Rejected',
+      'cancelled' => 'Cancelled',
+      _ => status,
+    };
   }
 
   num? get _grandTotal {
@@ -229,7 +426,7 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                               _buildHeaderRow(context),
                               const SizedBox(height: 18),
                               _buildHeaderCard(),
-                              if (_isDynamicMode) ...[
+                              if (_isDynamicMode || (_isViewMode && _loadedOrder != null)) ...[
                                 const SizedBox(height: 14),
                                 _buildPartnerDetailsCard(),
                               ],
@@ -399,8 +596,8 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Text(
+                      children: [
+                        const Text(
                           'Order Summary',
                           style: TextStyle(
                             fontSize: 22,
@@ -409,10 +606,14 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                             height: 1.1,
                           ),
                         ),
-                        SizedBox(height: 6),
+                        const SizedBox(height: 6),
                         Text(
-                          'Review your selected items',
-                          style: TextStyle(
+                          _isViewMode
+                              ? (_loadedOrder != null
+                                  ? 'Invoice #${_loadedOrder!.orderNumber}'
+                                  : 'Review order details')
+                              : 'Review your selected items',
+                          style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                             color: _subtitleColor,
@@ -431,7 +632,20 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
   }
 
   Widget _buildPartnerDetailsCard() {
-    final partner = _sessionManager.currentUser;
+    final sessionPartner = _sessionManager.currentUser;
+    final partnerName = _loadedOrder?.businessName ??
+        _loadedOrder?.partnerName ??
+        sessionPartner?.businessName ??
+        sessionPartner?.name ??
+        'Partner';
+    final partnerCode = _loadedOrder != null
+        ? _loadedOrder!.orderNumber
+        : (sessionPartner?.partnerCode ?? 'Partner');
+    final mobile = _loadedOrder?.partnerMobile ?? sessionPartner?.mobile ?? '';
+    final orderDate = _loadedOrder != null
+        ? '${_loadedOrder!.createdAt.day} ${_monthName(_loadedOrder!.createdAt.month)} ${_loadedOrder!.createdAt.year}'
+        : '${DateTime.now().day} ${_monthName(DateTime.now().month)} ${DateTime.now().year}';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -456,7 +670,7 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  partner?.businessName ?? partner?.name ?? 'Partner',
+                  partnerName,
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
@@ -471,7 +685,7 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  partner?.partnerCode ?? 'Partner',
+                  partnerCode,
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -487,21 +701,22 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
             crossAxisAlignment: WrapCrossAlignment.center,
             runSpacing: 4,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.phone_outlined,
-                      size: 15, color: _subtitleColor),
-                  const SizedBox(width: 4),
-                  Text(
-                    partner?.mobile ?? '',
-                    style: const TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF334155),
-                        fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
+              if (mobile.isNotEmpty)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.phone_outlined,
+                        size: 15, color: _subtitleColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      mobile,
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF334155),
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -509,7 +724,7 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                       size: 13, color: _subtitleColor),
                   const SizedBox(width: 4),
                   Text(
-                    '${DateTime.now().day} ${_monthName(DateTime.now().month)} ${DateTime.now().year}',
+                    orderDate,
                     style: const TextStyle(
                         fontSize: 12,
                         color: Color(0xFF334155),
@@ -519,7 +734,73 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
               ),
             ],
           ),
+          if (_loadedOrder != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text(
+                  'Status: ',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                _buildStatusPill(_loadedOrder!.status),
+              ],
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildStatusPill(String status) {
+    Color bgColor;
+    Color borderColor;
+    Color textColor;
+
+    switch (status) {
+      case 'delivered':
+        bgColor = const Color(0xFFDCFCE7);
+        borderColor = const Color(0xFFBBF7D0);
+        textColor = const Color(0xFF15803D);
+        break;
+      case 'approved_processing':
+      case 'dispatched':
+        bgColor = const Color(0xFFE0F2FE);
+        borderColor = const Color(0xFFBAE6FD);
+        textColor = const Color(0xFF0369A1);
+        break;
+      case 'cancelled':
+      case 'rejected':
+        bgColor = const Color(0xFFFEE2E2);
+        borderColor = const Color(0xFFFECACA);
+        textColor = const Color(0xFFDC2626);
+        break;
+      case 'pending_approval':
+      default:
+        bgColor = const Color(0xFFFEF3C7);
+        borderColor = const Color(0xFFFDE68A);
+        textColor = const Color(0xFFB45309);
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor, width: 1.0),
+      ),
+      child: Text(
+        _formatStatus(status),
+        key: const Key('view-order-status-pill'),
+        style: TextStyle(
+          color: textColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -543,6 +824,134 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
   }
 
   Widget _buildOrderSummaryCard(BuildContext context) {
+    if (_isViewMode) {
+      if (_isLoadingOrder) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 48),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _cardBorderBlue, width: 1.5),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1F0755B5),
+                blurRadius: 18,
+                spreadRadius: 1,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(key: Key('order-detail-loading')),
+          ),
+        );
+      }
+
+      if (_loadOrderErrorMessage != null) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _cardBorderBlue, width: 1.5),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1F0755B5),
+                blurRadius: 18,
+                spreadRadius: 1,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline_rounded,
+                  color: Colors.redAccent, size: 36),
+              const SizedBox(height: 10),
+              Text(
+                _loadOrderErrorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _royalBlue,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 14),
+              ElevatedButton(
+                onPressed: () {
+                  if (widget.orderId != null) {
+                    _loadExistingOrder(widget.orderId!);
+                  }
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        );
+      }
+
+      if (_loadedOrder != null) {
+        final order = _loadedOrder!;
+        return Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _cardBorderBlue, width: 1.5),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1F0755B5),
+                blurRadius: 18,
+                spreadRadius: 1,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Column(
+              children: [
+                _buildTableHeader(),
+                if (order.items.isEmpty) ...[
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 36, horizontal: 16),
+                    child: Center(
+                      child: Text(
+                        'No items in this order',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: _subtitleColor,
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  for (int i = 0; i < order.items.length; i++) ...[
+                    if (i > 0)
+                      const Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Color(0xFFEBF4FA),
+                      ),
+                    _buildViewOrderItemRow(order.items[i], i),
+                  ],
+                  const Divider(
+                      height: 1, thickness: 1.5, color: _cardBorderBlue),
+                  _buildViewGrandTotalFooter(order),
+                ],
+                _buildViewModeActions(order),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -858,6 +1267,224 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
       ),
     );
   }
+
+  Widget _buildViewOrderItemRow(PartnerOrderItemResponse item, int index) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.productName,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _royalBlue,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${item.productCode} · ₹ ${item.unitPrice.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: _subtitleColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: 72,
+            child: Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _lightBlueBg,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${item.quantity}',
+                  key: Key('view-order-item-qty-$index'),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: _royalBlue,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                '₹ ${item.subtotal.toStringAsFixed(2)}',
+                key: Key('view-order-item-total-$index'),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: _royalBlue,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewGrandTotalFooter(PartnerOrderResponse order) {
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFF8FAFC),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Grand Total',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: _royalBlue,
+                  ),
+                ),
+                Text(
+                  '${order.itemCount} items · ${order.totalQuantity} units',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: _subtitleColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            order.displayGrandTotal,
+            key: const Key('order-grand-total-text'),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: _royalBlue,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewModeActions(PartnerOrderResponse order) {
+    final canCancel =
+        _sessionManager.isAuthenticated && order.status == 'pending_approval';
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              key: const Key('download-pdf-button'),
+              onPressed:
+                  _isDownloadingPdf ? null : () => _downloadPdfForOrder(order),
+              icon: _isDownloadingPdf
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2),
+                    )
+                  : const Icon(Icons.picture_as_pdf_rounded, size: 20),
+              label: Text(
+                _isDownloadingPdf ? 'Downloading PDF...' : 'Download Order PDF',
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ),
+          if (canCancel) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton.icon(
+                key: const Key('cancel-order-button'),
+                onPressed: _isCancelling ? null : _handleCancelLoadedOrder,
+                icon: _isCancelling
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.cancel_outlined,
+                        color: Color(0xFFFF1725), size: 20),
+                label: Text(
+                  _isCancelling ? 'Cancelling...' : 'Cancel Order',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFFF1725),
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFFF1725), width: 1.5),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFCBD5E1)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      size: 18, color: Color(0xFF64748B)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Order is ${_formatStatus(order.status)} and cannot be cancelled.',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF475569),
+                          fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _OrderSuccessDialog extends StatefulWidget {
@@ -921,33 +1548,61 @@ class _OrderSuccessDialogState extends State<_OrderSuccessDialog> {
     _handleWhatsAppFuture(future);
   }
 
+
   Future<void> _downloadPdf() async {
     setState(() => _pdfDownloading = true);
+
     try {
       final pdfBytes = await widget.api.downloadOrderPdf(widget.order.id);
+
       if (!mounted) return;
+
+      final fileName =
+          'Score_Order_${widget.order.orderNumber}.pdf';
+
+      final savedPath = await FlutterFileDialog.saveFile(
+        params: SaveFileDialogParams(
+          data: pdfBytes,
+          fileName: fileName,
+        ),
+      );
+
+      if (!mounted) return;
+
       setState(() => _pdfDownloading = false);
+
+      if (savedPath == null || savedPath.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF save cancelled.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Order PDF downloaded successfully (${pdfBytes.length} bytes: Score_Order_${widget.order.orderNumber}.pdf)',
-          ),
+          content: Text('PDF saved successfully: $savedPath'),
           backgroundColor: const Color(0xFF059669),
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 5),
         ),
       );
     } catch (e) {
       if (!mounted) return;
+
       setState(() => _pdfDownloading = false);
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to download PDF: $e'),
+          content: Text('Failed to save PDF: $e'),
           backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 5),
         ),
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

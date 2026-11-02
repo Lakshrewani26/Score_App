@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
+import '../models/partner_order_models.dart';
 import 'staff_session_manager.dart';
 
 class StaffApiException implements Exception {
@@ -67,6 +68,27 @@ class StaffAssignedPartner {
       businessName: json['business_name'] as String,
       businessAddress: json['business_address'] as String,
       partnerCode: json['partner_code'] as String?,
+    );
+  }
+}
+
+
+class StaffDashboardStats {
+  const StaffDashboardStats({
+    required this.dealersCount,
+    required this.pendingOrdersCount,
+    required this.pendingPaymentsCount,
+  });
+
+  final int dealersCount;
+  final int pendingOrdersCount;
+  final int pendingPaymentsCount;
+
+  factory StaffDashboardStats.fromJson(Map<String, dynamic> json) {
+    return StaffDashboardStats(
+      dealersCount: json['dealers_count'] as int? ?? 0,
+      pendingOrdersCount: json['pending_orders_count'] as int? ?? 0,
+      pendingPaymentsCount: json['pending_payments_count'] as int? ?? 0,
     );
   }
 }
@@ -202,6 +224,157 @@ class StaffApi {
         }
         return StaffAssignedPartner.fromJson(item);
       }).toList(growable: false);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<StaffDashboardStats> getDashboardStats() async {
+    final token = await _getToken();
+    final response = await _send(
+      () => _client.get(
+        _uri('/api/v1/staff/dashboard'),
+        headers: _authHeaders(token),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to load staff dashboard statistics');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return StaffDashboardStats.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<List<PartnerOrderResponse>> getOrders({
+    String? status,
+    String? search,
+  }) async {
+    final token = await _getToken();
+    final queryParams = <String, String>{};
+    if (status != null && status.isNotEmpty) queryParams['status'] = status;
+    if (search != null && search.isNotEmpty) queryParams['search'] = search;
+
+    final uri = Uri.parse('$_baseUrl/api/v1/staff/orders').replace(
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+
+    final response = await _send(
+      () => _client.get(uri, headers: _authHeaders(token)),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to load staff orders');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! List<dynamic>) {
+        throw const FormatException('Expected JSON list');
+      }
+      return body.map((item) {
+        if (item is! Map<String, dynamic>) {
+          throw const FormatException('Invalid Order item');
+        }
+        return PartnerOrderResponse.fromJson(item);
+      }).toList(growable: false);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<PartnerOrderResponse> getOrder(int orderId) async {
+    final token = await _getToken();
+    final response = await _send(
+      () => _client.get(
+        _uri('/api/v1/staff/orders/$orderId'),
+        headers: _authHeaders(token),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to load order detail');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return PartnerOrderResponse.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<PartnerOrderResponse> approveOrder(int orderId, {String? remarks}) async {
+    final token = await _getToken();
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/v1/staff/orders/$orderId/approve'),
+        headers: {
+          ..._authHeaders(token),
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          if (remarks != null && remarks.isNotEmpty) 'remarks': remarks,
+        }),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to approve order');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return PartnerOrderResponse.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<PartnerOrderResponse> rejectOrder(int orderId, {String? remarks}) async {
+    final token = await _getToken();
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/v1/staff/orders/$orderId/reject'),
+        headers: {
+          ..._authHeaders(token),
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          if (remarks != null && remarks.isNotEmpty) 'remarks': remarks,
+        }),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to reject order');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return PartnerOrderResponse.fromJson(body);
     } on FormatException {
       throw StaffApiException(
         'Invalid response received from server',

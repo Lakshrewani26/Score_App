@@ -81,3 +81,18 @@ class WhatsAppDeliveryResult(BaseModel):
     recipient: Optional[str] = None
     provider: str
     message_id: Optional[str] = None
+
+class OrderCancelRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, max_length=500, description="Optional cancellation reason")
+
+
+class PartnerDashboardStatsResponse(BaseModel):
+    total_points: int
+    points_used: int
+    remaining_balance: int
+    total_orders: int
+    pending_orders: int
+    processing_orders: int
+    dispatched_orders: int
+    delivered_orders: int
+    cancelled_orders: int

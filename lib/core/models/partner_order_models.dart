@@ -219,3 +219,41 @@ class PartnerOrderPreviewResponse {
     );
   }
 }
+
+class PartnerDashboardStats {
+  const PartnerDashboardStats({
+    required this.totalPoints,
+    required this.pointsUsed,
+    required this.remainingBalance,
+    required this.totalOrders,
+    required this.pendingOrders,
+    required this.processingOrders,
+    required this.dispatchedOrders,
+    required this.deliveredOrders,
+    required this.cancelledOrders,
+  });
+
+  final int totalPoints;
+  final int pointsUsed;
+  final int remainingBalance;
+  final int totalOrders;
+  final int pendingOrders;
+  final int processingOrders;
+  final int dispatchedOrders;
+  final int deliveredOrders;
+  final int cancelledOrders;
+
+  factory PartnerDashboardStats.fromJson(Map<String, dynamic> json) {
+    return PartnerDashboardStats(
+      totalPoints: json['total_points'] as int? ?? 0,
+      pointsUsed: json['points_used'] as int? ?? 0,
+      remainingBalance: json['remaining_balance'] as int? ?? 0,
+      totalOrders: json['total_orders'] as int? ?? 0,
+      pendingOrders: json['pending_orders'] as int? ?? 0,
+      processingOrders: json['processing_orders'] as int? ?? 0,
+      dispatchedOrders: json['dispatched_orders'] as int? ?? 0,
+      deliveredOrders: json['delivered_orders'] as int? ?? 0,
+      cancelledOrders: json['cancelled_orders'] as int? ?? 0,
+    );
+  }
+}

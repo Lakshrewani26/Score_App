@@ -369,6 +369,11 @@ def update_order_status(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Order has been rejected and cannot be modified.",
         )
+    elif old_status == "cancelled":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Order has been cancelled and cannot be modified.",
+        )
     elif old_status == "approved_processing":
         if target_status != "dispatched":
             raise HTTPException(

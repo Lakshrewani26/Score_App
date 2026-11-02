@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../models/partner_order_models.dart';
 import 'partner_session_manager.dart';
+import 'staff_session_manager.dart';
 
 class PartnerOrderApiException implements Exception {
   const PartnerOrderApiException({
@@ -43,7 +44,10 @@ class PartnerOrderApi {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
-    final token = await _sessionManager.getToken();
+    var token = await _sessionManager.getToken();
+    if (token == null || token.isEmpty) {
+      token = await StaffSessionManager.instance.getToken();
+    }
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }
@@ -280,6 +284,73 @@ class PartnerOrderApi {
         message: 'Failed to dispatch WhatsApp message: $e',
         provider: 'cloud_api',
       );
+    }
+  }
+
+  Future<PartnerOrderResponse> cancelOrder(int orderId, {String? reason}) async {
+    final url = Uri.parse('$_baseUrl/api/v1/orders/$orderId/cancel');
+    try {
+      final headers = await _headers();
+      final response = await _client
+          .post(
+            url,
+            headers: headers,
+            body: jsonEncode({
+              if (reason != null && reason.isNotEmpty) 'reason': reason,
+            }),
+          )
+          .timeout(_timeout);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return PartnerOrderResponse.fromJson(data);
+      }
+
+      final errorBody = _parseError(response.body);
+      throw PartnerOrderApiException(
+        message: errorBody,
+        statusCode: response.statusCode,
+      );
+    } on TimeoutException {
+      throw const PartnerOrderApiException(
+        message: 'Order cancellation timed out. Please try again.',
+        statusCode: 408,
+      );
+    } on http.ClientException catch (e) {
+      throw PartnerOrderApiException(message: 'Network error: ${e.message}');
+    } catch (e) {
+      if (e is PartnerOrderApiException) rethrow;
+      throw PartnerOrderApiException(message: e.toString());
+    }
+  }
+
+  Future<PartnerDashboardStats> getDashboardStats() async {
+    final url = Uri.parse('$_baseUrl/api/v1/orders/dashboard/stats');
+    try {
+      final headers = await _headers();
+      final response =
+          await _client.get(url, headers: headers).timeout(_timeout);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return PartnerDashboardStats.fromJson(data);
+      }
+
+      final errorBody = _parseError(response.body);
+      throw PartnerOrderApiException(
+        message: errorBody,
+        statusCode: response.statusCode,
+      );
+    } on TimeoutException {
+      throw const PartnerOrderApiException(
+        message: 'Dashboard statistics request timed out.',
+        statusCode: 408,
+      );
+    } on http.ClientException catch (e) {
+      throw PartnerOrderApiException(message: 'Network error: ${e.message}');
+    } catch (e) {
+      if (e is PartnerOrderApiException) rethrow;
+      throw PartnerOrderApiException(message: e.toString());
     }
   }
 

@@ -1,5 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:score_app/core/services/customer_api.dart';
+import 'package:score_app/core/services/customer_session_manager.dart';
 import 'package:score_app/features/customer/create_account/create_account_screen.dart';
 import 'package:score_app/features/customer/home/customer_home_screen.dart';
 import 'package:score_app/features/customer/login/customer_login_screen.dart';
@@ -146,5 +152,169 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(CustomerHomeScreen), findsOneWidget);
+  });
+
+  testWidgets('shows validation snackbar when full name is empty',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: CreateAccountScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(InkWell, 'Create Account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Full name is required'), findsOneWidget);
+  });
+
+  testWidgets('shows validation snackbar when phone number is empty or short',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: CreateAccountScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final textFields = find.byType(TextField);
+    await tester.enterText(textFields.at(0), 'Aditi Verma');
+    await tester.enterText(textFields.at(1), '12345');
+    await tester.tap(find.widgetWithText(InkWell, 'Create Account'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Please enter a valid phone number (at least 10 digits)'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('shows validation snackbar when password is empty or short',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: CreateAccountScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final textFields = find.byType(TextField);
+    await tester.enterText(textFields.at(0), 'Aditi Verma');
+    await tester.enterText(textFields.at(1), '9876543210');
+    await tester.enterText(textFields.at(2), '123');
+    await tester.tap(find.widgetWithText(InkWell, 'Create Account'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Password must be at least 6 characters long'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('shows error snackbar when registration fails with conflict',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final mockClient = MockClient((request) async {
+      return http.Response(
+        jsonEncode({'detail': 'A user with this mobile number already exists'}),
+        409,
+      );
+    });
+    final api = CustomerApi(client: mockClient, baseUrl: 'http://localhost');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CreateAccountScreen(customerApi: api),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final textFields = find.byType(TextField);
+    await tester.enterText(textFields.at(0), 'Aditi Verma');
+    await tester.enterText(textFields.at(1), '9876543210');
+    await tester.enterText(textFields.at(2), 'Password123');
+
+    await tester.tap(find.widgetWithText(InkWell, 'Create Account'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('A user with this mobile number already exists'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('registers successfully, saves session, and navigates to CustomerHomeScreen',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final sessionManager =
+        CustomerSessionManager(tokenStorage: InMemoryCustomerTokenStorage());
+    final mockClient = MockClient((request) async {
+      return http.Response(
+        jsonEncode({
+          'access_token': 'new-jwt-token-xyz',
+          'token_type': 'bearer',
+          'expires_in': 3600,
+          'user': {
+            'id': 202,
+            'name': 'Aditi Verma',
+            'mobile': '9876543210',
+            'role': 'customer',
+            'is_active': true,
+            'created_at': '2026-01-01T00:00:00Z',
+            'customer_profile': {
+              'state': 'Maharashtra',
+              'city': 'Pune',
+              'segment': '2-Wheeler',
+            },
+          },
+        }),
+        201,
+      );
+    });
+    final api = CustomerApi(client: mockClient, baseUrl: 'http://localhost');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CreateAccountScreen(
+          customerApi: api,
+          sessionManager: sessionManager,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final textFields = find.byType(TextField);
+    await tester.enterText(textFields.at(0), 'Aditi Verma');
+    await tester.enterText(textFields.at(1), '9876543210');
+    await tester.enterText(textFields.at(2), 'Password123');
+
+    await tester.tap(find.widgetWithText(InkWell, 'Create Account'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CustomerHomeScreen), findsOneWidget);
+    expect(sessionManager.isAuthenticated, isTrue);
+    expect(sessionManager.currentUser?.name, 'Aditi Verma');
+    expect(find.text('Welcome, Aditi Verma'), findsOneWidget);
   });
 }

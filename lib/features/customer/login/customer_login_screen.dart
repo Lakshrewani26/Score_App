@@ -1,10 +1,20 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/services/customer_api.dart';
+import '../../../core/services/customer_session_manager.dart';
 import '../create_account/create_account_screen.dart';
+import '../home/customer_home_screen.dart';
 
 class CustomerLoginScreen extends StatefulWidget {
-  const CustomerLoginScreen({super.key});
+  const CustomerLoginScreen({
+    super.key,
+    this.customerApi,
+    this.sessionManager,
+  });
+
+  final CustomerApi? customerApi;
+  final CustomerSessionManager? sessionManager;
 
   @override
   State<CustomerLoginScreen> createState() => _CustomerLoginScreenState();
@@ -16,12 +26,84 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
 
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  late final CustomerApi _api;
+  late final CustomerSessionManager _session;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _session = widget.sessionManager ?? CustomerSessionManager.instance;
+    _api = widget.customerApi ?? CustomerApi();
+  }
 
   @override
   void dispose() {
     _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleLogin() async {
+    if (_isLoading) return;
+
+    final mobile = _phoneController.text.trim();
+    final password = _passwordController.text;
+    if (mobile.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mobile number and password are required'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final auth = await _api.login(mobile: mobile, password: password);
+      if (auth.user.role != 'customer' || !auth.user.isActive) {
+        throw CustomerApiException(
+          !auth.user.isActive
+              ? 'Account is deactivated'
+              : 'Access denied: Customer privileges required',
+          statusCode: 403,
+        );
+      }
+
+      await _session.saveSession(token: auth.accessToken, user: auth.user);
+
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => CustomerHomeScreen(sessionManager: _session),
+        ),
+        (route) => false,
+      );
+    } on CustomerApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('An unexpected error occurred. Please try again.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -256,26 +338,26 @@ class _CustomerLoginScreenState extends State<CustomerLoginScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Customer login is not connected to the backend yet.',
-                ),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
-          },
-          child: const Center(
-            child: Text(
-              'Submit',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 19,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.2,
-              ),
-            ),
+          onTap: _isLoading ? null : _handleLogin,
+          child: Center(
+            child: _isLoading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Text(
+                    'Submit',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
           ),
         ),
       ),

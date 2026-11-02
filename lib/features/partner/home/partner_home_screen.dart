@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/partner_order_api.dart';
 import '../profile/partner_profile_screen.dart';
 import '../catalogue/partner_catalogue_screen.dart';
@@ -27,16 +28,36 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
   static const _royalBlue = Color(0xFF083FA5);
 
   late final PartnerSessionManager _sessionManager;
+  late final PartnerOrderApi _orderApi;
+  PartnerDashboardStats? _stats;
 
   String get _welcomeName => _sessionManager.currentUser?.name ?? 'Partner';
-  String get _totalPoints => '—';
-  String get _pointsUsed => '—';
-  String get _remainingBalance => '—';
+  String get _totalPoints =>
+      _stats != null ? _stats!.totalPoints.toString() : '—';
+  String get _pointsUsed =>
+      _stats != null ? _stats!.pointsUsed.toString() : '—';
+  String get _remainingBalance =>
+      _stats != null ? _stats!.remainingBalance.toString() : '—';
 
   @override
   void initState() {
     super.initState();
     _sessionManager = widget.sessionManager ?? PartnerSessionManager.instance;
+    _orderApi =
+        widget.orderApi ?? PartnerOrderApi(sessionManager: _sessionManager);
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    try {
+      final stats = await _orderApi.getDashboardStats();
+      if (!mounted) return;
+      setState(() {
+        _stats = stats;
+      });
+    } catch (_) {
+      // Fallback preserves '—' placeholder
+    }
   }
 
   @override
@@ -309,12 +330,15 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
               iconBgColor: const Color(0xFFEADBFF),
               label: 'Product\nCatalogue',
               accentColor: const Color(0xFF9C27B0),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const PartnerProductCatalogueScreen(),
                   ),
                 );
+                if (mounted) {
+                  _loadStats();
+                }
               },
             ),
             const SizedBox(width: 14),
@@ -325,15 +349,18 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
               iconBgColor: const Color(0xFFFFDDE2),
               label: 'My Orders',
               accentColor: const Color(0xFFFF4081),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => PartnerMyOrdersScreen(
-                      api: widget.orderApi,
+                      api: _orderApi,
                       sessionManager: _sessionManager,
                     ),
                   ),
                 );
+                if (mounted) {
+                  _loadStats();
+                }
               },
             ),
           ],
@@ -348,12 +375,15 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
               iconBgColor: const Color(0xFFD2F5EC),
               label: 'Transfer Points',
               accentColor: const Color(0xFF00B0FF),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const PartnerTransferPointsScreen(),
                   ),
                 );
+                if (mounted) {
+                  _loadStats();
+                }
               },
             ),
             const SizedBox(width: 14),
@@ -364,12 +394,15 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
               iconBgColor: const Color(0xFFFFF3D6),
               label: 'Transfer History',
               accentColor: const Color(0xFFFF9800),
-              onTap: () {
-                Navigator.of(context).push(
+              onTap: () async {
+                await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const PartnerTransferHistoryScreen(),
                   ),
                 );
+                if (mounted) {
+                  _loadStats();
+                }
               },
             ),
           ],

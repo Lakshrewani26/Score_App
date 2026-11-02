@@ -179,7 +179,7 @@ class Order(Base):
         CheckConstraint(
             "status IN "
             "('pending_approval', 'approved_processing', 'dispatched', "
-            "'delivered', 'rejected')",
+            "'delivered', 'rejected', 'cancelled')",
             name="supported_status",
         ),
         Index("ix_orders_partner_id", "partner_id"),
@@ -241,13 +241,13 @@ class OrderStatusHistory(Base):
         CheckConstraint(
             "new_status IN "
             "('pending_approval', 'approved_processing', 'dispatched', "
-            "'delivered', 'rejected')",
+            "'delivered', 'rejected', 'cancelled')",
             name="supported_new_status",
         ),
         CheckConstraint(
             "old_status IS NULL OR old_status IN "
             "('pending_approval', 'approved_processing', 'dispatched', "
-            "'delivered', 'rejected')",
+            "'delivered', 'rejected', 'cancelled')",
             name="supported_old_status",
         ),
         Index("ix_order_status_history_order_id", "order_id"),

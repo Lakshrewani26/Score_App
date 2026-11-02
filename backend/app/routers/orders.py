@@ -12,14 +12,25 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import get_current_active_user, require_partner, require_partner_or_staff_or_admin
 from app.db.session import get_db
-from app.models import Order, OrderItem, OrderStatusHistory, PartnerProfile, Product, User
+from app.models import (
+    Order,
+    OrderItem,
+    OrderStatusHistory,
+    PartnerProfile,
+    Product,
+    QrCode,
+    StaffPartnerAssignment,
+    User,
+)
 from app.schemas.orders import (
+    OrderCancelRequest,
     OrderCreateRequest,
     OrderItemCreate,
     OrderItemResponse,
     OrderPreviewItem,
     OrderPreviewResponse,
     OrderResponse,
+    PartnerDashboardStatsResponse,
     WhatsAppDeliveryResult,
 )
 from app.services.pdf_service import generate_order_pdf
@@ -344,6 +355,20 @@ def get_order_detail(
             detail="Access denied: You are not authorized to view another partner's order.",
         )
 
+    if current_user.role == "staff":
+        is_assigned = db.scalar(
+            select(func.count(StaffPartnerAssignment.id)).where(
+                StaffPartnerAssignment.staff_id == current_user.id,
+                StaffPartnerAssignment.partner_id == order.partner_id,
+                StaffPartnerAssignment.is_active.is_(True),
+            )
+        )
+        if not is_assigned:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You are not assigned to this partner's account.",
+            )
+
     return _build_order_response(order)
 
 
@@ -374,6 +399,20 @@ def download_order_pdf(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: You are not authorized to download this order PDF.",
         )
+
+    if current_user.role == "staff":
+        is_assigned = db.scalar(
+            select(func.count(StaffPartnerAssignment.id)).where(
+                StaffPartnerAssignment.staff_id == current_user.id,
+                StaffPartnerAssignment.partner_id == order.partner_id,
+                StaffPartnerAssignment.is_active.is_(True),
+            )
+        )
+        if not is_assigned:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: You are not assigned to this partner's account.",
+            )
 
     pdf_bytes = generate_order_pdf(order)
     filename = f"Score_Order_{order.order_number}.pdf"
@@ -432,3 +471,110 @@ def send_order_whatsapp(
 
     result = whatsapp_service.send_order_pdf(order, pdf_bytes)
     return result
+
+@router.get("/dashboard/stats", response_model=PartnerDashboardStatsResponse)
+def get_partner_dashboard_stats(
+    db: Session = Depends(get_db),
+    current_partner: User = Depends(require_partner),
+) -> PartnerDashboardStatsResponse:
+    """
+    Returns numeric dashboard statistics for the authenticated partner.
+    Aggregates points and order counts via database queries.
+    """
+    # 1. Order status counts
+    order_counts_stmt = (
+        select(Order.status, func.count(Order.id))
+        .where(Order.partner_id == current_partner.id)
+        .group_by(Order.status)
+    )
+    counts_by_status = dict(db.execute(order_counts_stmt).all())
+
+    total_orders = sum(counts_by_status.values())
+    pending_orders = counts_by_status.get("pending_approval", 0)
+    processing_orders = counts_by_status.get("approved_processing", 0)
+    dispatched_orders = counts_by_status.get("dispatched", 0)
+    delivered_orders = counts_by_status.get("delivered", 0)
+    cancelled_orders = counts_by_status.get("cancelled", 0)
+
+    # 2. Points counts
+    total_points_stmt = (
+        select(func.coalesce(func.sum(QrCode.points_awarded), 0))
+        .where(
+            QrCode.redeemed_by == current_partner.id,
+            QrCode.status == "redeemed",
+        )
+    )
+    total_points = int(db.scalar(total_points_stmt) or 0)
+    points_used = 0
+    remaining_balance = total_points - points_used
+
+    return PartnerDashboardStatsResponse(
+        total_points=total_points,
+        points_used=points_used,
+        remaining_balance=remaining_balance,
+        total_orders=total_orders,
+        pending_orders=pending_orders,
+        processing_orders=processing_orders,
+        dispatched_orders=dispatched_orders,
+        delivered_orders=delivered_orders,
+        cancelled_orders=cancelled_orders,
+    )
+
+
+@router.post("/{order_id}/cancel", response_model=OrderResponse)
+def cancel_partner_order(
+    order_id: int,
+    payload: Optional[OrderCancelRequest] = None,
+    db: Session = Depends(get_db),
+    current_partner: User = Depends(require_partner),
+) -> OrderResponse:
+    """
+    Cancels an order placed by the authenticated partner:
+    - Enforces partner ownership.
+    - Only orders in 'pending_approval' status can be cancelled.
+    - Updates order status to 'cancelled' and logs audit history in a transaction.
+    """
+    order = db.scalars(
+        select(Order)
+        .options(
+            selectinload(Order.partner).selectinload(User.partner_profile),
+            selectinload(Order.approver),
+            selectinload(Order.items).selectinload(OrderItem.product),
+        )
+        .where(Order.id == order_id)
+        .with_for_update()
+    ).first()
+
+    if order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found",
+        )
+
+    if order.partner_id != current_partner.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You are not authorized to cancel another partner's order.",
+        )
+
+    if order.status != "pending_approval":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Order cannot be cancelled because it is in '{order.status}' status. Only orders pending approval may be cancelled.",
+        )
+
+    old_status = order.status
+    order.status = "cancelled"
+
+    reason = payload.reason.strip() if (payload and payload.reason and payload.reason.strip()) else "Order cancelled by Partner"
+    history_entry = OrderStatusHistory(
+        order_id=order.id,
+        old_status=old_status,
+        new_status="cancelled",
+        changed_by=current_partner.id,
+        remarks=reason,
+    )
+    db.add(history_entry)
+    db.commit()
+
+    return _build_order_response(order)

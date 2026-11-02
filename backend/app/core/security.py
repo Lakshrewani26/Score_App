@@ -232,6 +232,18 @@ def get_current_active_user(
     return user
 
 
+def require_customer(
+    user: User = Depends(get_current_active_user),
+) -> User:
+    """Ensures that the authenticated user holds the 'customer' role."""
+    if user.role != "customer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Customer privileges required",
+        )
+    return user
+
+
 def require_partner(
     user: User = Depends(get_current_active_user),
 ) -> User:

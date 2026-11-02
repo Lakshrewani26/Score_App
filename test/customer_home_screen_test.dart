@@ -77,7 +77,7 @@ void main() {
 
     expect(find.byType(CustomerHomeScreen), findsNothing);
     expect(
-      find.text('Customer login is not connected to the backend yet.'),
+      find.text('Mobile number and password are required'),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
