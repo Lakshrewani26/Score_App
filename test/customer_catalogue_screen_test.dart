@@ -37,7 +37,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('navigates from CustomerHomeScreen to CustomerCatalogueScreen when Product Catalogue is tapped', (WidgetTester tester) async {
+  testWidgets('navigates from CustomerHomeScreen to TwoWheelerPartsScreen when 2 Wheeler is tapped', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -50,16 +50,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Product Catalogue'), findsOneWidget);
-    await tester.ensureVisible(find.text('Product Catalogue'));
+    expect(find.text('2 Wheeler'), findsOneWidget);
+    await tester.ensureVisible(find.text('2 Wheeler'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Product Catalogue'));
+    await tester.tap(find.text('2 Wheeler'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(CustomerCatalogueScreen), findsOneWidget);
-    expect(find.text('Explore our wide range of quality parts'), findsOneWidget);
-    expect(find.text('2-Wheeler\nParts'), findsOneWidget);
-    expect(find.text('3-Wheeler\nParts'), findsOneWidget);
+    expect(find.byType(TwoWheelerPartsScreen), findsOneWidget);
+    expect(find.text('Genuine Parts for a Smoother Ride'), findsOneWidget);
   });
 
   testWidgets('navigates from CustomerCatalogueScreen to CustomerHomeScreen via top back button', (WidgetTester tester) async {
@@ -70,15 +68,11 @@ void main() {
 
     await tester.pumpWidget(
       const MaterialApp(
-        home: CustomerHomeScreen(),
+        home: CustomerCatalogueScreen(),
       ),
     );
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('Product Catalogue'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Product Catalogue'));
-    await tester.pumpAndSettle();
     expect(find.byType(CustomerCatalogueScreen), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));

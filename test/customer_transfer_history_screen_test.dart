@@ -85,7 +85,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('navigates from CustomerHomeScreen to CustomerTransferHistoryScreen when Transfer History is tapped', (WidgetTester tester) async {
+  testWidgets('navigates from CustomerHomeScreen to CustomerTransferHistoryScreen when Points History is tapped', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -98,10 +98,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Transfer History'), findsOneWidget);
-    await tester.ensureVisible(find.text('Transfer History'));
+    expect(find.text('Points History'), findsOneWidget);
+    await tester.ensureVisible(find.text('Points History'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Transfer History'));
+    await tester.tap(find.text('Points History'));
     await tester.pumpAndSettle();
 
     expect(find.byType(CustomerTransferHistoryScreen), findsOneWidget);
@@ -125,9 +125,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('Transfer History'));
+    await tester.ensureVisible(find.text('Points History'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Transfer History'));
+    await tester.tap(find.text('Points History'));
     await tester.pumpAndSettle();
     expect(find.byType(CustomerTransferHistoryScreen), findsOneWidget);
 

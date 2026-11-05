@@ -90,7 +90,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets("Tapping Scan Partner's QR Code on CustomerHome opens popup modal with Enter Code Manually", (WidgetTester tester) async {
+  testWidgets("Tapping Scan QR on CustomerHome opens popup modal with Enter Code Manually", (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -103,10 +103,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Verify home screen is loaded and displays "Scan Partner's QR Code"
+    // Verify home screen is loaded and displays "Scan QR"
     expect(find.byType(CustomerHomeScreen), findsOneWidget);
     expect(find.byType(CustomerQrScannerSheet), findsNothing);
-    final scanCard = find.text("Scan Partner's QR Code");
+    final scanCard = find.text("Scan QR");
     expect(scanCard, findsOneWidget);
 
     // Ensure card is visible and tap it
@@ -143,7 +143,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final scanCard = find.text("Scan Partner's QR Code");
+    final scanCard = find.text("Scan QR");
     await tester.ensureVisible(scanCard);
     await tester.pumpAndSettle();
     await tester.tap(scanCard);
