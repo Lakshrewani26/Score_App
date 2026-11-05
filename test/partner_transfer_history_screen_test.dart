@@ -53,7 +53,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(PartnerHomeScreen), findsOneWidget);
-    final historyCard = find.text('Transfer History');
+    final historyCard = find.text('Points History');
     expect(historyCard, findsOneWidget);
 
     await tester.ensureVisible(historyCard);
@@ -80,7 +80,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Navigate to Transfer History
-    final historyCard = find.text('Transfer History');
+    final historyCard = find.text('Points History');
     await tester.ensureVisible(historyCard);
     await tester.tap(historyCard);
     await tester.pumpAndSettle();

@@ -301,6 +301,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Navigate to My Orders
+      await tester.ensureVisible(find.text('My Orders'));
       await tester.tap(find.text('My Orders'));
       await tester.pumpAndSettle();
 

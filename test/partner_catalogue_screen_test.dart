@@ -58,7 +58,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.textContaining('Catalogue').first);
+      await tester.tap(find.text('2 Wheeler'));
       await tester.pumpAndSettle();
 
       await tester.ensureVisible(find.byIcon(Icons.arrow_back_rounded));
@@ -146,7 +146,7 @@ void main() {
       expect(find.byType(PartnerThreeWheelerCatalogueScreen), findsOneWidget);
     });
 
-    testWidgets('13. Partner Home Product Catalogue card opens PartnerProductCatalogueScreen', (WidgetTester tester) async {
+    testWidgets('13. Partner Home 2 Wheeler card opens PartnerTwoWheelerCatalogueScreen', (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -159,12 +159,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.ensureVisible(find.textContaining('Catalogue').first);
-      await tester.tap(find.textContaining('Catalogue').first);
+      await tester.ensureVisible(find.text('2 Wheeler'));
+      await tester.tap(find.text('2 Wheeler'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(PartnerProductCatalogueScreen), findsOneWidget);
-      expect(find.text('Product Catalogue'), findsOneWidget);
+      expect(find.byType(PartnerTwoWheelerCatalogueScreen), findsOneWidget);
     });
   });
 }
