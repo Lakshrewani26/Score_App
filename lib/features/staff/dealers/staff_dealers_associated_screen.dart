@@ -5,6 +5,8 @@ import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
 import '../home/staff_home_screen.dart';
 import '../profile/staff_profile_screen.dart';
+import '../orders/staff_orders_screen.dart';
+
 
 class StaffDealersAssociatedScreen extends StatefulWidget {
   const StaffDealersAssociatedScreen({
@@ -319,94 +321,116 @@ class _StaffDealersAssociatedScreenState
   }
 
   Widget _buildPartnerCard(StaffAssignedPartner partner) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => StaffOrdersScreen(
+                partner: partner,
+                sessionManager: _sessionManager,
+                orderApi: _api,
+              ),
+            ),
+          );
+        },
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFCBEBFF), width: 1.4),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x140755B5),
-            blurRadius: 12,
-            offset: Offset(0, 4),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFCBEBFF), width: 1.4),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x140755B5),
+                blurRadius: 12,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Stack(
-          children: [
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 36,
-              child: CustomPaint(
-                painter: const _DealerCardWavePainter(),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0xFFD4F0FF),
-                    ),
-                    child: const Icon(
-                      Icons.domain_rounded,
-                      color: Color(0xFF0755C7),
-                      size: 26,
-                    ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 36,
+                  child: CustomPaint(
+                    painter: const _DealerCardWavePainter(),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          partner.businessName,
-                          style: const TextStyle(
-                            color: _royalBlue,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            height: 1.15,
-                          ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFFD4F0FF),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          partner.name,
-                          style: const TextStyle(
-                            color: Color(0xFF6782A0),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            height: 1.15,
-                          ),
+                        child: const Icon(
+                          Icons.domain_rounded,
+                          color: Color(0xFF0755C7),
+                          size: 26,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${partner.businessAddress} • ${partner.mobile}',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF6782A0),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            height: 1.15,
-                          ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              partner.businessName,
+                              style: const TextStyle(
+                                color: _royalBlue,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                height: 1.15,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              partner.name,
+                              style: const TextStyle(
+                                color: Color(0xFF6782A0),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                height: 1.15,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${partner.businessAddress} • ${partner.mobile}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF6782A0),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                height: 1.15,
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFF083FA5),
+                        size: 24,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

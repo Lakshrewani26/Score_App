@@ -1,6 +1,11 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/models/catalogue_models.dart';
+import '../../../core/models/partner_order_models.dart';
+import '../../../core/services/catalogue_api.dart';
+import '../../../core/services/staff_api.dart';
+import '../../../core/services/staff_session_manager.dart';
 import 'staff_order_summary_screen.dart';
 
 class StaffProductItem {
@@ -20,7 +25,24 @@ class StaffProductItem {
 }
 
 class StaffOrdersScreen extends StatefulWidget {
-  const StaffOrdersScreen({super.key});
+  const StaffOrdersScreen({
+    super.key,
+    this.partner,
+    this.partnerId,
+    this.catalogueApi,
+    this.orderApi,
+    this.sessionManager,
+    this.initialProducts,
+  });
+
+  final StaffAssignedPartner? partner;
+  final int? partnerId;
+  final CatalogueApi? catalogueApi;
+  final StaffApi? orderApi;
+  final StaffSessionManager? sessionManager;
+  final List<CatalogueProduct>? initialProducts;
+
+  int? get effectivePartnerId => partner?.id ?? partnerId;
 
   @override
   State<StaffOrdersScreen> createState() => _StaffOrdersScreenState();
@@ -32,16 +54,33 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
   static const _cardBorderBlue = Color(0xFFCBEBFF);
 
   final TextEditingController _searchController = TextEditingController();
-  final Map<String, int> _quantities = {};
-  String _searchQuery = '';
+  final Map<int, int> _quantities = {};
+  final Map<int, CatalogueProduct> _productCache = {};
 
-  static const List<StaffProductItem> _allProducts = [];
+  late final CatalogueApi _catalogueApi;
+  late final StaffApi _orderApi;
+  late final StaffSessionManager _sessionManager;
+
+  List<CatalogueProduct> _products = [];
+  bool _isLoading = false;
+  String _searchQuery = '';
+  String _selectedVehicleType = 'All';
 
   @override
   void initState() {
     super.initState();
-    for (final product in _allProducts) {
-      _quantities[product.id] = product.initialQuantity;
+    _catalogueApi = widget.catalogueApi ?? CatalogueApi();
+    _sessionManager = widget.sessionManager ?? StaffSessionManager.instance;
+    _orderApi = widget.orderApi ?? StaffApi(sessionManager: _sessionManager);
+
+    if (widget.initialProducts != null) {
+      _products = List.from(widget.initialProducts!);
+      for (final p in _products) {
+        _productCache[p.id] = p;
+        _quantities[p.id] = 0;
+      }
+    } else if (widget.effectivePartnerId != null) {
+      _loadProducts();
     }
   }
 
@@ -51,35 +90,158 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
     super.dispose();
   }
 
+  Future<void> _loadProducts() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final page = await _catalogueApi.loadProducts(
+        pageSize: 100,
+      );
+      if (!mounted) return;
+      setState(() {
+        _products = page.items;
+        for (final p in _products) {
+          _productCache[p.id] = p;
+        }
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
   void _onSearchChanged(String query) {
     setState(() {
       _searchQuery = query;
     });
   }
 
-  List<StaffProductItem> get _filteredProducts {
-    if (_searchQuery.trim().isEmpty) {
-      return _allProducts;
+  List<CatalogueProduct> get _filteredProducts {
+    var list = _products;
+    if (_selectedVehicleType != 'All') {
+      list = list.where((p) {
+        final vt = p.vehicleType.toLowerCase();
+        if (vt == 'both') return true;
+        if (_selectedVehicleType == '2-Wheeler') {
+          return vt.contains('2') || vt.contains('two');
+        }
+        if (_selectedVehicleType == '3-Wheeler') {
+          return vt.contains('3') || vt.contains('three');
+        }
+        return true;
+      }).toList();
     }
-    final lowerQuery = _searchQuery.toLowerCase().trim();
-    return _allProducts
-        .where((product) => product.name.toLowerCase().contains(lowerQuery))
-        .toList();
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase().trim();
+      list = list.where((p) {
+        return p.name.toLowerCase().contains(q) ||
+            p.productCode.toLowerCase().contains(q);
+      }).toList();
+    }
+    return list;
   }
 
-  void _incrementQuantity(String id) {
+  void _incrementQuantity(int productId) {
     setState(() {
-      _quantities[id] = (_quantities[id] ?? 0) + 1;
+      _quantities[productId] = (_quantities[productId] ?? 0) + 1;
     });
   }
 
-  void _decrementQuantity(String id) {
+  void _decrementQuantity(int productId) {
     setState(() {
-      final current = _quantities[id] ?? 0;
+      final current = _quantities[productId] ?? 0;
       if (current > 0) {
-        _quantities[id] = current - 1;
+        _quantities[productId] = current - 1;
       }
     });
+  }
+
+  void _onContinuePressed() {
+    // If opened standalone with no products and no dealer (test fallback)
+    if (_products.isEmpty && widget.effectivePartnerId == null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const StaffOrderSummaryScreen(),
+        ),
+      );
+      return;
+    }
+
+    final totalQuantity = _quantities.values.fold<int>(0, (sum, q) => sum + q);
+    if (totalQuantity <= 0) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please select at least one product with quantity greater than zero.',
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final cartItems = <CartItem>[];
+    for (final entry in _quantities.entries) {
+      if (entry.value > 0) {
+        final product = _productCache[entry.key];
+        if (product != null) {
+          if (product.price == null) {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Product "${product.name}" has no valid price. Please remove or adjust.',
+                ),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+            return;
+          }
+          cartItems.add(CartItem(product: product, quantity: entry.value));
+        }
+      }
+    }
+
+    if (cartItems.isEmpty) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please select at least one product with quantity greater than zero.',
+          ),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StaffOrderSummaryScreen(
+          partner: widget.partner,
+          partnerId: widget.effectivePartnerId,
+          cartItems: cartItems,
+          orderApi: _orderApi,
+          sessionManager: _sessionManager,
+          onCartUpdated: (updatedQuantities) {
+            setState(() {
+              _quantities.clear();
+              _quantities.addAll(updatedQuantities);
+            });
+          },
+          onOrderSuccess: () {
+            setState(() {
+              _quantities.clear();
+            });
+          },
+        ),
+      ),
+    );
   }
 
   @override
@@ -134,10 +296,27 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
                                   height: 1.2,
                                 ),
                               ),
+                              if (widget.partner != null) ...[
+                                const SizedBox(height: 8),
+                                _buildDealerInfoBadge(),
+                              ],
                               const SizedBox(height: 14),
                               _buildSearchField(),
+                              if (_products.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                _buildVehicleTypeFilter(),
+                              ],
                               const SizedBox(height: 16),
-                              if (filteredList.isEmpty)
+                              if (_isLoading)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 40),
+                                  child: Center(
+                                    child: CircularProgressIndicator(
+                                      color: _royalBlue,
+                                    ),
+                                  ),
+                                )
+                              else if (filteredList.isEmpty)
                                 _buildEmptyState()
                               else
                                 ...filteredList.map(
@@ -156,6 +335,89 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
               ],
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDealerInfoBadge() {
+    final partner = widget.partner!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEAF5FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _cardBorderBlue, width: 1.2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.domain_rounded,
+            color: _royalBlue,
+            size: 16,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              'Dealer: ${partner.businessName} (ID: ${partner.id})',
+              style: const TextStyle(
+                color: _royalBlue,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVehicleTypeFilter() {
+    return Row(
+      children: [
+        _buildFilterChip('All'),
+        const SizedBox(width: 8),
+        _buildFilterChip('2-Wheeler'),
+        const SizedBox(width: 8),
+        _buildFilterChip('3-Wheeler'),
+      ],
+    );
+  }
+
+  Widget _buildFilterChip(String label) {
+    final isSelected = _selectedVehicleType == label;
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _selectedVehicleType = label;
+            });
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: isSelected ? _royalBlue : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected ? _royalBlue : _cardBorderBlue,
+                width: 1.2,
+              ),
+            ),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: isSelected ? Colors.white : _royalBlue,
+                fontSize: 12.5,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -248,12 +510,16 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
   }
 
   Widget _buildEmptyState() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 40),
+    final message = _products.isEmpty
+        ? 'Product ordering is not available yet.'
+        : 'No products match your search.';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40),
       child: Center(
         child: Text(
-          'Product ordering is not available yet.',
-          style: TextStyle(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
             color: _royalBlue,
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -263,7 +529,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
     );
   }
 
-  Widget _buildProductCard(StaffProductItem product) {
+  Widget _buildProductCard(CatalogueProduct product) {
     final qty = _quantities[product.id] ?? 0;
 
     return Container(
@@ -292,9 +558,22 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
                 color: Color(0xFFD4F0FF),
               ),
               child: ClipOval(
-                child: CustomPaint(
-                  painter: product.illustrationPainter,
-                ),
+                child: product.imageUrl != null &&
+                        product.imageUrl!.trim().isNotEmpty
+                    ? Image.network(
+                        product.imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.inventory_2_outlined,
+                          color: _royalBlue,
+                          size: 26,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.inventory_2_outlined,
+                        color: _royalBlue,
+                        size: 26,
+                      ),
               ),
             ),
             const SizedBox(width: 14),
@@ -314,7 +593,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'MRP: ₹ ${product.mrp.toStringAsFixed(2)}',
+                    'MRP: ${product.displayPrice}',
                     style: const TextStyle(
                       color: _blueAccent,
                       fontSize: 13,
@@ -333,7 +612,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
     );
   }
 
-  Widget _buildQuantityControl(String productId, int quantity) {
+  Widget _buildQuantityControl(int productId, int quantity) {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFF0F7FF),
@@ -426,13 +705,7 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const StaffOrderSummaryScreen(),
-              ),
-            );
-          },
+          onTap: _onContinuePressed,
           borderRadius: BorderRadius.circular(16),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,

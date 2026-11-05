@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -14,18 +14,20 @@ from app.models import (
     OrderItem,
     OrderStatusHistory,
     PartnerProfile,
+    Product,
     StaffPartnerAssignment,
     StaffPaymentRecord,
     StaffProfile,
     User,
 )
-from app.routers.orders import _build_order_response
+from app.routers.orders import _build_order_response, _generate_order_number
 from app.schemas.auth import StaffUserResponse
 from app.schemas.orders import OrderResponse
 from app.schemas.staff import (
     StaffAssignedPartnerResponse,
     StaffDashboardStatsResponse,
     StaffOrderActionRequest,
+    StaffOrderCreateRequest,
 )
 
 router = APIRouter(prefix="/api/v1/staff", tags=["staff"])
@@ -361,3 +363,155 @@ def reject_order(
     db.commit()
 
     return _build_order_response(order)
+
+
+@router.post("/orders", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+def create_staff_order(
+    payload: StaffOrderCreateRequest,
+    idempotency_key_header: Optional[str] = Header(None, alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+    current_staff: User = Depends(require_staff),
+) -> OrderResponse:
+    """
+    Creates an order on behalf of an assigned Partner/Dealer:
+    1. Verifies that the staff member is actively assigned to the target partner.
+    2. Validates product availability and server-side pricing.
+    3. Persists the order against the exact Partner ID.
+    4. Sets order status to 'pending_approval'.
+    5. Records audit trail in order status history.
+    """
+    if not payload.items:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Order must contain at least one item.",
+        )
+
+    # 1. Partner exists and is active partner
+    partner = db.get(User, payload.partner_id)
+    if partner is None or partner.role != "partner" or not partner.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Partner not found or inactive.",
+        )
+
+    # 2. Verify staff assignment to partner
+    is_assigned = db.scalar(
+        select(func.count(StaffPartnerAssignment.id)).where(
+            StaffPartnerAssignment.staff_id == current_staff.id,
+            StaffPartnerAssignment.partner_id == payload.partner_id,
+            StaffPartnerAssignment.is_active.is_(True),
+        )
+    )
+    if not is_assigned:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You are not assigned to this partner's account.",
+        )
+
+    # 3. Idempotency Check
+    raw_idempotency_key = payload.idempotency_key or idempotency_key_header
+    idempotency_key = raw_idempotency_key.strip() if raw_idempotency_key else None
+
+    if idempotency_key:
+        tag = f"[idempotency_key:{idempotency_key}]"
+        existing_order = db.scalars(
+            select(Order)
+            .options(
+                selectinload(Order.partner).selectinload(User.partner_profile),
+                selectinload(Order.approver),
+                selectinload(Order.items).selectinload(OrderItem.product),
+            )
+            .where(
+                Order.partner_id == payload.partner_id,
+                Order.notes.contains(tag),
+            )
+        ).first()
+
+        if existing_order:
+            return _build_order_response(existing_order)
+
+    # 4. Fetch products and validate prices server-side
+    product_ids = [item.product_id for item in payload.items]
+    products = db.scalars(select(Product).where(Product.id.in_(product_ids))).all()
+    products_by_id = {p.id: p for p in products}
+
+    order_items_to_create: list[OrderItem] = []
+
+    for item in payload.items:
+        if item.quantity <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Item quantity must be greater than zero for product ID {item.product_id}.",
+            )
+
+        product = products_by_id.get(item.product_id)
+        if product is None or not product.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Product ID {item.product_id} is unavailable or not found.",
+            )
+
+        if product.price is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Product '{product.name}' (Code: {product.product_code}) has no valid price. "
+                    "Cannot place order until pricing is configured by Admin."
+                ),
+            )
+
+        order_items_to_create.append(
+            OrderItem(
+                product_id=product.id,
+                quantity=item.quantity,
+                unit_price=product.price,
+            )
+        )
+
+    # 5. Build order record
+    notes_parts = []
+    if payload.notes and payload.notes.strip():
+        notes_parts.append(payload.notes.strip())
+    notes_parts.append(f"[Created by Staff: {current_staff.name} (ID: {current_staff.id})]")
+    if idempotency_key:
+        notes_parts.append(f"[idempotency_key:{idempotency_key}]")
+    full_notes = "\n".join(notes_parts)
+
+    order_number = _generate_order_number(db)
+    new_order = Order(
+        order_number=order_number,
+        partner_id=payload.partner_id,
+        status="pending_approval",
+        notes=full_notes,
+    )
+    db.add(new_order)
+    db.flush()
+
+    for item in order_items_to_create:
+        item.order_id = new_order.id
+        db.add(item)
+
+    # 6. Status history record
+    history_entry = OrderStatusHistory(
+        order_id=new_order.id,
+        old_status=None,
+        new_status="pending_approval",
+        changed_by=current_staff.id,
+        remarks=f"Order created by Staff {current_staff.name} for Partner {partner.name}",
+    )
+    db.add(history_entry)
+
+    db.commit()
+
+    # 7. Reload with full relations
+    saved_order = db.scalars(
+        select(Order)
+        .options(
+            selectinload(Order.partner).selectinload(User.partner_profile),
+            selectinload(Order.approver),
+            selectinload(Order.items).selectinload(OrderItem.product),
+        )
+        .where(Order.id == new_order.id)
+    ).first()
+
+    return _build_order_response(saved_order)

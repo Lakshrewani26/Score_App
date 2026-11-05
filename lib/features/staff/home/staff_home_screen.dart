@@ -1,19 +1,29 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/models/catalogue_models.dart';
 import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
-import '../profile/staff_profile_screen.dart';
+import '../catalogue/staff_three_wheeler_catalogue_screen.dart';
+import '../catalogue/staff_two_wheeler_catalogue_screen.dart';
 import '../dealers/staff_dealers_associated_screen.dart';
 import '../orders/staff_order_status_screen.dart';
 import '../payment_status/staff_payment_status_screen.dart';
 import '../points_history/staff_points_history_screen.dart';
+import '../profile/staff_profile_screen.dart';
+import 'services/staff_new_arrivals_service.dart';
 
 class StaffHomeScreen extends StatefulWidget {
-  const StaffHomeScreen({super.key, this.sessionManager, this.api});
+  const StaffHomeScreen({
+    super.key,
+    this.sessionManager,
+    this.api,
+    this.newArrivalsDataSource,
+  });
 
   final StaffSessionManager? sessionManager;
   final StaffApi? api;
+  final StaffNewArrivalsDataSource? newArrivalsDataSource;
 
   @override
   State<StaffHomeScreen> createState() => _StaffHomeScreenState();
@@ -21,20 +31,28 @@ class StaffHomeScreen extends StatefulWidget {
 
 class _StaffHomeScreenState extends State<StaffHomeScreen> {
   static const _royalBlue = Color(0xFF083FA5);
+  static const _cardBorderBlue = Color(0xFFCBEBFF);
 
   late final StaffSessionManager _sessionManager;
   late final StaffApi _api;
+  late final StaffNewArrivalsDataSource _newArrivalsDataSource;
   StaffDashboardStats? _stats;
+
+  List<CatalogueProduct> _newArrivals = [];
+  bool _isLoadingArrivals = true;
 
   String get _greeting =>
       'Welcome, ${_sessionManager.currentUser?.name ?? 'Staff'}';
   final String _subtitle = 'Thank you for being our valuable staff';
 
-  String get _dealersValue =>
+  @visibleForTesting
+  String get dealersValue =>
       _stats != null ? _stats!.dealersCount.toString() : '—';
-  String get _pendingOrdersValue =>
+  @visibleForTesting
+  String get pendingOrdersValue =>
       _stats != null ? _stats!.pendingOrdersCount.toString() : '—';
-  String get _pendingPaymentsValue =>
+  @visibleForTesting
+  String get pendingPaymentsValue =>
       _stats != null ? _stats!.pendingPaymentsCount.toString() : '—';
 
   @override
@@ -42,7 +60,10 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
     super.initState();
     _sessionManager = widget.sessionManager ?? StaffSessionManager.instance;
     _api = widget.api ?? StaffApi(sessionManager: _sessionManager);
+    _newArrivalsDataSource = widget.newArrivalsDataSource ??
+        const PlaceholderStaffNewArrivalsDataSource();
     _loadStats();
+    _loadNewArrivals();
   }
 
   Future<void> _loadStats() async {
@@ -54,6 +75,23 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
       });
     } catch (_) {
       // Fallback preserves '—' placeholder
+    }
+  }
+
+  Future<void> _loadNewArrivals() async {
+    try {
+      final items = await _newArrivalsDataSource.getNewArrivals();
+      if (!mounted) return;
+      setState(() {
+        _newArrivals = items;
+        _isLoadingArrivals = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _newArrivals = [];
+        _isLoadingArrivals = false;
+      });
     }
   }
 
@@ -85,37 +123,37 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              SizedBox(height: height * 0.055),
+                              const SizedBox(height: 14),
                               _buildHeaderRow(context, width),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 8),
                               Text(
                                 _greeting,
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
                                   color: _royalBlue,
-                                  fontSize: 32,
+                                  fontSize: 28,
                                   fontWeight: FontWeight.w800,
                                   height: 1.1,
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 4),
                               Text(
                                 _subtitle,
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
                                   color: _royalBlue,
-                                  fontSize: 16,
+                                  fontSize: 15,
                                   fontWeight: FontWeight.w600,
                                   height: 1.2,
                                 ),
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 8),
                               const _AccentBars(),
-                              const SizedBox(height: 16),
-                              _buildStatisticsCard(),
-                              const SizedBox(height: 16),
-                              _buildActionCardsGrid(context),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 14),
+                              _buildNewArrivalsSection(),
+                              const SizedBox(height: 14),
+                              _buildSixActionButtonsGrid(context),
+                              const SizedBox(height: 20),
                             ],
                           ),
                         ),
@@ -132,288 +170,567 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
     );
   }
 
+  /// Centered logo with notification bell completely removed.
   Widget _buildHeaderRow(BuildContext context, double width) {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-              opacity: const AlwaysStoppedAnimation(0.96),
-            ),
-          ),
-          Positioned(
-            right: 0,
-            top: 0,
-            bottom: 0,
-            child: Center(
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.transparent,
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    const Icon(
-                      Icons.notifications_none_rounded,
-                      color: _royalBlue,
-                      size: 32,
-                    ),
-                    Positioned(
-                      top: 5,
-                      right: 6,
-                      child: Container(
-                        width: 9,
-                        height: 9,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFFF1725),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
+    return Center(
+      child: Image.asset(
+        'assets/images/app_logo_blended.png',
+        width: math.min(width * 0.44, 150.0),
+        fit: BoxFit.contain,
+        opacity: const AlwaysStoppedAnimation(0.96),
       ),
     );
   }
 
-  Widget _buildStatisticsCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFCBEBFF), width: 1.5),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1F0755B5),
-            blurRadius: 18,
-            spreadRadius: 1,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(
+  Widget _buildNewArrivalsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 60,
-              child: CustomPaint(
-                painter: _SummaryCardBottomWavePainter(),
+            const Expanded(
+              child: Text(
+                'New Arrivals',
+                style: TextStyle(
+                  color: _royalBlue,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.2,
+                ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-              child: IntrinsicHeight(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _buildSummaryColumn(
-                        iconWidget: const Icon(
-                          Icons.group_rounded,
-                          color: Color(0xFF0755C7),
-                          size: 26,
-                        ),
-                        bgColor: const Color(0xFFD4F0FF),
-                        label: 'Dealers',
-                        value: _dealersValue,
-                      ),
-                    ),
-                    const _VerticalDivider(),
-                    Expanded(
-                      child: _buildSummaryColumn(
-                        iconWidget: const _DocumentClockIcon(
-                          color: Color(0xFF00897B),
-                          size: 26,
-                        ),
-                        bgColor: const Color(0xFFD2F5EC),
-                        label: 'Pending Orders',
-                        value: _pendingOrdersValue,
-                      ),
-                    ),
-                    const _VerticalDivider(),
-                    Expanded(
-                      child: _buildSummaryColumn(
-                        iconWidget: const _WalletRupeeIcon(
-                          color: Color(0xFF673AB7),
-                          size: 26,
-                        ),
-                        bgColor: const Color(0xFFEADBFF),
-                        label: 'Pending Payments',
-                        value: _pendingPaymentsValue,
-                      ),
-                    ),
-                  ],
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF5FF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _cardBorderBlue, width: 1),
+              ),
+              child: const Text(
+                'Newly Added',
+                style: TextStyle(
+                  color: _royalBlue,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildSummaryColumn({
-    required Widget iconWidget,
-    required Color bgColor,
-    required String label,
-    required String value,
-  }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: bgColor,
-          ),
-          child: Center(child: iconWidget),
-        ),
         const SizedBox(height: 8),
-        SizedBox(
-          height: 34,
-          child: Center(
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
+        if (_isLoadingArrivals)
+          Container(
+            height: 165,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: _cardBorderBlue, width: 1.2),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(
                 color: _royalBlue,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                height: 1.15,
+                strokeWidth: 2.5,
               ),
             ),
+          )
+        else if (_newArrivals.isEmpty)
+          _buildNewArrivalsEmptyState()
+        else
+          SizedBox(
+            height: 165,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: _newArrivals.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                return _buildNewArrivalCard(_newArrivals[index]);
+              },
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: _royalBlue,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            height: 1.1,
-          ),
-        ),
       ],
     );
   }
 
-  Widget _buildActionCardsGrid(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            _buildActionCard(
-              context: context,
-              iconWidget: const Icon(
-                Icons.handshake_rounded,
-                color: Color(0xFF0755C7),
-                size: 28,
-              ),
-              iconBgColor: const Color(0xFFD4F0FF),
-              label: 'Dealers\nAssociated',
-              accentColor: const Color(0xFF00B0FF),
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => StaffDealersAssociatedScreen(
-                      sessionManager: _sessionManager,
-                    ),
-                  ),
-                );
-                if (mounted) {
-                  _loadStats();
-                }
-              },
+  Widget _buildNewArrivalsEmptyState() {
+    return Container(
+      width: double.infinity,
+      height: 120,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _cardBorderBlue, width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x140755B5),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Icon(
+              Icons.inventory_2_outlined,
+              color: Color(0xFF8A98A8),
+              size: 28,
             ),
-            const SizedBox(width: 14),
-            _buildActionCard(
-              context: context,
-              iconWidget: const _DocumentClockIcon(
-                color: Color(0xFFE53935),
-                size: 28,
+            SizedBox(height: 6),
+            Text(
+              'No new arrivals available at this time.',
+              style: TextStyle(
+                color: Color(0xFF4A6B94),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
-              iconBgColor: const Color(0xFFFFDDE2),
-              label: 'Order\nStatus',
-              accentColor: const Color(0xFFFF4081),
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => StaffOrderStatusScreen(
-                      api: _api,
-                      sessionManager: _sessionManager,
-                    ),
-                  ),
-                );
-                if (mounted) {
-                  _loadStats();
-                }
-              },
             ),
           ],
         ),
-        const SizedBox(height: 14),
+      ),
+    );
+  }
+
+  Widget _buildNewArrivalCard(CatalogueProduct product) {
+    return Container(
+      width: 136,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _cardBorderBlue, width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x180755B5),
+            blurRadius: 10,
+            spreadRadius: 0,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _showProductDetailsSheet(product),
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 40,
+                  child: CustomPaint(
+                    painter: _ProductCardWavePainter(),
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _buildProductImageOrPlaceholder(product.imageUrl),
+                      const SizedBox(height: 3),
+                      Text(
+                        product.name,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _royalBlue,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          height: 1.15,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEAF5FF),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                product.displayPrice,
+                                style: const TextStyle(
+                                  color: _royalBlue,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                            const Text(
+                              'MRP',
+                              style: TextStyle(
+                                color: Color(0xFF5B7898),
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductImageOrPlaceholder(String? imageUrl) {
+    final hasValidImage = imageUrl != null && imageUrl.trim().isNotEmpty;
+    if (!hasValidImage) {
+      return Container(
+        width: 62,
+        height: 62,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Color(0xFFDCEBFE),
+        ),
+        child: const Icon(
+          Icons.inventory_2_outlined,
+          color: _royalBlue,
+          size: 28,
+        ),
+      );
+    }
+
+    return Container(
+      width: 62,
+      height: 62,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Color(0xFFDCEBFE),
+      ),
+      child: ClipOval(
+        child: Image.network(
+          imageUrl,
+          width: 62,
+          height: 62,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return const Icon(
+              Icons.image_not_supported_rounded,
+              color: _royalBlue,
+              size: 26,
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showProductDetailsSheet(CatalogueProduct product) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildProductImageOrPlaceholder(product.imageUrl),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          product.name,
+                          style: const TextStyle(
+                            color: _royalBlue,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Code: ${product.productCode}',
+                          style: const TextStyle(
+                            color: Color(0xFF5B7898),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEAF5FF),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            product.vehicleType,
+                            style: const TextStyle(
+                              color: _royalBlue,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(color: Color(0xFFE2E8F0)),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'MRP',
+                    style: TextStyle(
+                      color: Color(0xFF5B7898),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    product.displayPrice,
+                    style: const TextStyle(
+                      color: _royalBlue,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              if (product.description != null &&
+                  product.description!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  product.description!,
+                  style: const TextStyle(
+                    color: Color(0xFF4A6B94),
+                    fontSize: 13.5,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _royalBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: const Text(
+                    'Close',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSixActionButtonsGrid(BuildContext context) {
+    return Column(
+      children: [
+        // Row 1: 2W and 3W
         Row(
           children: [
-            _buildActionCard(
-              context: context,
-              iconWidget: const _WalletRupeeIcon(
-                color: Color(0xFF673AB7),
-                size: 28,
+            Expanded(
+              child: _buildActionCard(
+                context: context,
+                iconWidget: const Icon(
+                  Icons.two_wheeler_rounded,
+                  color: Color(0xFF0755C7),
+                  size: 26,
+                ),
+                iconBgColor: const Color(0xFFD4F0FF),
+                label: '2W',
+                accentColor: const Color(0xFF00B0FF),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const StaffTwoWheelerCatalogueScreen(),
+                    ),
+                  );
+                },
               ),
-              iconBgColor: const Color(0xFFEADBFF),
-              label: 'Payment\nStatus',
-              accentColor: const Color(0xFF9C27B0),
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const StaffPaymentStatusScreen(),
-                  ),
-                );
-                if (mounted) {
-                  _loadStats();
-                }
-              },
             ),
-            const SizedBox(width: 14),
-            _buildActionCard(
-              context: context,
-              iconWidget: const _DocumentHistoryIcon(
-                color: Color(0xFF00897B),
-                size: 28,
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildActionCard(
+                context: context,
+                iconWidget: const Icon(
+                  Icons.local_shipping_rounded,
+                  color: Color(0xFFD32F2F),
+                  size: 26,
+                ),
+                iconBgColor: const Color(0xFFFFEBEE),
+                label: '3W',
+                accentColor: const Color(0xFFFF5252),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const StaffThreeWheelerCatalogueScreen(),
+                    ),
+                  );
+                },
               ),
-              iconBgColor: const Color(0xFFD2F5EC),
-              label: 'Points\nHistory',
-              accentColor: const Color(0xFF00B0FF),
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const StaffPointsHistoryScreen(),
-                  ),
-                );
-                if (mounted) {
-                  _loadStats();
-                }
-              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Row 2: Dealers Associated and Order Status
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionCard(
+                context: context,
+                iconWidget: const Icon(
+                  Icons.handshake_rounded,
+                  color: Color(0xFF0755C7),
+                  size: 26,
+                ),
+                iconBgColor: const Color(0xFFD4F0FF),
+                label: 'Dealers\nAssociated',
+                accentColor: const Color(0xFF00B0FF),
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => StaffDealersAssociatedScreen(
+                        sessionManager: _sessionManager,
+                      ),
+                    ),
+                  );
+                  if (mounted) {
+                    _loadStats();
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildActionCard(
+                context: context,
+                iconWidget: const _DocumentClockIcon(
+                  color: Color(0xFFE53935),
+                  size: 26,
+                ),
+                iconBgColor: const Color(0xFFFFDDE2),
+                label: 'Order\nStatus',
+                accentColor: const Color(0xFFFF4081),
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => StaffOrderStatusScreen(
+                        api: _api,
+                        sessionManager: _sessionManager,
+                      ),
+                    ),
+                  );
+                  if (mounted) {
+                    _loadStats();
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // Row 3: Payment Status and Points History
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionCard(
+                context: context,
+                iconWidget: const _WalletRupeeIcon(
+                  color: Color(0xFF673AB7),
+                  size: 26,
+                ),
+                iconBgColor: const Color(0xFFEADBFF),
+                label: 'Payment\nStatus',
+                accentColor: const Color(0xFF9C27B0),
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const StaffPaymentStatusScreen(),
+                    ),
+                  );
+                  if (mounted) {
+                    _loadStats();
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildActionCard(
+                context: context,
+                iconWidget: const _DocumentHistoryIcon(
+                  color: Color(0xFF00897B),
+                  size: 26,
+                ),
+                iconBgColor: const Color(0xFFD2F5EC),
+                label: 'Points\nHistory',
+                accentColor: const Color(0xFF14B8A6),
+                onTap: () async {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const StaffPointsHistoryScreen(),
+                    ),
+                  );
+                  if (mounted) {
+                    _loadStats();
+                  }
+                },
+              ),
             ),
           ],
         ),
@@ -429,23 +746,25 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
     required Color accentColor,
     required VoidCallback onTap,
   }) {
-    return Expanded(
+    return Semantics(
+      button: true,
+      label: label.replaceAll('\n', ' '),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(18),
           child: Container(
-            height: 142,
+            height: 114,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFCBEBFF), width: 1.4),
+              border: Border.all(color: _cardBorderBlue, width: 1.3),
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x140755B5),
-                  blurRadius: 12,
-                  offset: Offset(0, 4),
+                  blurRadius: 8,
+                  offset: Offset(0, 3),
                 ),
               ],
             ),
@@ -457,50 +776,54 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    height: 38,
+                    height: 30,
                     child: CustomPaint(
                       painter: _CardAccentWavePainter(color: accentColor),
                     ),
                   ),
                   Positioned(
-                    right: 10,
+                    right: 6,
                     top: 0,
                     bottom: 0,
                     child: Center(
                       child: Icon(
                         Icons.chevron_right_rounded,
-                        color: const Color(0xFF083FA5),
-                        size: 24,
+                        color: const Color(0xFF083FA5).withAlpha(160),
+                        size: 18,
                       ),
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 12, 28, 12),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: iconBgColor,
+                    padding: const EdgeInsets.fromLTRB(6, 8, 16, 8),
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: iconBgColor,
+                            ),
+                            child: Center(child: iconWidget),
                           ),
-                          child: Center(child: iconWidget),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          label,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: _royalBlue,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            height: 1.15,
+                          const SizedBox(height: 6),
+                          Text(
+                            label,
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _royalBlue,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              height: 1.15,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -724,19 +1047,6 @@ class _DocumentHistoryIcon extends StatelessWidget {
   }
 }
 
-class _VerticalDivider extends StatelessWidget {
-  const _VerticalDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 1.2,
-      height: 65,
-      color: const Color(0xFFD4EBF9),
-    );
-  }
-}
-
 class _AccentBars extends StatelessWidget {
   const _AccentBars();
 
@@ -831,55 +1141,32 @@ class _CardAccentWavePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _SummaryCardBottomWavePainter extends CustomPainter {
+class _ProductCardWavePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final wavePaint1 = Paint()
-      ..color = const Color(0xFFD0F0FF).withAlpha(120)
+    final wavePaint = Paint()
+      ..color = const Color(0xFFDCEBFE).withAlpha(120)
       ..style = PaintingStyle.fill;
 
-    final wavePaint2 = Paint()
-      ..color = const Color(0xFFBCE6FF).withAlpha(160)
-      ..style = PaintingStyle.fill;
-
-    final path1 = Path()
-      ..moveTo(0, size.height * 0.6)
+    final path = Path()
+      ..moveTo(0, size.height * 0.4)
       ..quadraticBezierTo(
-        size.width * 0.3,
-        size.height * 0.3,
-        size.width * 0.65,
+        size.width * 0.35,
+        size.height * 0.1,
+        size.width * 0.7,
         size.height * 0.5,
       )
       ..quadraticBezierTo(
-        size.width * 0.85,
-        size.height * 0.65,
-        size.width,
-        size.height * 0.45,
-      )
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-
-    final path2 = Path()
-      ..moveTo(0, size.height * 0.75)
-      ..quadraticBezierTo(
-        size.width * 0.35,
-        size.height * 0.55,
-        size.width * 0.7,
-        size.height * 0.7,
-      )
-      ..quadraticBezierTo(
         size.width * 0.88,
-        size.height * 0.78,
+        size.height * 0.7,
         size.width,
-        size.height * 0.65,
+        size.height * 0.4,
       )
       ..lineTo(size.width, size.height)
       ..lineTo(0, size.height)
       ..close();
 
-    canvas.drawPath(path1, wavePaint1);
-    canvas.drawPath(path2, wavePaint2);
+    canvas.drawPath(path, wavePaint);
   }
 
   @override

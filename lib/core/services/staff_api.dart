@@ -383,6 +383,53 @@ class StaffApi {
     }
   }
 
+  Future<PartnerOrderResponse> createOrder({
+    required int partnerId,
+    required List<CartItem> items,
+    String? notes,
+    String? idempotencyKey,
+  }) async {
+    final token = await _getToken();
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/v1/staff/orders'),
+        headers: {
+          ..._authHeaders(token),
+          'Content-Type': 'application/json',
+          if (idempotencyKey != null && idempotencyKey.isNotEmpty)
+            'Idempotency-Key': idempotencyKey,
+        },
+        body: jsonEncode({
+          'partner_id': partnerId,
+          'items': items
+              .map((item) => {
+                    'product_id': item.product.id,
+                    'quantity': item.quantity,
+                  })
+              .toList(),
+          if (notes != null && notes.isNotEmpty) 'notes': notes,
+          if (idempotencyKey != null && idempotencyKey.isNotEmpty)
+            'idempotency_key': idempotencyKey,
+        }),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to create dealer order');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return PartnerOrderResponse.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
   Future<String> _getToken() async {
     final token = await _sessionManager.getToken();
     if (token == null || token.isEmpty) {

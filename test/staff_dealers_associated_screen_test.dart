@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:score_app/core/services/staff_api.dart';
 import 'package:score_app/features/staff/dealers/staff_dealers_associated_screen.dart';
 import 'package:score_app/features/staff/home/staff_home_screen.dart';
+import 'package:score_app/features/staff/orders/staff_orders_screen.dart';
 import 'package:score_app/features/staff/profile/staff_profile_screen.dart';
 
 class _FakeStaffApi extends StaffApi {
@@ -133,6 +134,30 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Nisha Traders'), findsOneWidget);
       expect(api.requests, 2);
+    });
+
+    testWidgets('selecting a Dealer opens StaffOrdersScreen with dealer ID and details',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final api = _FakeStaffApi(partners: const [_assignedPartner]);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StaffDealersAssociatedScreen(api: api),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Nisha Traders'), findsOneWidget);
+      await tester.tap(find.text('Nisha Traders'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(StaffOrdersScreen), findsOneWidget);
+      expect(find.text('Dealer: Nisha Traders (ID: 21)'), findsOneWidget);
+      expect(find.text('Select products and quantity'), findsOneWidget);
     });
 
     testWidgets('Home bottom navigation works', (tester) async {

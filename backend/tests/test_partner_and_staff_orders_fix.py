@@ -552,3 +552,119 @@ def test_partner_order_creation_visible_to_assigned_staff_and_access_controls(
     history = db_session.query(OrderStatusHistory).filter_by(order_id=order_id).all()
     assert history[-1].new_status == "rejected"
     assert history[-1].remarks == "Insufficient stock in warehouse"
+
+
+def test_staff_can_create_order_for_assigned_partner_and_ownership(
+    client: TestClient, db_session: Session
+) -> None:
+    staff, staff_token = _create_staff(db_session, name="Staff Creator", mobile="9823333331", staff_code="STF-09")
+    partner, partner_token = _create_partner(db_session, name="Assigned Dealer", mobile="9812222221", business="Apex Spares")
+    other_partner, other_partner_token = _create_partner(db_session, name="Other Dealer", mobile="9812222222", business="Delta Motors")
+
+    # Assign partner to staff
+    db_session.add(StaffPartnerAssignment(staff_id=staff.id, partner_id=partner.id, is_active=True))
+    db_session.commit()
+
+    # Create active product with price
+    cat = ProductCategory(name="Electrical Parts", is_active=True)
+    db_session.add(cat)
+    db_session.flush()
+
+    prod = Product(
+        name="Heavy Duty Starter",
+        product_code="STAFF-ORD-01",
+        category_id=cat.id,
+        vehicle_type="2-Wheeler",
+        price=Decimal("1250.00"),
+        is_active=True,
+    )
+    db_session.add(prod)
+    db_session.commit()
+
+    # 1. Staff creates order on behalf of assigned partner
+    create_payload = {
+        "partner_id": partner.id,
+        "items": [{"product_id": prod.id, "quantity": 4}],
+        "notes": "Urgent shop restock",
+    }
+    create_res = client.post(
+        "/api/v1/staff/orders",
+        headers={"Authorization": f"Bearer {staff_token}"},
+        json=create_payload,
+    )
+    assert create_res.status_code == 201
+    created_order = create_res.json()
+    order_id = created_order["id"]
+    assert created_order["partner_id"] == partner.id
+    assert created_order["status"] == "pending_approval"
+    assert created_order["total_quantity"] == 4
+    assert Decimal(str(created_order["order_total"])) == Decimal("5000.00")
+    assert "Urgent shop restock" in created_order["notes"]
+    assert "Created by Staff" in created_order["notes"]
+
+    # 2. Verify order appears in Partner's My Orders
+    partner_orders_res = client.get(
+        "/api/v1/orders",
+        headers={"Authorization": f"Bearer {partner_token}"},
+    )
+    assert partner_orders_res.status_code == 200
+    partner_orders = partner_orders_res.json()
+    partner_order_ids = [o["id"] for o in partner_orders]
+    assert order_id in partner_order_ids
+    matched = next(o for o in partner_orders if o["id"] == order_id)
+    assert matched["partner_id"] == partner.id
+    assert matched["total_quantity"] == 4
+
+    # 3. Verify order does NOT appear in other unassigned Partner's orders
+    other_orders_res = client.get(
+        "/api/v1/orders",
+        headers={"Authorization": f"Bearer {other_partner_token}"},
+    )
+    assert other_orders_res.status_code == 200
+    other_order_ids = [o["id"] for o in other_orders_res.json()]
+    assert order_id not in other_order_ids
+
+    # 4. Verify order appears in assigned Staff's orders list
+    staff_orders_res = client.get(
+        "/api/v1/staff/orders",
+        headers={"Authorization": f"Bearer {staff_token}"},
+    )
+    assert staff_orders_res.status_code == 200
+    staff_order_ids = [o["id"] for o in staff_orders_res.json()]
+    assert order_id in staff_order_ids
+
+
+def test_staff_cannot_create_order_for_unassigned_partner(
+    client: TestClient, db_session: Session
+) -> None:
+    staff, staff_token = _create_staff(db_session, name="Staff Rogue", mobile="9823333332", staff_code="STF-10")
+    unassigned_partner, _ = _create_partner(db_session, name="Unassigned Shop", mobile="9812222223", business="Unassigned Spares")
+
+    # Create active product
+    cat = ProductCategory(name="Brakes", is_active=True)
+    db_session.add(cat)
+    db_session.flush()
+
+    prod = Product(
+        name="Disc Brake Pad",
+        product_code="STAFF-ORD-02",
+        category_id=cat.id,
+        vehicle_type="2-Wheeler",
+        price=Decimal("450.00"),
+        is_active=True,
+    )
+    db_session.add(prod)
+    db_session.commit()
+
+    # Attempt to create order for unassigned partner
+    payload = {
+        "partner_id": unassigned_partner.id,
+        "items": [{"product_id": prod.id, "quantity": 2}],
+    }
+    res = client.post(
+        "/api/v1/staff/orders",
+        headers={"Authorization": f"Bearer {staff_token}"},
+        json=payload,
+    )
+    assert res.status_code == 403
+    assert "Access denied: You are not assigned to this partner's account." in res.json()["detail"]

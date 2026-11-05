@@ -6,6 +6,9 @@ import 'package:score_app/app/app.dart';
 import 'package:score_app/core/services/staff_api.dart';
 import 'package:score_app/features/customer/login/customer_login_screen.dart';
 import 'package:score_app/features/partner/login/partner_login_screen.dart';
+import 'package:score_app/features/staff/catalogue/staff_three_wheeler_catalogue_screen.dart';
+import 'package:score_app/features/staff/catalogue/staff_two_wheeler_catalogue_screen.dart';
+import 'package:score_app/features/staff/dealers/staff_dealers_associated_screen.dart';
 import 'package:score_app/features/staff/home/staff_home_screen.dart';
 import 'package:score_app/features/staff/profile/staff_profile_screen.dart';
 import 'package:score_app/features/staff/login/staff_login_screen.dart';
@@ -15,7 +18,7 @@ import 'package:score_app/features/staff/points_history/staff_points_history_scr
 
 void main() {
   group('StaffHomeScreen Tests', () {
-    testWidgets('renders StaffHomeScreen without invented dashboard totals',
+    testWidgets('renders redesigned StaffHomeScreen with header, New Arrivals, and 6 action buttons',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
@@ -29,46 +32,124 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 1. No unverified staff identity or totals are shown.
+      // 1. Header: Authenticated staff greeting is displayed.
       expect(find.text('Welcome, Staff'), findsOneWidget);
-
-      // 2. "Thank you for being our valuable staff" is displayed.
       expect(
           find.text('Thank you for being our valuable staff'), findsOneWidget);
 
-      // 3. "Dealers" is displayed.
-      expect(find.text('Dealers'), findsOneWidget);
+      // 2. Header: Centered logo is present.
+      expect(find.byType(Image), findsWidgets);
 
-      expect(find.text('—'), findsNWidgets(3));
+      // 3. Header: Notification bell icon and red badge are absent.
+      expect(find.byIcon(Icons.notifications), findsNothing);
+      expect(find.byIcon(Icons.notifications_outlined), findsNothing);
+      expect(find.byIcon(Icons.notifications_active), findsNothing);
+      expect(find.byIcon(Icons.notifications_none), findsNothing);
+      expect(find.byKey(const Key('staff_notification_badge')), findsNothing);
 
-      // 5. "Pending Orders" is displayed.
-      expect(find.text('Pending Orders'), findsOneWidget);
+      // 4. Old statistics cards (Dealers, Pending Orders, Pending Payments) are removed.
+      expect(find.text('Pending Orders'), findsNothing);
+      expect(find.text('Pending Payments'), findsNothing);
 
-      // 7. "Pending Payments" is displayed.
-      expect(find.text('Pending Payments'), findsOneWidget);
+      // 5. New Arrivals section is displayed.
+      expect(find.text('New Arrivals'), findsOneWidget);
+      expect(find.text('Newly Added'), findsOneWidget);
+      expect(find.text('Sample Starter Motor Pro'), findsOneWidget);
+      expect(find.text('Sample Disc Brake Assembly'), findsOneWidget);
+      expect(find.text('Sample Piston Kit Heavy Duty'), findsOneWidget);
 
-      // 9. "Dealers Associated" is displayed.
+      // 6. Exactly six action buttons are displayed.
+      expect(find.text('2W'), findsOneWidget);
+      expect(find.text('3W'), findsOneWidget);
       expect(find.text('Dealers\nAssociated'), findsOneWidget);
-
-      // 10. "Order Status" is displayed.
       expect(find.text('Order\nStatus'), findsOneWidget);
-
-      // 11. "Payment Status" is displayed.
       expect(find.text('Payment\nStatus'), findsOneWidget);
-
-      // 12. "Points History" is displayed.
       expect(find.text('Points\nHistory'), findsOneWidget);
 
-      // 13. Home navigation item is displayed.
+      // 7. Bottom navigation items are displayed.
       expect(find.text('Home'), findsOneWidget);
-
-      // 14. Profile navigation item is displayed.
       expect(find.text('Profile'), findsOneWidget);
 
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('tapping Dealers Associated action card displays SnackBar',
+    testWidgets('tapping New Arrivals card opens product details bottom sheet',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: StaffHomeScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final arrivalCard = find.text('Sample Starter Motor Pro');
+      expect(arrivalCard, findsOneWidget);
+      await tester.tap(arrivalCard);
+      await tester.pumpAndSettle();
+
+      // Product details sheet opens showing code, MRP, category/type, and Close button
+      expect(find.text('Code: SAMPLE-STAFF-NA-01'), findsOneWidget);
+      expect(find.text('MRP'), findsWidgets);
+      expect(find.text('₹ 1,550.00'), findsWidgets);
+      expect(find.text('Close'), findsOneWidget);
+
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(find.text('Code: SAMPLE-STAFF-NA-01'), findsNothing);
+    });
+
+    testWidgets('tapping 2W action button opens StaffTwoWheelerCatalogueScreen',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: StaffHomeScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final buttonFinder = find.text('2W');
+      await tester.ensureVisible(buttonFinder);
+      await tester.tap(buttonFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(StaffTwoWheelerCatalogueScreen), findsOneWidget);
+      expect(find.text('2-Wheeler'), findsWidgets);
+    });
+
+    testWidgets('tapping 3W action button opens StaffThreeWheelerCatalogueScreen',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: StaffHomeScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final buttonFinder = find.text('3W');
+      await tester.ensureVisible(buttonFinder);
+      await tester.tap(buttonFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(StaffThreeWheelerCatalogueScreen), findsOneWidget);
+      expect(find.text('3-Wheeler'), findsWidgets);
+    });
+
+    testWidgets('tapping Dealers Associated action card opens StaffDealersAssociatedScreen',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
@@ -86,7 +167,7 @@ void main() {
       await tester.ensureVisible(cardFinder);
       await tester.tap(cardFinder);
       await tester.pumpAndSettle();
-      expect(find.text('Dealers Associated'), findsOneWidget);
+      expect(find.byType(StaffDealersAssociatedScreen), findsOneWidget);
     });
 
     testWidgets('tapping Order Status action card opens StaffOrderStatusScreen',
