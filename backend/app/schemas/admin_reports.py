@@ -79,3 +79,79 @@ class AdminReportOverviewResponse(BaseModel):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Detailed Reports: Zone-wise, Area-wise, Staff-wise, Partner-wise
+# ---------------------------------------------------------------------------
+
+class ZoneWiseReportItem(BaseModel):
+    zone_id: Optional[int] = None
+    zone_name: str
+    partner_count: int = 0
+    order_count: int = 0
+    total_order_value: Decimal = Field(default_factory=lambda: Decimal("0.00"))
+    payment_count: int = 0
+    total_payments_collected: Decimal = Field(default_factory=lambda: Decimal("0.00"))
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ZoneWiseReportResponse(BaseModel):
+    items: list[ZoneWiseReportItem]
+    total_zones: int
+    total_orders: int
+    total_order_value: Decimal
+
+
+class AreaWiseReportItem(BaseModel):
+    area_name: str
+    partner_count: int = 0
+    order_count: int = 0
+    total_order_value: Decimal = Field(default_factory=lambda: Decimal("0.00"))
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AreaWiseReportResponse(BaseModel):
+    items: list[AreaWiseReportItem]
+    total_areas: int
+
+
+class StaffWiseReportItem(BaseModel):
+    staff_user_id: int
+    staff_id: str
+    name: str
+    mobile: str
+    assigned_partner_count: int = 0
+    order_count: int = 0
+    total_order_value: Decimal = Field(default_factory=lambda: Decimal("0.00"))
+    payment_count: int = 0
+    total_payments_collected: Decimal = Field(default_factory=lambda: Decimal("0.00"))
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class StaffWiseReportResponse(BaseModel):
+    items: list[StaffWiseReportItem]
+    total_staff: int
+
+
+class PartnerWiseReportItem(BaseModel):
+    partner_user_id: int
+    partner_name: str
+    business_name: str
+    mobile: str
+    partner_code: Optional[str] = None
+    zone_name: Optional[str] = None
+    order_count: int = 0
+    total_order_value: Decimal = Field(default_factory=lambda: Decimal("0.00"))
+    payment_count: int = 0
+    total_payments_made: Decimal = Field(default_factory=lambda: Decimal("0.00"))
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PartnerWiseReportResponse(BaseModel):
+    items: list[PartnerWiseReportItem]
+    total_partners: int

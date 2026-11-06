@@ -1,5 +1,63 @@
 export 'admin_catalogue_models.dart';
 
+class AdminZone {
+  final int id;
+  final String name;
+  final String? description;
+  final bool isActive;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+  final int partnerCount;
+
+  const AdminZone({
+    required this.id,
+    required this.name,
+    this.description,
+    required this.isActive,
+    this.createdAt,
+    this.updatedAt,
+    this.partnerCount = 0,
+  });
+
+  factory AdminZone.fromJson(Map<String, dynamic> json) {
+    return AdminZone(
+      id: json['id'] as int? ?? 0,
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String?,
+      isActive: json['is_active'] as bool? ?? true,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'].toString())
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'].toString())
+          : null,
+      partnerCount: json['partner_count'] as int? ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        if (description != null) 'description': description,
+        'is_active': isActive,
+        if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
+        if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
+        'partner_count': partnerCount,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AdminZone &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          isActive == other.isActive;
+
+  @override
+  int get hashCode => id.hashCode ^ name.hashCode ^ isActive.hashCode;
+}
+
 class AdminUser {
   final int id;
   final String name;
@@ -103,6 +161,8 @@ class AdminUserSummary {
   final String? businessName;
   final String? partnerCode;
   final String? staffId;
+  final int? zoneId;
+  final String? zoneName;
 
   const AdminUserSummary({
     required this.id,
@@ -114,6 +174,8 @@ class AdminUserSummary {
     this.businessName,
     this.partnerCode,
     this.staffId,
+    this.zoneId,
+    this.zoneName,
   });
 
   factory AdminUserSummary.fromJson(Map<String, dynamic> json) {
@@ -129,6 +191,8 @@ class AdminUserSummary {
       businessName: json['business_name'] as String?,
       partnerCode: json['partner_code'] as String?,
       staffId: json['staff_id'] as String?,
+      zoneId: json['zone_id'] as int?,
+      zoneName: json['zone_name'] as String?,
     );
   }
 
@@ -142,6 +206,8 @@ class AdminUserSummary {
         if (businessName != null) 'business_name': businessName,
         if (partnerCode != null) 'partner_code': partnerCode,
         if (staffId != null) 'staff_id': staffId,
+        if (zoneId != null) 'zone_id': zoneId,
+        if (zoneName != null) 'zone_name': zoneName,
       };
 
   @override
@@ -156,7 +222,9 @@ class AdminUserSummary {
           isActive == other.isActive &&
           businessName == other.businessName &&
           partnerCode == other.partnerCode &&
-          staffId == other.staffId;
+          staffId == other.staffId &&
+          zoneId == other.zoneId &&
+          zoneName == other.zoneName;
 
   @override
   int get hashCode =>
@@ -167,7 +235,9 @@ class AdminUserSummary {
       isActive.hashCode ^
       businessName.hashCode ^
       partnerCode.hashCode ^
-      staffId.hashCode;
+      staffId.hashCode ^
+      zoneId.hashCode ^
+      zoneName.hashCode;
 }
 
 class AdminStaffPartnerAssignment {
@@ -249,11 +319,15 @@ class PartnerProfileData {
   final String businessName;
   final String businessAddress;
   final String? partnerCode;
+  final int? zoneId;
+  final String? zoneName;
 
   const PartnerProfileData({
     required this.businessName,
     required this.businessAddress,
     this.partnerCode,
+    this.zoneId,
+    this.zoneName,
   });
 
   factory PartnerProfileData.fromJson(Map<String, dynamic> json) {
@@ -261,6 +335,8 @@ class PartnerProfileData {
       businessName: json['business_name'] as String? ?? '',
       businessAddress: json['business_address'] as String? ?? '',
       partnerCode: json['partner_code'] as String?,
+      zoneId: json['zone_id'] as int?,
+      zoneName: json['zone_name'] as String?,
     );
   }
 
@@ -268,6 +344,8 @@ class PartnerProfileData {
         'business_name': businessName,
         'business_address': businessAddress,
         if (partnerCode != null) 'partner_code': partnerCode,
+        if (zoneId != null) 'zone_id': zoneId,
+        if (zoneName != null) 'zone_name': zoneName,
       };
 }
 
@@ -299,6 +377,8 @@ class AdminUserDetail {
   final String? businessName;
   final String? partnerCode;
   final String? staffId;
+  final int? zoneId;
+  final String? zoneName;
   final CustomerProfileData? customerProfile;
   final PartnerProfileData? partnerProfile;
   final StaffProfileData? staffProfile;
@@ -313,6 +393,8 @@ class AdminUserDetail {
     this.businessName,
     this.partnerCode,
     this.staffId,
+    this.zoneId,
+    this.zoneName,
     this.customerProfile,
     this.partnerProfile,
     this.staffProfile,
@@ -331,6 +413,14 @@ class AdminUserDetail {
       businessName: json['business_name'] as String?,
       partnerCode: json['partner_code'] as String?,
       staffId: json['staff_id'] as String?,
+      zoneId: json['zone_id'] as int? ??
+          (json['partner_profile'] is Map<String, dynamic>
+              ? json['partner_profile']['zone_id'] as int?
+              : null),
+      zoneName: json['zone_name'] as String? ??
+          (json['partner_profile'] is Map<String, dynamic>
+              ? json['partner_profile']['zone_name'] as String?
+              : null),
       customerProfile: json['customer_profile'] is Map<String, dynamic>
           ? CustomerProfileData.fromJson(
               json['customer_profile'] as Map<String, dynamic>)
@@ -356,11 +446,27 @@ class AdminUserDetail {
         if (businessName != null) 'business_name': businessName,
         if (partnerCode != null) 'partner_code': partnerCode,
         if (staffId != null) 'staff_id': staffId,
+        if (zoneId != null) 'zone_id': zoneId,
+        if (zoneName != null) 'zone_name': zoneName,
         if (customerProfile != null)
           'customer_profile': customerProfile!.toJson(),
         if (partnerProfile != null) 'partner_profile': partnerProfile!.toJson(),
         if (staffProfile != null) 'staff_profile': staffProfile!.toJson(),
       };
+
+  AdminUserSummary toSummary() => AdminUserSummary(
+        id: id,
+        name: name,
+        mobile: mobile,
+        role: role,
+        isActive: isActive,
+        createdAt: createdAt,
+        businessName: businessName ?? partnerProfile?.businessName,
+        partnerCode: partnerCode ?? partnerProfile?.partnerCode,
+        staffId: staffId ?? staffProfile?.staffId,
+        zoneId: zoneId ?? partnerProfile?.zoneId,
+        zoneName: zoneName ?? partnerProfile?.zoneName,
+      );
 }
 
 class AdminPaginatedUsers {
@@ -400,6 +506,7 @@ class CreatePartnerPayload {
   final String businessName;
   final String businessAddress;
   final String? partnerCode;
+  final int? zoneId;
 
   const CreatePartnerPayload({
     required this.name,
@@ -408,6 +515,7 @@ class CreatePartnerPayload {
     required this.businessName,
     required this.businessAddress,
     this.partnerCode,
+    this.zoneId,
   });
 
   Map<String, dynamic> toJson() {
@@ -421,8 +529,107 @@ class CreatePartnerPayload {
     if (partnerCode != null && partnerCode!.trim().isNotEmpty) {
       map['partner_code'] = partnerCode!.trim();
     }
+    if (zoneId != null) {
+      map['zone_id'] = zoneId;
+    }
     return map;
   }
+}
+
+class CreateCustomerPayload {
+  final String name;
+  final String mobile;
+  final String password;
+  final String? state;
+  final String? city;
+  final String? segment;
+
+  const CreateCustomerPayload({
+    required this.name,
+    required this.mobile,
+    required this.password,
+    this.state,
+    this.city,
+    this.segment,
+  });
+
+  Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{
+      'name': name,
+      'mobile': mobile,
+      'password': password,
+    };
+    if (state != null && state!.trim().isNotEmpty) map['state'] = state!.trim();
+    if (city != null && city!.trim().isNotEmpty) map['city'] = city!.trim();
+    if (segment != null && segment!.trim().isNotEmpty) map['segment'] = segment!.trim();
+    return map;
+  }
+}
+
+class UpdateUserPayload {
+  final String? name;
+  final String? mobile;
+  final String? state;
+  final String? city;
+  final String? segment;
+  final String? businessName;
+  final String? businessAddress;
+  final String? partnerCode;
+  final int? zoneId;
+  final bool? clearZone;
+  final String? staffId;
+
+  const UpdateUserPayload({
+    this.name,
+    this.mobile,
+    this.state,
+    this.city,
+    this.segment,
+    this.businessName,
+    this.businessAddress,
+    this.partnerCode,
+    this.zoneId,
+    this.clearZone,
+    this.staffId,
+  });
+
+  Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{};
+    if (name != null) map['name'] = name;
+    if (mobile != null) map['mobile'] = mobile;
+    if (state != null) map['state'] = state;
+    if (city != null) map['city'] = city;
+    if (segment != null) map['segment'] = segment;
+    if (businessName != null) map['business_name'] = businessName;
+    if (businessAddress != null) map['business_address'] = businessAddress;
+    if (partnerCode != null) map['partner_code'] = partnerCode;
+    if (zoneId != null) map['zone_id'] = zoneId;
+    if (clearZone != null) map['clear_zone'] = clearZone;
+    if (staffId != null) map['staff_id'] = staffId;
+    return map;
+  }
+}
+
+class UserDeleteResult {
+  final String message;
+  final int userId;
+  final String action;
+
+  const UserDeleteResult({
+    required this.message,
+    required this.userId,
+    required this.action,
+  });
+
+  factory UserDeleteResult.fromJson(Map<String, dynamic> json) {
+    return UserDeleteResult(
+      message: json['message'] as String? ?? '',
+      userId: json['user_id'] as int? ?? 0,
+      action: json['action'] as String? ?? 'deactivated',
+    );
+  }
+
+  bool get wasDeactivated => action == 'deactivated';
 }
 
 class CreateStaffPayload {

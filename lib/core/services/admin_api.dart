@@ -344,11 +344,12 @@ class AdminApi {
     }
   }
 
-  /// List users with optional role, search, is_active, page, and page_size filters.
+  /// List users with optional role, search, is_active, zone_id, page, and page_size filters.
   Future<AdminPaginatedUsers> getUsers({
     String? role,
     String? search,
     bool? isActive,
+    int? zoneId,
     int page = 1,
     int pageSize = 20,
     String? token,
@@ -373,6 +374,9 @@ class AdminApi {
     }
     if (isActive != null) {
       queryParams['is_active'] = isActive.toString();
+    }
+    if (zoneId != null) {
+      queryParams['zone_id'] = zoneId.toString();
     }
 
     final url = _uri('/api/v1/admin/users', queryParams);
@@ -658,6 +662,330 @@ class AdminApi {
     }
 
     throw _parseError(response, 'Failed to update user status');
+  }
+
+  /// Create a Customer account atomically from Admin.
+  Future<AdminUserDetail> createCustomer({
+    required CreateCustomerPayload payload,
+    String? token,
+  }) async {
+    final activeToken = token ?? await _sessionManager.getToken();
+    if (activeToken == null || activeToken.isEmpty) {
+      throw AdminApiException(
+        'No authentication token provided',
+        statusCode: 401,
+      );
+    }
+
+    final url = _uri('/api/v1/admin/users/customers');
+    final response = await _sendWithTimeout(() => _client.post(
+          url,
+          headers: {
+            'Authorization': 'Bearer $activeToken',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode(payload.toJson()),
+        ));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('Expected JSON object');
+        }
+        return AdminUserDetail.fromJson(decoded);
+      } catch (e) {
+        throw AdminApiException(
+          'Invalid response received from server',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+
+    throw _parseError(response, 'Failed to create customer');
+  }
+
+  /// Update user account details (Customer, Partner, Staff).
+  Future<AdminUserDetail> updateUser({
+    required int userId,
+    required UpdateUserPayload payload,
+    String? token,
+  }) async {
+    final activeToken = token ?? await _sessionManager.getToken();
+    if (activeToken == null || activeToken.isEmpty) {
+      throw AdminApiException(
+        'No authentication token provided',
+        statusCode: 401,
+      );
+    }
+
+    final url = _uri('/api/v1/admin/users/$userId');
+    final response = await _sendWithTimeout(() => _client.put(
+          url,
+          headers: {
+            'Authorization': 'Bearer $activeToken',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode(payload.toJson()),
+        ));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('Expected JSON object');
+        }
+        return AdminUserDetail.fromJson(decoded);
+      } catch (e) {
+        throw AdminApiException(
+          'Invalid response received from server',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+
+    throw _parseError(response, 'Failed to update user');
+  }
+
+  /// Delete or safely deactivate a user account.
+  Future<UserDeleteResult> deleteUser({
+    required int userId,
+    String? token,
+  }) async {
+    final activeToken = token ?? await _sessionManager.getToken();
+    if (activeToken == null || activeToken.isEmpty) {
+      throw AdminApiException(
+        'No authentication token provided',
+        statusCode: 401,
+      );
+    }
+
+    final url = _uri('/api/v1/admin/users/$userId');
+    final response = await _sendWithTimeout(() => _client.delete(
+          url,
+          headers: {
+            'Authorization': 'Bearer $activeToken',
+            'Accept': 'application/json',
+          },
+        ));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('Expected JSON object');
+        }
+        return UserDeleteResult.fromJson(decoded);
+      } catch (e) {
+        throw AdminApiException(
+          'Invalid response received from server',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+
+    throw _parseError(response, 'Failed to delete user');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Zone Management Endpoints
+  // ---------------------------------------------------------------------------
+
+  /// List zones with optional status and search filter.
+  Future<List<AdminZone>> getZones({
+    bool? isActive,
+    String? search,
+    String? token,
+  }) async {
+    final activeToken = token ?? await _sessionManager.getToken();
+    if (activeToken == null || activeToken.isEmpty) {
+      throw AdminApiException(
+        'No authentication token provided',
+        statusCode: 401,
+      );
+    }
+
+    final queryParams = <String, String>{};
+    if (isActive != null) {
+      queryParams['is_active'] = isActive.toString();
+    }
+    if (search != null && search.trim().isNotEmpty) {
+      queryParams['search'] = search.trim();
+    }
+
+    final url = _uri('/api/v1/admin/zones', queryParams);
+    final response = await _sendWithTimeout(() => _client.get(
+          url,
+          headers: {
+            'Authorization': 'Bearer $activeToken',
+            'Accept': 'application/json',
+          },
+        ));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic> && decoded.containsKey('items')) {
+          final items = decoded['items'] as List<dynamic>? ?? const [];
+          return items
+              .whereType<Map<String, dynamic>>()
+              .map((e) => AdminZone.fromJson(e))
+              .toList();
+        }
+        throw const FormatException('Expected ZoneListResponse with items');
+      } catch (e) {
+        throw AdminApiException(
+          'Invalid response received from server',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+
+    throw _parseError(response, 'Failed to fetch zones');
+  }
+
+  /// Create a new Zone.
+  Future<AdminZone> createZone({
+    required String name,
+    String? description,
+    bool isActive = true,
+    String? token,
+  }) async {
+    final activeToken = token ?? await _sessionManager.getToken();
+    if (activeToken == null || activeToken.isEmpty) {
+      throw AdminApiException(
+        'No authentication token provided',
+        statusCode: 401,
+      );
+    }
+
+    final url = _uri('/api/v1/admin/zones');
+    final response = await _sendWithTimeout(() => _client.post(
+          url,
+          headers: {
+            'Authorization': 'Bearer $activeToken',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode({
+            'name': name.trim(),
+            if (description != null && description.trim().isNotEmpty)
+              'description': description.trim(),
+            'is_active': isActive,
+          }),
+        ));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('Expected JSON object');
+        }
+        return AdminZone.fromJson(decoded);
+      } catch (e) {
+        throw AdminApiException(
+          'Invalid response received from server',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+
+    throw _parseError(response, 'Failed to create zone');
+  }
+
+  /// Update an existing Zone.
+  Future<AdminZone> updateZone({
+    required int zoneId,
+    String? name,
+    String? description,
+    bool? isActive,
+    String? token,
+  }) async {
+    final activeToken = token ?? await _sessionManager.getToken();
+    if (activeToken == null || activeToken.isEmpty) {
+      throw AdminApiException(
+        'No authentication token provided',
+        statusCode: 401,
+      );
+    }
+
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name.trim();
+    if (description != null) body['description'] = description.trim();
+    if (isActive != null) body['is_active'] = isActive;
+
+    final url = _uri('/api/v1/admin/zones/$zoneId');
+    final response = await _sendWithTimeout(() => _client.patch(
+          url,
+          headers: {
+            'Authorization': 'Bearer $activeToken',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode(body),
+        ));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('Expected JSON object');
+        }
+        return AdminZone.fromJson(decoded);
+      } catch (e) {
+        throw AdminApiException(
+          'Invalid response received from server',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+
+    throw _parseError(response, 'Failed to update zone');
+  }
+
+  /// Activate or deactivate a Zone.
+  Future<AdminZone> updateZoneStatus({
+    required int zoneId,
+    required bool isActive,
+    String? token,
+  }) async {
+    final activeToken = token ?? await _sessionManager.getToken();
+    if (activeToken == null || activeToken.isEmpty) {
+      throw AdminApiException(
+        'No authentication token provided',
+        statusCode: 401,
+      );
+    }
+
+    final url = _uri('/api/v1/admin/zones/$zoneId/status');
+    final response = await _sendWithTimeout(() => _client.post(
+          url,
+          headers: {
+            'Authorization': 'Bearer $activeToken',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode({'is_active': isActive}),
+        ));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('Expected JSON object');
+        }
+        return AdminZone.fromJson(decoded);
+      } catch (e) {
+        throw AdminApiException(
+          'Invalid response received from server',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+
+    throw _parseError(response, 'Failed to update zone status');
   }
 
   /// Securely update the authenticated Admin's password.

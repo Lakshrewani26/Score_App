@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/models/admin_models.dart';
 import '../../../core/models/admin_order_models.dart' show formatCurrency;
 import '../../../core/models/admin_report_models.dart';
 import '../../../core/services/admin_api.dart';
@@ -27,19 +28,33 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   static const _deepBlue = Color(0xFF072763);
   static const _royalBlue = Color(0xFF083FA5);
   static const _borderBlue = Color(0xFFCBEBFF);
+
   late final AdminSessionManager _session;
   late final AdminReportsApi _reportsApi;
+  late final AdminApi _adminApi;
+
+  // Selected report type
+  String _selectedReportType = 'overview'; // 'overview', 'zone', 'area', 'staff', 'partner'
 
   // Filter state
   String _selectedPreset = '30d';
   DateTime? _customStartDate;
   DateTime? _customEndDate;
   final String _selectedInterval = 'daily';
+  int? _filterZoneId;
+  List<AdminZone> _availableZones = [];
 
   // Screen state
   bool _isLoading = true;
   String? _errorMessage;
-  AdminReportOverview? _reportData;
+
+  // Report data holders
+  AdminReportOverview? _overviewData;
+  ZoneWiseReportResponse? _zoneWiseData;
+  AreaWiseReportResponse? _areaWiseData;
+  StaffWiseReportResponse? _staffWiseData;
+  PartnerWiseReportResponse? _partnerWiseData;
+
   int _requestCounter = 0;
 
   @override
@@ -49,7 +64,37 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     _reportsApi = widget.reportsApi ??
         widget.adminApi?.reports ??
         AdminReportsApi(sessionManager: _session);
-    _loadReport();
+    _adminApi = widget.adminApi ?? AdminApi(sessionManager: _session);
+
+    _loadReport().then((_) {
+      if (mounted && widget.adminApi != null) {
+        _fetchZones();
+      }
+    });
+  }
+
+  Future<void> _fetchZones() async {
+    try {
+      final zones = await _adminApi.getZones();
+      if (!mounted) return;
+      setState(() {
+        _availableZones = zones;
+      });
+    } catch (_) {}
+  }
+
+  (DateTime?, DateTime?) _calculateDateRange() {
+    final now = DateTime.now();
+    if (_selectedPreset == '7d') {
+      return (now.subtract(const Duration(days: 7)), now);
+    } else if (_selectedPreset == '30d') {
+      return (now.subtract(const Duration(days: 30)), now);
+    } else if (_selectedPreset == '90d') {
+      return (now.subtract(const Duration(days: 90)), now);
+    } else if (_selectedPreset == 'custom') {
+      return (_customStartDate, _customEndDate);
+    }
+    return (null, null); // all_time
   }
 
   Future<void> _loadReport() async {
@@ -59,21 +104,69 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       _errorMessage = null;
     });
 
+    final (dateFrom, dateTo) = _calculateDateRange();
+
     try {
-      final report = await _reportsApi.getReportOverview(
-        preset: _selectedPreset,
-        dateFrom: _selectedPreset == 'custom' ? _customStartDate : null,
-        dateTo: _selectedPreset == 'custom' ? _customEndDate : null,
-        interval: _selectedInterval,
-      );
-
-      if (!mounted || requestId != _requestCounter) return;
-
-      setState(() {
-        _reportData = report;
-        _isLoading = false;
-        _errorMessage = null;
-      });
+      if (_selectedReportType == 'overview') {
+        final report = await _reportsApi.getReportOverview(
+          preset: _selectedPreset,
+          dateFrom: dateFrom,
+          dateTo: dateTo,
+          interval: _selectedInterval,
+        );
+        if (!mounted || requestId != _requestCounter) return;
+        setState(() {
+          _overviewData = report;
+          _isLoading = false;
+          _errorMessage = null;
+        });
+      } else if (_selectedReportType == 'zone') {
+        final report = await _reportsApi.getZoneWiseReport(
+          dateFrom: dateFrom,
+          dateTo: dateTo,
+          zoneId: _filterZoneId,
+        );
+        if (!mounted || requestId != _requestCounter) return;
+        setState(() {
+          _zoneWiseData = report;
+          _isLoading = false;
+          _errorMessage = null;
+        });
+      } else if (_selectedReportType == 'area') {
+        final report = await _reportsApi.getAreaWiseReport(
+          dateFrom: dateFrom,
+          dateTo: dateTo,
+        );
+        if (!mounted || requestId != _requestCounter) return;
+        setState(() {
+          _areaWiseData = report;
+          _isLoading = false;
+          _errorMessage = null;
+        });
+      } else if (_selectedReportType == 'staff') {
+        final report = await _reportsApi.getStaffWiseReport(
+          dateFrom: dateFrom,
+          dateTo: dateTo,
+        );
+        if (!mounted || requestId != _requestCounter) return;
+        setState(() {
+          _staffWiseData = report;
+          _isLoading = false;
+          _errorMessage = null;
+        });
+      } else if (_selectedReportType == 'partner') {
+        final report = await _reportsApi.getPartnerWiseReport(
+          dateFrom: dateFrom,
+          dateTo: dateTo,
+          zoneId: _filterZoneId,
+        );
+        if (!mounted || requestId != _requestCounter) return;
+        setState(() {
+          _partnerWiseData = report;
+          _isLoading = false;
+          _errorMessage = null;
+        });
+      }
     } on AdminApiException catch (e) {
       if (!mounted || requestId != _requestCounter) return;
       setState(() {
@@ -87,6 +180,17 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         _errorMessage = 'Unable to load report. Please try again.';
       });
     }
+  }
+
+  void _onReportTypeChanged(String type) {
+    if (_selectedReportType == type) return;
+    setState(() {
+      _selectedReportType = type;
+    });
+    if ((type == 'zone' || type == 'partner') && _availableZones.isEmpty) {
+      _fetchZones();
+    }
+    _loadReport();
   }
 
   void _onPresetChanged(String preset) {
@@ -179,6 +283,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       ),
       body: Column(
         children: [
+          _buildReportTypeSelector(),
           _buildFilterBar(),
           Expanded(
             child: _buildBody(),
@@ -188,46 +293,146 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
   }
 
-  Widget _buildFilterBar() {
+  Widget _buildReportTypeSelector() {
+    final types = [
+      ('overview', 'Overview', Icons.analytics_rounded),
+      ('zone', 'Zone-wise', Icons.location_on_rounded),
+      ('area', 'Area-wise', Icons.map_rounded),
+      ('staff', 'Staff-wise', Icons.badge_rounded),
+      ('partner', 'Partner-wise', Icons.handshake_rounded),
+    ];
+
     return Container(
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
-          children: [
-            _buildPresetChip('7d', 'Last 7 Days', const Key('preset_chip_7d')),
-            const SizedBox(width: 8),
-            _buildPresetChip('30d', 'Last 30 Days', const Key('preset_chip_30d')),
-            const SizedBox(width: 8),
-            _buildPresetChip('90d', 'Last 90 Days', const Key('preset_chip_90d')),
-            const SizedBox(width: 8),
-            _buildPresetChip('all_time', 'All Time', const Key('preset_chip_all_time')),
-            const SizedBox(width: 8),
-            ActionChip(
-              key: const Key('preset_chip_custom'),
-              avatar: const Icon(Icons.date_range_rounded, size: 16, color: _royalBlue),
-              label: Text(
-                _selectedPreset == 'custom' && _customStartDate != null && _customEndDate != null
-                    ? '${_customStartDate!.day}/${_customStartDate!.month} - ${_customEndDate!.day}/${_customEndDate!.month}'
-                    : 'Custom Range',
-                style: TextStyle(
-                  color: _selectedPreset == 'custom' ? Colors.white : _deepBlue,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
+          children: types.map((t) {
+            final isSelected = _selectedReportType == t.$1;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: InkWell(
+                key: Key('report_tab_${t.$1}'),
+                onTap: () => _onReportTypeChanged(t.$1),
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isSelected ? _royalBlue : const Color(0xFFF0F4F8),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        t.$3,
+                        size: 15,
+                        color: isSelected ? Colors.white : const Color(0xFF557A95),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        t.$2,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : const Color(0xFF37474F),
+                          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              backgroundColor: _selectedPreset == 'custom' ? _royalBlue : const Color(0xFFE8F4FD),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-                side: BorderSide(
-                  color: _selectedPreset == 'custom' ? _royalBlue : _borderBlue,
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildPresetChip('7d', 'Last 7 Days', const Key('preset_chip_7d')),
+                const SizedBox(width: 8),
+                _buildPresetChip('30d', 'Last 30 Days', const Key('preset_chip_30d')),
+                const SizedBox(width: 8),
+                _buildPresetChip('90d', 'Last 90 Days', const Key('preset_chip_90d')),
+                const SizedBox(width: 8),
+                _buildPresetChip('all_time', 'All Time', const Key('preset_chip_all_time')),
+                const SizedBox(width: 8),
+                ActionChip(
+                  key: const Key('preset_chip_custom'),
+                  avatar: const Icon(Icons.date_range_rounded, size: 16, color: _royalBlue),
+                  label: Text(
+                    _selectedPreset == 'custom' && _customStartDate != null && _customEndDate != null
+                        ? '${_customStartDate!.day}/${_customStartDate!.month} - ${_customEndDate!.day}/${_customEndDate!.month}'
+                        : 'Custom Range',
+                    style: TextStyle(
+                      color: _selectedPreset == 'custom' ? Colors.white : _deepBlue,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                  backgroundColor: _selectedPreset == 'custom' ? _royalBlue : const Color(0xFFE8F4FD),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: BorderSide(
+                      color: _selectedPreset == 'custom' ? _royalBlue : _borderBlue,
+                    ),
+                  ),
+                  onPressed: _pickCustomDateRange,
+                ),
+              ],
+            ),
+          ),
+          if ((_selectedReportType == 'zone' || _selectedReportType == 'partner') &&
+              _availableZones.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7FCFF),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _borderBlue),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int?>(
+                  key: const Key('report_zone_filter_dropdown'),
+                  value: _filterZoneId,
+                  isDense: true,
+                  hint: const Text('Filter by Zone (All Zones)', style: TextStyle(fontSize: 12)),
+                  style: const TextStyle(color: _deepBlue, fontSize: 12, fontWeight: FontWeight.w600),
+                  items: [
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('All Zones'),
+                    ),
+                    ..._availableZones.map((z) => DropdownMenuItem<int?>(
+                          value: z.id,
+                          child: Text('Zone: ${z.name}'),
+                        )),
+                  ],
+                  onChanged: (val) {
+                    setState(() {
+                      _filterZoneId = val;
+                    });
+                    _loadReport();
+                  },
                 ),
               ),
-              onPressed: _pickCustomDateRange,
             ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -244,7 +449,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       labelStyle: TextStyle(
         color: isSelected ? Colors.white : _deepBlue,
         fontWeight: FontWeight.w600,
-        fontSize: 13,
+        fontSize: 12,
       ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
@@ -257,7 +462,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   Widget _buildBody() {
-    if (_isLoading && _reportData == null) {
+    if (_isLoading &&
+        _overviewData == null &&
+        _zoneWiseData == null &&
+        _areaWiseData == null &&
+        _staffWiseData == null &&
+        _partnerWiseData == null) {
       return const Center(
         child: CircularProgressIndicator(
           key: Key('admin_reports_loading'),
@@ -266,7 +476,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       );
     }
 
-    if (_errorMessage != null && _reportData == null) {
+    if (_errorMessage != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -302,7 +512,445 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
       );
     }
 
-    final data = _reportData!;
+    if (_selectedReportType == 'zone') {
+      return _buildZoneWiseContent();
+    } else if (_selectedReportType == 'area') {
+      return _buildAreaWiseContent();
+    } else if (_selectedReportType == 'staff') {
+      return _buildStaffWiseContent();
+    } else if (_selectedReportType == 'partner') {
+      return _buildPartnerWiseContent();
+    }
+
+    return _buildOverviewContent();
+  }
+
+  Widget _buildZoneWiseContent() {
+    final data = _zoneWiseData;
+    if (data == null || data.items.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadReport,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(20),
+          child: _buildEmptyContainer('No zone-wise transaction records found for the selected period.'),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadReport,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildSummaryHeaderCard(
+            title: 'Zone Performance Summary',
+            subtitle: '${data.totalZones} Zones | ${data.totalOrders} Orders | Total: ${formatCurrency(data.totalOrderValue)}',
+            icon: Icons.location_on_rounded,
+          ),
+          const SizedBox(height: 14),
+          ...data.items.map((item) => Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: _borderBlue),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: _royalBlue.withAlpha(24),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.location_city_rounded, color: _royalBlue, size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              item.zoneName,
+                              style: const TextStyle(color: _deepBlue, fontSize: 16, fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE0F2F1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '${item.partnerCount} Partners',
+                              style: const TextStyle(color: Color(0xFF00796B), fontSize: 11, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      const Divider(color: Color(0xFFE3F2FD), height: 1),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildMiniMetric('Orders', '${item.orderCount}'),
+                          _buildMiniMetric('Order Value', formatCurrency(item.totalOrderValue)),
+                          _buildMiniMetric('Payments', '${item.paymentCount} (${formatCurrency(item.totalPaymentsCollected)})'),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAreaWiseContent() {
+    final data = _areaWiseData;
+    if (data == null || data.items.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadReport,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(20),
+          child: _buildEmptyContainer('No area-wise transaction records found for the selected period.'),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadReport,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildSummaryHeaderCard(
+            title: 'Area Distribution',
+            subtitle: '${data.totalAreas} Areas with registered business partners',
+            icon: Icons.map_rounded,
+          ),
+          const SizedBox(height: 14),
+          ...data.items.map((item) => Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: _borderBlue),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00897B).withAlpha(24),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.pin_drop_rounded, color: Color(0xFF00897B), size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.areaName,
+                              style: const TextStyle(color: _deepBlue, fontSize: 15, fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${item.partnerCount} Active Partners',
+                              style: const TextStyle(color: Color(0xFF557A95), fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '${item.orderCount} Orders',
+                            style: const TextStyle(color: _deepBlue, fontWeight: FontWeight.w700, fontSize: 13),
+                          ),
+                          Text(
+                            formatCurrency(item.totalOrderValue),
+                            style: const TextStyle(color: _royalBlue, fontWeight: FontWeight.w800, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStaffWiseContent() {
+    final data = _staffWiseData;
+    if (data == null || data.items.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadReport,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(20),
+          child: _buildEmptyContainer('No staff records found.'),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadReport,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildSummaryHeaderCard(
+            title: 'Staff Performance Report',
+            subtitle: '${data.totalStaff} Staff Members registered in system',
+            icon: Icons.badge_rounded,
+          ),
+          const SizedBox(height: 14),
+          ...data.items.map((item) => Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: _borderBlue),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE65100).withAlpha(24),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.badge_rounded, color: Color(0xFFE65100), size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.name,
+                                  style: const TextStyle(color: _deepBlue, fontSize: 15, fontWeight: FontWeight.w800),
+                                ),
+                                Text(
+                                  'ID: ${item.staffId} | Mobile: ${item.mobile}',
+                                  style: const TextStyle(color: Color(0xFF78909C), fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF3E0),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '${item.assignedPartnerCount} Partners',
+                              style: const TextStyle(color: Color(0xFFE65100), fontSize: 11, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      const Divider(color: Color(0xFFE3F2FD), height: 1),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildMiniMetric('Orders Generated', '${item.orderCount}'),
+                          _buildMiniMetric('Total Value', formatCurrency(item.totalOrderValue)),
+                          _buildMiniMetric('Payments Collected', formatCurrency(item.totalPaymentsCollected)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPartnerWiseContent() {
+    final data = _partnerWiseData;
+    if (data == null || data.items.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadReport,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(20),
+          child: _buildEmptyContainer('No partner records found for the selected period.'),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadReport,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildSummaryHeaderCard(
+            title: 'Partner Business Report',
+            subtitle: '${data.totalPartners} Partners reporting transactions',
+            icon: Icons.handshake_rounded,
+          ),
+          const SizedBox(height: 14),
+          ...data.items.map((item) => Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: _borderBlue),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00897B).withAlpha(24),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(Icons.storefront_rounded, color: Color(0xFF00897B), size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.businessName.isNotEmpty ? item.businessName : item.partnerName,
+                                  style: const TextStyle(color: _deepBlue, fontSize: 15, fontWeight: FontWeight.w800),
+                                ),
+                                Text(
+                                  'Contact: ${item.partnerName} (${item.mobile})',
+                                  style: const TextStyle(color: Color(0xFF557A95), fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (item.zoneName != null && item.zoneName!.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F4FD),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'Zone: ${item.zoneName}',
+                                style: const TextStyle(color: _royalBlue, fontSize: 10, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      const Divider(color: Color(0xFFE3F2FD), height: 1),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildMiniMetric('Orders', '${item.orderCount}'),
+                          _buildMiniMetric('Order Value', formatCurrency(item.totalOrderValue)),
+                          _buildMiniMetric('Payments Made', formatCurrency(item.totalPaymentsMade)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryHeaderCard({required String title, required String subtitle, required IconData icon}) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _borderBlue),
+        boxShadow: const [
+          BoxShadow(color: Color(0x100755B5), blurRadius: 6, offset: Offset(0, 2)),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(colors: [_deepBlue, _royalBlue]),
+            ),
+            child: Icon(icon, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(color: _deepBlue, fontSize: 16, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text(subtitle, style: const TextStyle(color: Color(0xFF557A95), fontSize: 12, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniMetric(String label, String value) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFF78909C), fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: _deepBlue, fontSize: 13, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverviewContent() {
+    final data = _overviewData;
+    if (data == null) {
+      return const Center(child: CircularProgressIndicator(color: _royalBlue));
+    }
+
     return RefreshIndicator(
       color: _royalBlue,
       onRefresh: _loadReport,
@@ -312,11 +960,6 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (_isLoading)
-              const LinearProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(_royalBlue),
-                backgroundColor: Color(0xFFE6F5FF),
-              ),
             _buildSectionHeader(
               title: 'Overview Metrics',
               subtitle: _getDateSubtitle(data.filter),
@@ -351,8 +994,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
             ),
             const SizedBox(height: 10),
             _buildCatalogueSummary(data.catalogueSummary),
-            const SizedBox(height: 20),
-            _buildTransparencyBanner(data.unsupportedMetrics),
+            if (data.unsupportedMetrics.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              _buildTransparencyBanner(data.unsupportedMetrics),
+            ],
             const SizedBox(height: 24),
           ],
         ),
@@ -361,13 +1006,12 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   String _getDateSubtitle(ReportDateFilter filter) {
-    if (filter.preset == 'all_time') return 'All-time cumulative records';
     if (filter.dateFrom != null && filter.dateTo != null) {
-      final from = '${filter.dateFrom!.day}/${filter.dateFrom!.month}/${filter.dateFrom!.year}';
-      final to = '${filter.dateTo!.day}/${filter.dateTo!.month}/${filter.dateTo!.year}';
-      return 'Filtered from $from to $to';
+      final f = filter.dateFrom!;
+      final t = filter.dateTo!;
+      return '${f.year}-${f.month.toString().padLeft(2, '0')}-${f.day.toString().padLeft(2, '0')} to ${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
     }
-    return 'Active period';
+    return 'Lifetime recorded data';
   }
 
   Widget _buildSectionHeader({required String title, required String subtitle}) {
@@ -386,7 +1030,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
         Text(
           subtitle,
           style: const TextStyle(
-            color: Color(0xFF607D8B),
+            color: Color(0xFF78909C),
             fontSize: 12,
             fontWeight: FontWeight.w500,
           ),
@@ -396,126 +1040,78 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
   }
 
   Widget _buildOverviewGrid(ReportOverview overview) {
-    return Column(
-      children: [
-        Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = (constraints.maxWidth - 12) / 2;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
           children: [
-            Expanded(
+            SizedBox(
+              width: cardWidth,
               child: _buildMetricCard(
-                key: const Key('metric_total_orders'),
                 title: 'Total Orders',
                 value: overview.totalOrders.toString(),
                 icon: Icons.receipt_long_rounded,
-                color: _royalBlue,
-                subtitle: 'in selected window',
+                accentColor: const Color(0xFF0055B8),
+                key: const Key('report_metric_total_orders'),
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
+            SizedBox(
+              width: cardWidth,
               child: _buildMetricCard(
-                key: const Key('metric_total_order_value'),
                 title: 'Total Value',
                 value: formatCurrency(overview.totalOrderValue),
-                icon: Icons.payments_rounded,
-                color: const Color(0xFF00796B),
-                subtitle: 'monetary volume',
+                icon: Icons.currency_rupee_rounded,
+                accentColor: const Color(0xFF00897B),
+                key: const Key('report_metric_total_value'),
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
+            SizedBox(
+              width: cardWidth,
               child: _buildMetricCard(
-                key: const Key('metric_orders_pending'),
                 title: 'Pending Staff',
                 value: overview.ordersPendingApproval.toString(),
                 icon: Icons.hourglass_top_rounded,
-                color: const Color(0xFFE65100),
-                subtitle: 'awaiting review',
+                accentColor: const Color(0xFFE65100),
+                key: const Key('report_metric_pending_approval'),
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
+            SizedBox(
+              width: cardWidth,
               child: _buildMetricCard(
-                key: const Key('metric_orders_processing'),
-                title: 'Processing',
-                value: overview.ordersProcessing.toString(),
-                icon: Icons.sync_rounded,
-                color: const Color(0xFF0288D1),
-                subtitle: 'approved / packing',
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricCard(
-                key: const Key('metric_orders_dispatched'),
-                title: 'Dispatched',
-                value: overview.ordersDispatched.toString(),
-                icon: Icons.local_shipping_rounded,
-                color: const Color(0xFF5E35B1),
-                subtitle: 'in transit',
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildMetricCard(
-                key: const Key('metric_orders_delivered'),
                 title: 'Delivered',
                 value: overview.ordersDelivered.toString(),
-                icon: Icons.check_circle_rounded,
-                color: const Color(0xFF2E7D32),
-                subtitle: 'fulfilled',
+                icon: Icons.task_alt_rounded,
+                accentColor: const Color(0xFF2E7D32),
+                key: const Key('report_metric_delivered'),
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricCard(
-                key: const Key('metric_orders_rejected'),
-                title: 'Rejected',
-                value: overview.ordersRejected.toString(),
-                icon: Icons.cancel_rounded,
-                color: const Color(0xFFC62828),
-                subtitle: 'declined',
-              ),
-            ),
-            const SizedBox(width: 10),
-            const Expanded(child: SizedBox()),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
 
   Widget _buildMetricCard({
-    required Key key,
     required String title,
     required String value,
     required IconData icon,
-    required Color color,
-    required String subtitle,
+    required Color accentColor,
+    required Key key,
   }) {
     return Container(
       key: key,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _borderBlue, width: 1.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _borderBlue, width: 1.2),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x0A0755B5),
-            blurRadius: 6,
-            offset: Offset(0, 2),
+            color: Color(0x100755B5),
+            blurRadius: 8,
+            offset: Offset(0, 3),
           ),
         ],
       ),
@@ -528,39 +1124,33 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
               Expanded(
                 child: Text(
                   title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF455A64),
+                    color: Color(0xFF78909C),
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 4),
-              Icon(icon, size: 18, color: color),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: accentColor.withAlpha(24),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: accentColor, size: 18),
+              ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 10),
           Text(
             value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: color,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Color(0xFF90A4AE),
-              fontSize: 10,
-              fontWeight: FontWeight.w500,
+              color: _deepBlue,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
@@ -568,32 +1158,23 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
   }
 
-  Widget _buildOrderStatusDistribution(List<StatusCount> items, int total) {
-    if (total == 0) {
+  Widget _buildOrderStatusDistribution(List<StatusCount> list, int total) {
+    if (list.isEmpty) {
       return _buildEmptyContainer('No orders recorded in this period.');
     }
 
-    final colors = {
-      'pending_approval': const Color(0xFFE65100),
-      'approved_processing': const Color(0xFF0288D1),
-      'dispatched': const Color(0xFF5E35B1),
-      'delivered': const Color(0xFF2E7D32),
-      'rejected': const Color(0xFFC62828),
-    };
-
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _borderBlue),
       ),
       child: Column(
-        children: items.map((sc) {
-          final color = colors[sc.status] ?? _royalBlue;
-          final pct = total > 0 ? (sc.count / total) * 100 : 0.0;
+        children: list.map((item) {
+          final pct = total > 0 ? (item.count / total) : 0.0;
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5),
+            padding: const EdgeInsets.symmetric(vertical: 6.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -601,39 +1182,22 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              sc.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: _deepBlue,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        item.label,
+                        style: const TextStyle(
+                          color: _deepBlue,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '${sc.count} (${pct.toStringAsFixed(1)}%)',
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 12,
+                      '${item.count} (${(pct * 100).toStringAsFixed(1)}%)',
+                      style: const TextStyle(
+                        color: Color(0xFF557A95),
                         fontWeight: FontWeight.w700,
+                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -642,10 +1206,10 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: LinearProgressIndicator(
-                    value: total > 0 ? sc.count / total : 0,
+                    value: pct,
                     minHeight: 6,
+                    valueColor: AlwaysStoppedAnimation<Color>(_getStatusColor(item.status)),
                     backgroundColor: const Color(0xFFECEFF1),
-                    valueColor: AlwaysStoppedAnimation<Color>(color),
                   ),
                 ),
               ],
@@ -656,98 +1220,86 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
   }
 
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'delivered':
+        return const Color(0xFF2E7D32);
+      case 'dispatched':
+        return const Color(0xFF00897B);
+      case 'processing':
+        return const Color(0xFF0087D4);
+      case 'pending_approval':
+        return const Color(0xFFE65100);
+      case 'rejected':
+      case 'cancelled':
+        return const Color(0xFFD32F2F);
+      default:
+        return _royalBlue;
+    }
+  }
+
   Widget _buildOrderTrendChart(List<OrderTrendPoint> trends) {
     if (trends.isEmpty) {
       return _buildEmptyContainer('No trend data available for this range.');
     }
 
-    final maxCount = trends.map((t) => t.count).fold(0, math.max);
+    final maxCount = trends.map((t) => t.count).fold<int>(0, math.max);
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _borderBlue),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Expanded(
-                child: Text(
-                  'Volume by Date',
-                  style: TextStyle(
-                    color: _deepBlue,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Text(
-                'Peak: $maxCount orders',
-                style: const TextStyle(
-                  color: _royalBlue,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
           SizedBox(
-            height: 150,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: trends.map((pt) {
-                  final barHeight = maxCount > 0 ? (pt.count / maxCount) * 105 : 0.0;
-                  final hasOrders = pt.count > 0;
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 5),
+            height: 120,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: trends.map((point) {
+                final heightFactor = maxCount > 0 ? (point.count / maxCount) : 0.0;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2.0),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Text(
-                          pt.count.toString(),
-                          style: TextStyle(
-                            color: hasOrders ? _royalBlue : const Color(0xFFB0BEC5),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Container(
-                          width: 22,
-                          height: math.max(barHeight, 4.0),
-                          decoration: BoxDecoration(
-                            color: hasOrders ? _royalBlue : const Color(0xFFCFD8DC),
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        SizedBox(
-                          width: 44,
-                          child: Text(
-                            pt.label,
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        if (point.count > 0)
+                          Text(
+                            '${point.count}',
                             style: const TextStyle(
-                              color: Color(0xFF546E7A),
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
+                              color: _royalBlue,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
                             ),
+                          ),
+                        const SizedBox(height: 2),
+                        Container(
+                          height: math.max(6.0, heightFactor * 80),
+                          decoration: BoxDecoration(
+                            color: point.count > 0 ? _royalBlue : const Color(0xFFECEFF1),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          point.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF78909C),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
                     ),
-                  );
-                }).toList(),
-              ),
+                  ),
+                );
+              }).toList(),
             ),
           ),
         ],
@@ -755,17 +1307,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
   }
 
-  Widget _buildStockRequestSummary(ReportOverview overview, List<StatusCount> statusDist) {
+  Widget _buildStockRequestSummary(ReportOverview ov, List<StatusCount> statusDist) {
     return Container(
-      key: const Key('metric_stock_requests'),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _borderBlue),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -775,29 +1325,31 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   'Total Stock Requests',
                   style: TextStyle(
                     color: _deepBlue,
-                    fontSize: 14,
                     fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
               Text(
-                overview.totalStockRequests.toString(),
+                '${ov.totalStockRequests}',
                 style: const TextStyle(
                   color: _royalBlue,
-                  fontSize: 18,
                   fontWeight: FontWeight.w800,
+                  fontSize: 16,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: Color(0xFFECEFF1)),
+          const SizedBox(height: 12),
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildSmallBadge('Pending', overview.stockRequestsPendingApproval, const Color(0xFFE65100)),
-              const SizedBox(width: 8),
-              _buildSmallBadge('Approved', overview.stockRequestsApproved, const Color(0xFF2E7D32)),
-              const SizedBox(width: 8),
-              _buildSmallBadge('Rejected', overview.stockRequestsRejected, const Color(0xFFC62828)),
+              _buildStockStat('Pending', ov.stockRequestsPendingApproval, const Color(0xFFE65100)),
+              _buildStockStat('Approved', ov.stockRequestsApproved, const Color(0xFF2E7D32)),
+              _buildStockStat('Rejected', ov.stockRequestsRejected, const Color(0xFFD32F2F)),
             ],
           ),
         ],
@@ -805,49 +1357,39 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
     );
   }
 
-  Widget _buildSmallBadge(String label, int count, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-        decoration: BoxDecoration(
-          color: color.withAlpha(20),
-          borderRadius: BorderRadius.circular(8),
+  Widget _buildStockStat(String label, int count, Color color) {
+    return Column(
+      children: [
+        Text(
+          '$count',
+          style: TextStyle(
+            color: color,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
         ),
-        child: Column(
-          children: [
-            Text(
-              count.toString(),
-              style: TextStyle(
-                color: color,
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF78909C),
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
         ),
-      ),
+      ],
     );
   }
 
   Widget _buildCatalogueSummary(CatalogueSummary cat) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _borderBlue),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -857,7 +1399,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   '${cat.activeProducts} active / ${cat.totalProducts} total',
                   '${cat.inactiveProducts} inactive',
                   Icons.inventory_2_rounded,
-                  _royalBlue,
+                  const Color(0xFF0055B8),
                 ),
               ),
               const SizedBox(width: 10),
@@ -867,36 +1409,24 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                   '${cat.activeCategories} active / ${cat.totalCategories} total',
                   '${cat.inactiveCategories} inactive',
                   Icons.category_rounded,
-                  const Color(0xFF00796B),
+                  const Color(0xFF0087D4),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
           Container(
-            key: const Key('metric_null_price_products'),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: cat.productsWithNullPrice > 0
-                  ? const Color(0xFFFFF3E0)
-                  : const Color(0xFFE8F5E9),
+              color: cat.productsWithNullPrice > 0 ? const Color(0xFFFFF3E0) : const Color(0xFFE8F8EE),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: cat.productsWithNullPrice > 0
-                    ? const Color(0xFFFFCC80)
-                    : const Color(0xFFA5D6A7),
-              ),
             ),
             child: Row(
               children: [
                 Icon(
-                  cat.productsWithNullPrice > 0
-                      ? Icons.warning_amber_rounded
-                      : Icons.check_circle_outline_rounded,
-                  size: 20,
-                  color: cat.productsWithNullPrice > 0
-                      ? const Color(0xFFE65100)
-                      : const Color(0xFF2E7D32),
+                  cat.productsWithNullPrice > 0 ? Icons.warning_amber_rounded : Icons.check_circle_rounded,
+                  color: cat.productsWithNullPrice > 0 ? const Color(0xFFE65100) : const Color(0xFF2E7D32),
+                  size: 18,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -905,9 +1435,7 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                         ? '${cat.productsWithNullPrice} product(s) have no price configured (null price).'
                         : 'All catalogue products have valid prices configured.',
                     style: TextStyle(
-                      color: cat.productsWithNullPrice > 0
-                          ? const Color(0xFFBF360C)
-                          : const Color(0xFF1B5E20),
+                      color: cat.productsWithNullPrice > 0 ? const Color(0xFFBF360C) : const Color(0xFF1B5E20),
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),

@@ -24,6 +24,8 @@ class PartnerProfileOut(BaseModel):
     business_name: str
     business_address: str
     partner_code: Optional[str] = None
+    zone_id: Optional[int] = None
+    zone_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -50,6 +52,8 @@ class AdminUserSummary(BaseModel):
     business_name: Optional[str] = None
     partner_code: Optional[str] = None
     staff_id: Optional[str] = None
+    zone_id: Optional[int] = None
+    zone_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,6 +63,13 @@ class AdminUserSummary(BaseModel):
         if hasattr(data, "id") and hasattr(data, "role") and not isinstance(data, dict):
             partner: Optional[PartnerProfile] = getattr(data, "partner_profile", None)
             staff: Optional[StaffProfile] = getattr(data, "staff_profile", None)
+            zone_id = None
+            zone_name = None
+            if partner:
+                zone_id = getattr(partner, "zone_id", None)
+                partner_zone = getattr(partner, "zone", None)
+                if partner_zone:
+                    zone_name = getattr(partner_zone, "name", None)
             return {
                 "id": data.id,
                 "name": data.name,
@@ -69,6 +80,8 @@ class AdminUserSummary(BaseModel):
                 "business_name": partner.business_name if partner else None,
                 "partner_code": partner.partner_code if partner else None,
                 "staff_id": staff.staff_id if staff else None,
+                "zone_id": zone_id,
+                "zone_name": zone_name,
             }
         return data
 
@@ -89,6 +102,21 @@ class AdminUserDetailResponse(AdminUserSummary):
             cust: Optional[CustomerProfile] = getattr(data, "customer_profile", None)
             partner: Optional[PartnerProfile] = getattr(data, "partner_profile", None)
             staff: Optional[StaffProfile] = getattr(data, "staff_profile", None)
+            zone_id = None
+            zone_name = None
+            partner_profile_out = None
+            if partner:
+                zone_id = getattr(partner, "zone_id", None)
+                partner_zone = getattr(partner, "zone", None)
+                if partner_zone:
+                    zone_name = getattr(partner_zone, "name", None)
+                partner_profile_out = {
+                    "business_name": partner.business_name,
+                    "business_address": partner.business_address,
+                    "partner_code": partner.partner_code,
+                    "zone_id": zone_id,
+                    "zone_name": zone_name,
+                }
             return {
                 "id": data.id,
                 "name": data.name,
@@ -99,8 +127,10 @@ class AdminUserDetailResponse(AdminUserSummary):
                 "business_name": partner.business_name if partner else None,
                 "partner_code": partner.partner_code if partner else None,
                 "staff_id": staff.staff_id if staff else None,
+                "zone_id": zone_id,
+                "zone_name": zone_name,
                 "customer_profile": cust,
-                "partner_profile": partner,
+                "partner_profile": partner_profile_out,
                 "staff_profile": staff,
             }
         return data
@@ -127,6 +157,46 @@ class PaginatedUsersResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Customer Creation Request (Admin side)
+# ---------------------------------------------------------------------------
+
+class CustomerCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150, description="Full customer name")
+    mobile: str = Field(..., min_length=1, max_length=20, description="Unique mobile number")
+    password: str = Field(..., min_length=1, max_length=128, description="Initial account password")
+    state: Optional[str] = Field(None, max_length=100, description="State / Province")
+    city: Optional[str] = Field(None, max_length=100, description="City")
+    segment: Optional[str] = Field(None, max_length=100, description="Customer segment")
+
+    @field_validator("name", "mobile", mode="before")
+    @classmethod
+    def validate_non_empty_strings(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            stripped = v.strip()
+            if not stripped:
+                raise ValueError("Field cannot be empty or whitespace only.")
+            return stripped
+        return v
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def validate_password(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            if not v or not v.strip():
+                raise ValueError("Password cannot be empty or whitespace only.")
+            return v
+        return v
+
+    @field_validator("state", "city", "segment", mode="before")
+    @classmethod
+    def clean_optional_strings(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            stripped = v.strip()
+            return stripped if stripped else None
+        return v
+
+
+# ---------------------------------------------------------------------------
 # Partner Creation Request
 # ---------------------------------------------------------------------------
 
@@ -137,6 +207,7 @@ class PartnerCreateRequest(BaseModel):
     business_name: str = Field(..., min_length=1, max_length=200, description="Partner business name")
     business_address: str = Field(..., min_length=1, description="Physical business address")
     partner_code: Optional[str] = Field(None, max_length=50, description="Optional partner code")
+    zone_id: Optional[int] = Field(None, description="Optional assigned Zone ID")
 
     @field_validator("name", "mobile", "business_name", "business_address", mode="before")
     @classmethod
@@ -230,3 +301,53 @@ class StaffPartnerAssignmentResponse(BaseModel):
     partner: AssignmentUserResponse
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Account Update Request (for Customer, Partner, Staff)
+# ---------------------------------------------------------------------------
+
+class AdminUserUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=150)
+    mobile: Optional[str] = Field(None, min_length=1, max_length=20)
+    # Customer specific
+    state: Optional[str] = Field(None, max_length=100)
+    city: Optional[str] = Field(None, max_length=100)
+    segment: Optional[str] = Field(None, max_length=100)
+    # Partner specific
+    business_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    business_address: Optional[str] = Field(None, min_length=1)
+    partner_code: Optional[str] = Field(None, max_length=50)
+    zone_id: Optional[int] = Field(None, description="Assigned Zone ID (null to unassign)")
+    clear_zone: Optional[bool] = Field(False, description="Explicitly remove assigned Zone")
+    # Staff specific
+    staff_id: Optional[str] = Field(None, min_length=1, max_length=50)
+
+    @field_validator("name", "mobile", "business_name", "business_address", "staff_id", mode="before")
+    @classmethod
+    def validate_non_empty_strings(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            stripped = v.strip()
+            if not stripped:
+                raise ValueError("Field cannot be empty or whitespace only.")
+            return stripped
+        return v
+
+    @field_validator("state", "city", "segment", "partner_code", mode="before")
+    @classmethod
+    def clean_optional_strings(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            stripped = v.strip()
+            return stripped if stripped else None
+        return v
+
+
+# ---------------------------------------------------------------------------
+# Account Deletion / Deactivation Response
+# ---------------------------------------------------------------------------
+
+class AdminUserDeleteResponse(BaseModel):
+    message: str
+    user_id: int
+    action: Literal["deleted", "deactivated"]
+

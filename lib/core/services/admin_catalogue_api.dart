@@ -368,6 +368,42 @@ class AdminCatalogueApi {
     throw _parseError(response, 'Failed to update product status');
   }
 
+  /// Delete a product where safe, or soft-deactivate if referenced.
+  ///
+  /// Sends DELETE to `/api/v1/admin/catalogue/products/{productId}`.
+  Future<Map<String, dynamic>> deleteProduct(
+    int productId, {
+    String? token,
+  }) async {
+    final activeToken = await _getAuthToken(token);
+
+    final url = _uri('/api/v1/admin/catalogue/products/$productId');
+    final response = await _sendWithTimeout(() => _client.delete(
+          url,
+          headers: {
+            'Authorization': 'Bearer $activeToken',
+            'Accept': 'application/json',
+          },
+        ));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('Expected JSON object');
+        }
+        return decoded;
+      } catch (e) {
+        throw AdminApiException(
+          'Invalid response received from server',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+
+    throw _parseError(response, 'Failed to delete product');
+  }
+
   // ---------------------------------------------------------------------------
   // Category Endpoints
   // ---------------------------------------------------------------------------

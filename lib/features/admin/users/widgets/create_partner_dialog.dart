@@ -32,9 +32,35 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
   final _businessAddressController = TextEditingController();
   final _partnerCodeController = TextEditingController();
 
+  int? _selectedZoneId;
+  List<AdminZone> _availableZones = [];
+  bool _isLoadingZones = true;
+
   bool _obscurePassword = true;
   bool _isSubmitting = false;
   String? _serverErrorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchZones();
+  }
+
+  Future<void> _fetchZones() async {
+    try {
+      final zones = await widget.adminApi.getZones(isActive: true, token: widget.token);
+      if (!mounted) return;
+      setState(() {
+        _availableZones = zones;
+        _isLoadingZones = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingZones = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -72,6 +98,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
         partnerCode: _partnerCodeController.text.trim().isNotEmpty
             ? _partnerCodeController.text.trim()
             : null,
+        zoneId: _selectedZoneId,
       );
 
       await widget.adminApi.createPartner(
@@ -114,11 +141,11 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       backgroundColor: Colors.white,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           child: Form(
             key: _formKey,
             child: Column(
@@ -129,8 +156,8 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                 Row(
                   children: [
                     Container(
-                      width: 40,
-                      height: 40,
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
                         color: const Color(0xFF00897B).withAlpha(24),
                         borderRadius: BorderRadius.circular(10),
@@ -138,10 +165,10 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                       child: const Icon(
                         Icons.handshake_rounded,
                         color: Color(0xFF00897B),
-                        size: 22,
+                        size: 20,
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -150,7 +177,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                             'Create Partner',
                             style: TextStyle(
                               color: _deepBlue,
-                              fontSize: 18,
+                              fontSize: 17,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
@@ -158,7 +185,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                             'Add a new business partner account',
                             style: TextStyle(
                               color: Color(0xFF78909C),
-                              fontSize: 12,
+                              fontSize: 11,
                             ),
                           ),
                         ],
@@ -170,13 +197,13 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
 
                 // Server error banner
                 if (_serverErrorMessage != null) ...[
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFEBEE),
                       borderRadius: BorderRadius.circular(10),
@@ -204,7 +231,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 10),
                 ],
 
                 // Full Name
@@ -222,7 +249,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 5),
 
                 // Mobile Number
                 _buildTextField(
@@ -244,20 +271,21 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 5),
 
                 // Password
                 _buildTextField(
                   key: const Key('partner_password_field'),
                   controller: _passwordController,
-                  label: 'Password',
-                  hint: 'Initial account password',
+                  label: 'Temporary Password',
+                  hint: 'Minimum 6 characters',
                   icon: Icons.lock_outline_rounded,
                   obscureText: _obscurePassword,
-                  maxLength: 128,
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                      _obscurePassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
                       color: const Color(0xFF78909C),
                       size: 20,
                     ),
@@ -268,7 +296,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     },
                   ),
                   validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
+                    if (val == null || val.isEmpty) {
                       return 'Password is required';
                     }
                     if (val.length < 6) {
@@ -277,14 +305,14 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 5),
 
                 // Business Name
                 _buildTextField(
                   key: const Key('partner_business_name_field'),
                   controller: _businessNameController,
-                  label: 'Business Name',
-                  hint: 'e.g. Acme Motors',
+                  label: 'Business / Shop Name',
+                  hint: 'e.g. Metro Auto Spares',
                   icon: Icons.storefront_rounded,
                   maxLength: 200,
                   validator: (val) {
@@ -294,7 +322,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 5),
 
                 // Business Address
                 _buildTextField(
@@ -311,7 +339,11 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 5),
+
+                // Zone Dropdown (Admin-side attribute)
+                _buildZoneDropdown(),
+                const SizedBox(height: 5),
 
                 // Partner Code (Optional)
                 _buildTextField(
@@ -322,7 +354,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                   icon: Icons.tag_rounded,
                   maxLength: 50,
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
 
                 // Action buttons
                 Row(
@@ -331,7 +363,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                       child: OutlinedButton(
                         onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -350,7 +382,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF00897B),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -380,6 +412,101 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
     );
   }
 
+  Widget _buildZoneDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Assigned Zone (Admin Only)',
+          style: TextStyle(
+            color: _deepBlue,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        if (_isLoadingZones)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'Loading zones...',
+                  style: TextStyle(color: Color(0xFF78909C), fontSize: 13),
+                ),
+              ],
+            ),
+          )
+        else if (_availableZones.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFFE082)),
+            ),
+            child: const Text(
+              'No active zones available (optional)',
+              style: TextStyle(color: Color(0xFFF57F17), fontSize: 13),
+            ),
+          )
+        else
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _fieldBorderBlue, width: 1.2),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.location_city_rounded, color: _royalBlue, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int?>(
+                      key: const Key('partner_zone_dropdown'),
+                      value: _selectedZoneId,
+                      isExpanded: true,
+                      hint: const Text(
+                        'Select Zone (Optional)',
+                        style: TextStyle(color: Color(0xFF90A4AE), fontSize: 13),
+                      ),
+                      items: [
+                        const DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text('None / Unassigned', style: TextStyle(color: Color(0xFF78909C))),
+                        ),
+                        ..._availableZones.map((zone) => DropdownMenuItem<int?>(
+                              value: zone.id,
+                              child: Text(
+                                zone.name,
+                                style: const TextStyle(color: _deepBlue, fontWeight: FontWeight.w600),
+                              ),
+                            )),
+                      ],
+                      onChanged: (val) {
+                        setState(() {
+                          _selectedZoneId = val;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildTextField({
     Key? key,
     required TextEditingController controller,
@@ -400,11 +527,11 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
           label,
           style: const TextStyle(
             color: _deepBlue,
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         TextFormField(
           key: key,
           controller: controller,
@@ -418,11 +545,12 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
             counterText: '',
             hintText: hint,
             hintStyle: const TextStyle(color: Color(0xFF90A4AE), fontSize: 13),
-            prefixIcon: Icon(icon, color: _royalBlue, size: 20),
+            prefixIcon: Icon(icon, color: _royalBlue, size: 18),
             suffixIcon: suffixIcon,
             filled: true,
             fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: _fieldBorderBlue, width: 1.2),

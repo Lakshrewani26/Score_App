@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/models/admin_models.dart';
 import '../../../../core/services/admin_api.dart';
 import '../../../../core/services/admin_session_manager.dart';
+import 'edit_user_dialog.dart';
 
 class UserDetailSheet extends StatefulWidget {
   const UserDetailSheet({
@@ -11,12 +12,14 @@ class UserDetailSheet extends StatefulWidget {
     required this.adminApi,
     required this.sessionManager,
     required this.onStatusChanged,
+    this.onUserDeleted,
   });
 
   final AdminUserSummary userSummary;
   final AdminApi adminApi;
   final AdminSessionManager sessionManager;
   final ValueChanged<AdminUserSummary> onStatusChanged;
+  final VoidCallback? onUserDeleted;
 
   @override
   State<UserDetailSheet> createState() => _UserDetailSheetState();
@@ -64,6 +67,133 @@ class _UserDetailSheetState extends State<UserDetailSheet> {
         _detailError = 'Failed to load user details. Please try again.';
         _isLoadingDetail = false;
       });
+    }
+  }
+
+  void _openEditDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => EditUserDialog(
+        user: _currentUser,
+        detail: _detail,
+        adminApi: widget.adminApi,
+        onSuccess: (updated) {
+          setState(() {
+            _currentUser = updated;
+          });
+          widget.onStatusChanged(updated);
+          _fetchDetail();
+        },
+      ),
+    );
+  }
+
+  Future<void> _handleDeleteUser() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actionsOverflowButtonSpacing: 8,
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: Color(0xFFD32F2F), size: 24),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Delete Account',
+                style: TextStyle(color: _deepBlue, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete ${_currentUser.name}\'s account (#${_currentUser.id})?\n\nNote: If this account is referenced in orders, invoices, payments, stock requests, or assignments, it will be safely deactivated to preserve historical audit records.',
+          style: const TextStyle(color: Color(0xFF37474F), fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF78909C))),
+          ),
+          ElevatedButton(
+            key: const Key('confirm_delete_user_button'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFD32F2F),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete Account'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _isUpdatingStatus = true;
+    });
+
+    try {
+      final res = await widget.adminApi.deleteUser(userId: _currentUser.id);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.of(context).pop();
+      widget.onUserDeleted?.call();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(res.message),
+          backgroundColor: res.wasDeactivated
+              ? const Color(0xFFE65100)
+              : const Color(0xFF2E7D32),
+        ),
+      );
+    } on AdminApiException catch (e) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.shield_outlined, color: Colors.redAccent, size: 24),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Action Blocked',
+                  style: TextStyle(color: _deepBlue, fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            e.message,
+            style: const TextStyle(color: Color(0xFF37474F), fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to delete account. Please try again.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUpdatingStatus = false;
+        });
+      }
     }
   }
 
@@ -133,7 +263,6 @@ class _UserDetailSheetState extends State<UserDetailSheet> {
       );
     } on AdminApiException catch (e) {
       if (!mounted) return;
-      // Show explicit safeguard message for self-deactivation or last-active-admin
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -400,52 +529,103 @@ class _UserDetailSheetState extends State<UserDetailSheet> {
                   createdAt: _currentUser.createdAt,
                   businessName: _currentUser.businessName,
                   partnerCode: _currentUser.partnerCode,
+                  zoneId: _currentUser.zoneId,
+                  zoneName: _currentUser.zoneName,
                   staffId: _currentUser.staffId,
                 )),
               ],
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
               const Divider(color: Color(0xFFE3F2FD), height: 1),
               const SizedBox(height: 16),
 
-              // Status Management Action (Activate / Deactivate)
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: _isUpdatingStatus ? null : _handleToggleStatus,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _currentUser.isActive
-                        ? const Color(0xFFFFEBEE)
-                        : const Color(0xFFE8F8EE),
-                    foregroundColor: _currentUser.isActive
-                        ? const Color(0xFFD32F2F)
-                        : const Color(0xFF2E7D32),
-                    elevation: 0,
-                    side: BorderSide(
-                      color: _currentUser.isActive
-                          ? const Color(0xFFFFCDD2)
-                          : const Color(0xFFA5D6A7),
-                      width: 1.5,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+              // Action Buttons: Edit and Toggle Status
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: OutlinedButton.icon(
+                        key: const Key('user_detail_edit_button'),
+                        onPressed: _isUpdatingStatus ? null : _openEditDialog,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _royalBlue,
+                          side: const BorderSide(color: Color(0xFF9CDFFF), width: 1.2),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: const Icon(Icons.edit_rounded, size: 18),
+                        label: const Text('Edit Details', style: TextStyle(fontWeight: FontWeight.w700)),
+                      ),
                     ),
                   ),
-                  icon: _isUpdatingStatus
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(
-                          _currentUser.isActive
-                              ? Icons.block_rounded
-                              : Icons.check_circle_outline_rounded,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: ElevatedButton.icon(
+                        key: const Key('user_detail_status_button'),
+                        onPressed: _isUpdatingStatus ? null : _handleToggleStatus,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _currentUser.isActive
+                              ? const Color(0xFFFFEBEE)
+                              : const Color(0xFFE8F8EE),
+                          foregroundColor: _currentUser.isActive
+                              ? const Color(0xFFD32F2F)
+                              : const Color(0xFF2E7D32),
+                          elevation: 0,
+                          side: BorderSide(
+                            color: _currentUser.isActive
+                                ? const Color(0xFFFFCDD2)
+                                : const Color(0xFFA5D6A7),
+                            width: 1.2,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                  label: Text(
-                    _currentUser.isActive ? 'Deactivate Account' : 'Activate Account',
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                        icon: _isUpdatingStatus
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Icon(
+                                _currentUser.isActive
+                                    ? Icons.block_rounded
+                                    : Icons.check_circle_outline_rounded,
+                                size: 18,
+                              ),
+                        label: Text(
+                          _currentUser.isActive ? 'Deactivate Account' : 'Activate Account',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              // Delete Account Button (Safely soft-deactivates if referenced)
+              SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: TextButton.icon(
+                  key: const Key('user_detail_delete_button'),
+                  onPressed: _isUpdatingStatus ? null : _handleDeleteUser,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFFD32F2F),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: Color(0xFFFFCDD2), width: 1),
+                    ),
+                  ),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  label: const Text(
+                    'Delete Account',
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -511,6 +691,7 @@ class _UserDetailSheetState extends State<UserDetailSheet> {
       );
     } else if (role == 'partner') {
       final partner = detail.partnerProfile;
+      final assignedZone = partner?.zoneName ?? detail.zoneName ?? _currentUser.zoneName ?? 'Not Assigned';
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(14),
@@ -533,6 +714,11 @@ class _UserDetailSheetState extends State<UserDetailSheet> {
               partner?.partnerCode?.isNotEmpty == true
                   ? partner!.partnerCode!
                   : (detail.partnerCode ?? 'N/A'),
+            ),
+            const SizedBox(height: 8),
+            _buildInfoRow(
+              'Assigned Zone',
+              assignedZone,
             ),
             const SizedBox(height: 8),
             _buildInfoRow(

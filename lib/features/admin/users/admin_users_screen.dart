@@ -5,11 +5,14 @@ import 'package:flutter/material.dart';
 import '../../../core/models/admin_models.dart';
 import '../../../core/services/admin_api.dart';
 import '../../../core/services/admin_session_manager.dart';
+import '../reports/admin_reports_screen.dart';
+import 'admin_zone_management_screen.dart';
+import 'staff_partner_assignments_screen.dart';
+import 'widgets/create_customer_dialog.dart';
 import 'widgets/create_partner_dialog.dart';
 import 'widgets/create_staff_dialog.dart';
 import 'widgets/user_card.dart';
 import 'widgets/user_detail_sheet.dart';
-import 'staff_partner_assignments_screen.dart';
 
 class AdminUsersScreen extends StatefulWidget {
   const AdminUsersScreen({
@@ -38,6 +41,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
 
   String _selectedRole = 'all';
   String _selectedStatus = 'all';
+  int? _selectedZoneFilter;
+  List<AdminZone> _zones = [];
+
   int _currentPage = 1;
   static const int _pageSize = 20;
 
@@ -56,7 +62,19 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     _api = widget.adminApi ?? AdminApi(sessionManager: _session);
 
     _searchController.addListener(_onSearchChanged);
-    _fetchUsers();
+    _fetchUsers().then((_) {
+      if (mounted) _fetchZones();
+    });
+  }
+
+  Future<void> _fetchZones() async {
+    try {
+      final zones = await _api.getZones();
+      if (!mounted) return;
+      setState(() {
+        _zones = zones;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -97,6 +115,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         role: roleVal,
         search: searchVal.isNotEmpty ? searchVal : null,
         isActive: activeVal,
+        zoneId: _selectedZoneFilter,
         page: _currentPage,
         pageSize: _pageSize,
       );
@@ -124,6 +143,22 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _openCreateCustomerDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => CreateCustomerDialog(
+        adminApi: _api,
+        onSuccess: () {
+          setState(() {
+            _currentPage = 1;
+          });
+          _fetchUsers();
+        },
+      ),
+    );
   }
 
   void _openCreatePartnerDialog() {
@@ -158,6 +193,30 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     );
   }
 
+  void _openZoneManagement() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AdminZoneManagementScreen(
+          adminApi: _api,
+          sessionManager: _session,
+        ),
+      ),
+    );
+    _fetchZones();
+    _fetchUsers();
+  }
+
+  void _openReportsScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AdminReportsScreen(
+          adminApi: _api,
+          sessionManager: _session,
+        ),
+      ),
+    );
+  }
+
   void _openStaffPartnerAssignments() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -178,13 +237,18 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         adminApi: _api,
         sessionManager: _session,
         onStatusChanged: (updated) {
-          // Update the user item in the list in place
           setState(() {
             final index = _users.indexWhere((u) => u.id == updated.id);
             if (index != -1) {
               _users[index] = updated;
             }
           });
+        },
+        onUserDeleted: () {
+          setState(() {
+            _currentPage = 1;
+          });
+          _fetchUsers();
         },
       ),
     );
@@ -320,49 +384,52 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   Widget _buildActionRow() {
     return Column(
       children: [
+        // Row 1: Partner & Staff creation
         Row(
           children: [
             Expanded(
               child: SizedBox(
-                height: 42,
+                height: 40,
                 child: ElevatedButton.icon(
+                  key: const Key('admin_create_partner_button'),
                   onPressed: _openCreatePartnerDialog,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF00897B),
                     foregroundColor: Colors.white,
                     elevation: 1,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                   ),
-                  icon: const Icon(Icons.handshake_rounded, size: 18),
+                  icon: const Icon(Icons.handshake_rounded, size: 16),
                   label: const Text(
                     'Create Partner',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Expanded(
               child: SizedBox(
-                height: 42,
+                height: 40,
                 child: ElevatedButton.icon(
+                  key: const Key('admin_create_staff_button'),
                   onPressed: _openCreateStaffDialog,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFE65100),
                     foregroundColor: Colors.white,
                     elevation: 1,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
                   ),
-                  icon: const Icon(Icons.badge_rounded, size: 18),
+                  icon: const Icon(Icons.badge_rounded, size: 16),
                   label: const Text(
                     'Create Staff',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -370,24 +437,110 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
           ],
         ),
         const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          height: 40,
-          child: OutlinedButton.icon(
-            onPressed: _openStaffPartnerAssignments,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _royalBlue,
-              side: const BorderSide(color: _fieldBorderBlue),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+        // Row 2: Customer creation & Zones
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 38,
+                child: ElevatedButton.icon(
+                  key: const Key('admin_create_customer_button'),
+                  onPressed: _openCreateCustomerDialog,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0055B8),
+                    foregroundColor: Colors.white,
+                    elevation: 1,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  icon: const Icon(Icons.person_add_rounded, size: 16),
+                  label: const Text(
+                    'Create Customer',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
               ),
             ),
-            icon: const Icon(Icons.assignment_ind_rounded, size: 18),
-            label: const Text(
-              'Manage Staff-Partner Assignments',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SizedBox(
+                height: 38,
+                child: OutlinedButton.icon(
+                  key: const Key('admin_manage_zones_button'),
+                  onPressed: _openZoneManagement,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _royalBlue,
+                    side: const BorderSide(color: _fieldBorderBlue),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
+                  icon: const Icon(Icons.location_on_rounded, size: 16),
+                  label: const Text(
+                    'Manage Zones',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
             ),
-          ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Row 3: Assignments & Reports
+        Row(
+          children: [
+            Expanded(
+              flex: 6,
+              child: SizedBox(
+                height: 38,
+                child: OutlinedButton.icon(
+                  key: const Key('admin_assignments_button'),
+                  onPressed: _openStaffPartnerAssignments,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _royalBlue,
+                    side: const BorderSide(color: _fieldBorderBlue),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  icon: const Icon(Icons.assignment_ind_rounded, size: 16),
+                  label: const Text(
+                    'Manage Staff-Partner Assignments',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 3,
+              child: SizedBox(
+                height: 38,
+                child: OutlinedButton.icon(
+                  key: const Key('admin_reports_nav_button'),
+                  onPressed: _openReportsScreen,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF6A1B9A),
+                    side: const BorderSide(color: Color(0xFFE1BEE7)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  icon: const Icon(Icons.bar_chart_rounded, size: 16),
+                  label: const Text(
+                    'Reports',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -419,10 +572,11 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               border: Border.all(color: _fieldBorderBlue, width: 1),
             ),
             child: TextField(
+              key: const Key('admin_user_search_field'),
               controller: _searchController,
               style: const TextStyle(color: _deepBlue, fontSize: 14),
               decoration: InputDecoration(
-                hintText: 'Search by name or mobile...',
+                hintText: 'Search by name, mobile, ID, code...',
                 hintStyle:
                     const TextStyle(color: Color(0xFF90A4AE), fontSize: 13),
                 prefixIcon: const Icon(Icons.search_rounded,
@@ -444,7 +598,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          // Filter Dropdowns
+          // Filter Dropdowns Row 1: Role & Status
           Row(
             children: [
               // Role Filter
@@ -459,6 +613,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
+                      key: const Key('admin_user_role_filter'),
                       value: _selectedRole,
                       isExpanded: true,
                       icon: const Icon(Icons.keyboard_arrow_down_rounded,
@@ -503,6 +658,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(
+                      key: const Key('admin_user_status_filter'),
                       value: _selectedStatus,
                       isExpanded: true,
                       icon: const Icon(Icons.keyboard_arrow_down_rounded,
@@ -534,6 +690,52 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               ),
             ],
           ),
+          // Filter Row 2: Zone Filter (when zones are available)
+          if (_zones.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7FCFF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _fieldBorderBlue, width: 1),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<int?>(
+                  key: const Key('admin_user_zone_filter'),
+                  value: _selectedZoneFilter,
+                  isExpanded: true,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                      color: _royalBlue, size: 20),
+                  style: const TextStyle(
+                      color: _deepBlue,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600),
+                  hint: const Text('Filter by Zone (All Zones)'),
+                  items: [
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('All Zones'),
+                    ),
+                    ..._zones.map(
+                      (z) => DropdownMenuItem<int?>(
+                        value: z.id,
+                        child: Text('Zone: ${z.name}'),
+                      ),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedZoneFilter = val;
+                      _currentPage = 1;
+                    });
+                    _fetchUsers();
+                  },
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

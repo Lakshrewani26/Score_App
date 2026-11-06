@@ -272,6 +272,7 @@ class _AdminCatalogueScreenState extends State<AdminCatalogueScreen> {
         onProductUpdated: (updatedProduct) {
           _fetchProducts();
         },
+        onProductDeleted: _fetchProducts,
       ),
     );
   }

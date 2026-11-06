@@ -34,6 +34,7 @@ EXPECTED_TABLES = {
     "points_rules",
     "qr_batches",
     "qr_codes",
+    "zones",
 }
 
 INITIAL_EXPECTED_TABLES = EXPECTED_TABLES - {
@@ -41,6 +42,7 @@ INITIAL_EXPECTED_TABLES = EXPECTED_TABLES - {
     "points_rules",
     "qr_batches",
     "qr_codes",
+    "zones",
 }
 
 
@@ -125,11 +127,11 @@ def test_single_initial_alembic_revision_is_available() -> None:
     scripts = ScriptDirectory.from_config(config)
 
     assert len(scripts.get_heads()) == 1
-    assert len(list(scripts.walk_revisions())) == 5
-    latest_revision = scripts.get_revision("c9a4f0e2b713")
+    assert len(list(scripts.walk_revisions())) == 6
+    latest_revision = scripts.get_revision("f3b2c1d4e5a6")
     assert latest_revision is not None
-    assert latest_revision.down_revision == "b2c3d4e5f6a7"
-    assert scripts.get_heads() == ["c9a4f0e2b713"]
+    assert latest_revision.down_revision == "c9a4f0e2b713"
+    assert scripts.get_heads() == ["f3b2c1d4e5a6"]
     revision = scripts.get_revision("56ecec28acb3")
     assert revision is not None
     assert revision.down_revision is None

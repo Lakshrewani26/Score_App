@@ -213,3 +213,227 @@ class AdminReportOverview {
     );
   }
 }
+
+class ZoneWiseReportItem {
+  final int? zoneId;
+  final String zoneName;
+  final int partnerCount;
+  final int orderCount;
+  final num totalOrderValue;
+  final int paymentCount;
+  final num totalPaymentsCollected;
+
+  const ZoneWiseReportItem({
+    this.zoneId,
+    required this.zoneName,
+    this.partnerCount = 0,
+    this.orderCount = 0,
+    this.totalOrderValue = 0,
+    this.paymentCount = 0,
+    this.totalPaymentsCollected = 0,
+  });
+
+  factory ZoneWiseReportItem.fromJson(Map<String, dynamic> json) {
+    return ZoneWiseReportItem(
+      zoneId: json['zone_id'] as int?,
+      zoneName: json['zone_name'] as String? ?? 'Unknown Zone',
+      partnerCount: (json['partner_count'] as num?)?.toInt() ?? 0,
+      orderCount: (json['order_count'] as num?)?.toInt() ?? 0,
+      totalOrderValue: num.tryParse(json['total_order_value']?.toString() ?? '0') ?? 0,
+      paymentCount: (json['payment_count'] as num?)?.toInt() ?? 0,
+      totalPaymentsCollected: num.tryParse(json['total_payments_collected']?.toString() ?? '0') ?? 0,
+    );
+  }
+}
+
+class ZoneWiseReportResponse {
+  final List<ZoneWiseReportItem> items;
+  final int totalZones;
+  final int totalOrders;
+  final num totalOrderValue;
+
+  const ZoneWiseReportResponse({
+    required this.items,
+    this.totalZones = 0,
+    this.totalOrders = 0,
+    this.totalOrderValue = 0,
+  });
+
+  factory ZoneWiseReportResponse.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'] as List<dynamic>? ?? const [];
+    return ZoneWiseReportResponse(
+      items: rawItems
+          .whereType<Map<String, dynamic>>()
+          .map((e) => ZoneWiseReportItem.fromJson(e))
+          .toList(),
+      totalZones: (json['total_zones'] as num?)?.toInt() ?? 0,
+      totalOrders: (json['total_orders'] as num?)?.toInt() ?? 0,
+      totalOrderValue: num.tryParse(json['total_order_value']?.toString() ?? '0') ?? 0,
+    );
+  }
+}
+
+class AreaWiseReportItem {
+  final String areaName;
+  final int partnerCount;
+  final int orderCount;
+  final num totalOrderValue;
+
+  const AreaWiseReportItem({
+    required this.areaName,
+    this.partnerCount = 0,
+    this.orderCount = 0,
+    this.totalOrderValue = 0,
+  });
+
+  factory AreaWiseReportItem.fromJson(Map<String, dynamic> json) {
+    return AreaWiseReportItem(
+      areaName: json['area_name'] as String? ?? 'Unknown Area',
+      partnerCount: (json['partner_count'] as num?)?.toInt() ?? 0,
+      orderCount: (json['order_count'] as num?)?.toInt() ?? 0,
+      totalOrderValue: num.tryParse(json['total_order_value']?.toString() ?? '0') ?? 0,
+    );
+  }
+}
+
+class AreaWiseReportResponse {
+  final List<AreaWiseReportItem> items;
+  final int totalAreas;
+
+  const AreaWiseReportResponse({
+    required this.items,
+    this.totalAreas = 0,
+  });
+
+  factory AreaWiseReportResponse.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'] as List<dynamic>? ?? const [];
+    return AreaWiseReportResponse(
+      items: rawItems
+          .whereType<Map<String, dynamic>>()
+          .map((e) => AreaWiseReportItem.fromJson(e))
+          .toList(),
+      totalAreas: (json['total_areas'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class StaffWiseReportItem {
+  final int staffUserId;
+  final String staffId;
+  final String name;
+  final String mobile;
+  final int assignedPartnerCount;
+  final int orderCount;
+  final num totalOrderValue;
+  final int paymentCount;
+  final num totalPaymentsCollected;
+
+  const StaffWiseReportItem({
+    required this.staffUserId,
+    required this.staffId,
+    required this.name,
+    required this.mobile,
+    this.assignedPartnerCount = 0,
+    this.orderCount = 0,
+    this.totalOrderValue = 0,
+    this.paymentCount = 0,
+    this.totalPaymentsCollected = 0,
+  });
+
+  factory StaffWiseReportItem.fromJson(Map<String, dynamic> json) {
+    return StaffWiseReportItem(
+      staffUserId: (json['staff_user_id'] as num?)?.toInt() ?? 0,
+      staffId: json['staff_id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      mobile: json['mobile'] as String? ?? '',
+      assignedPartnerCount: (json['assigned_partner_count'] as num?)?.toInt() ?? 0,
+      orderCount: (json['order_count'] as num?)?.toInt() ?? 0,
+      totalOrderValue: num.tryParse(json['total_order_value']?.toString() ?? '0') ?? 0,
+      paymentCount: (json['payment_count'] as num?)?.toInt() ?? 0,
+      totalPaymentsCollected: num.tryParse(json['total_payments_collected']?.toString() ?? '0') ?? 0,
+    );
+  }
+}
+
+class StaffWiseReportResponse {
+  final List<StaffWiseReportItem> items;
+  final int totalStaff;
+
+  const StaffWiseReportResponse({
+    required this.items,
+    this.totalStaff = 0,
+  });
+
+  factory StaffWiseReportResponse.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'] as List<dynamic>? ?? const [];
+    return StaffWiseReportResponse(
+      items: rawItems
+          .whereType<Map<String, dynamic>>()
+          .map((e) => StaffWiseReportItem.fromJson(e))
+          .toList(),
+      totalStaff: (json['total_staff'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class PartnerWiseReportItem {
+  final int partnerUserId;
+  final String partnerName;
+  final String businessName;
+  final String mobile;
+  final String? partnerCode;
+  final String? zoneName;
+  final int orderCount;
+  final num totalOrderValue;
+  final int paymentCount;
+  final num totalPaymentsMade;
+
+  const PartnerWiseReportItem({
+    required this.partnerUserId,
+    required this.partnerName,
+    required this.businessName,
+    required this.mobile,
+    this.partnerCode,
+    this.zoneName,
+    this.orderCount = 0,
+    this.totalOrderValue = 0,
+    this.paymentCount = 0,
+    this.totalPaymentsMade = 0,
+  });
+
+  factory PartnerWiseReportItem.fromJson(Map<String, dynamic> json) {
+    return PartnerWiseReportItem(
+      partnerUserId: (json['partner_user_id'] as num?)?.toInt() ?? 0,
+      partnerName: json['partner_name'] as String? ?? '',
+      businessName: json['business_name'] as String? ?? '',
+      mobile: json['mobile'] as String? ?? '',
+      partnerCode: json['partner_code'] as String?,
+      zoneName: json['zone_name'] as String?,
+      orderCount: (json['order_count'] as num?)?.toInt() ?? 0,
+      totalOrderValue: num.tryParse(json['total_order_value']?.toString() ?? '0') ?? 0,
+      paymentCount: (json['payment_count'] as num?)?.toInt() ?? 0,
+      totalPaymentsMade: num.tryParse(json['total_payments_made']?.toString() ?? '0') ?? 0,
+    );
+  }
+}
+
+class PartnerWiseReportResponse {
+  final List<PartnerWiseReportItem> items;
+  final int totalPartners;
+
+  const PartnerWiseReportResponse({
+    required this.items,
+    this.totalPartners = 0,
+  });
+
+  factory PartnerWiseReportResponse.fromJson(Map<String, dynamic> json) {
+    final rawItems = json['items'] as List<dynamic>? ?? const [];
+    return PartnerWiseReportResponse(
+      items: rawItems
+          .whereType<Map<String, dynamic>>()
+          .map((e) => PartnerWiseReportItem.fromJson(e))
+          .toList(),
+      totalPartners: (json['total_partners'] as num?)?.toInt() ?? 0,
+    );
+  }
+}

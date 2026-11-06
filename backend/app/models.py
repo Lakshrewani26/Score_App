@@ -68,6 +68,28 @@ class CustomerProfile(Base):
     user: Mapped[User] = relationship(back_populates="customer_profile")
 
 
+class Zone(Base):
+    __tablename__ = "zones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    partners: Mapped[list[PartnerProfile]] = relationship(back_populates="zone")
+
+
 class PartnerProfile(Base):
     __tablename__ = "partner_profiles"
 
@@ -79,8 +101,12 @@ class PartnerProfile(Base):
     partner_code: Mapped[Optional[str]] = mapped_column(
         String(50), unique=True, nullable=True
     )
+    zone_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("zones.id", ondelete="SET NULL"), nullable=True
+    )
 
     user: Mapped[User] = relationship(back_populates="partner_profile")
+    zone: Mapped[Optional[Zone]] = relationship(back_populates="partners")
 
 
 class StaffProfile(Base):

@@ -649,13 +649,14 @@ def test_last_active_admin_protection(client: TestClient, db_session: Session) -
     # Deactivating admin 3 while active admin count is 1 -> 400.
 
 
-def test_user_deletion_is_not_implemented(client: TestClient, db_session: Session) -> None:
+def test_user_deletion_implemented_with_safeguards(client: TestClient, db_session: Session) -> None:
     admin = _create_user(db_session, role="admin", mobile="9890000001")
     headers = _auth_header(admin)
 
-    # DELETE /api/v1/admin/users/1 should return 405 Method Not Allowed
+    # Self-deletion by admin is rejected with 400 Bad Request
     res = client.delete(f"/api/v1/admin/users/{admin.id}", headers=headers)
-    assert res.status_code == 405
+    assert res.status_code == 400
+    assert "Cannot delete your own admin account" in res.json()["detail"]
 
 
 def test_cannot_alter_user_role_via_status_endpoint(client: TestClient, db_session: Session) -> None:

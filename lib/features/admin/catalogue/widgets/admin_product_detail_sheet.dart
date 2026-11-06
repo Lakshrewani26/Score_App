@@ -12,12 +12,14 @@ class AdminProductDetailSheet extends StatefulWidget {
     this.catalogueApi,
     this.categories,
     this.onProductUpdated,
+    this.onProductDeleted,
   });
 
   final AdminProduct product;
   final AdminCatalogueApi? catalogueApi;
   final List<AdminCategory>? categories;
   final ValueChanged<AdminProduct>? onProductUpdated;
+  final VoidCallback? onProductDeleted;
 
   @override
   State<AdminProductDetailSheet> createState() => _AdminProductDetailSheetState();
@@ -191,6 +193,87 @@ class _AdminProductDetailSheetState extends State<AdminProductDetailSheet> {
           content: Text('Failed to update product status. Please try again.'),
           backgroundColor: Colors.redAccent,
         ),
+      );
+    }
+  }
+
+  Future<void> _handleDeleteProduct() async {
+    if (widget.catalogueApi == null || _isUpdatingStatus) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const Key('product_delete_confirm_dialog'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actionsOverflowButtonSpacing: 8,
+        title: const Row(
+          children: [
+            Icon(Icons.delete_outline_rounded, color: Color(0xFFD32F2F), size: 24),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text('Delete Product', style: TextStyle(color: _deepBlue, fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete "${_product.name}" (${_product.productCode})?\n\nNote: If this product has historical orders, stock requests, or generated QR codes, it will be safely deactivated to preserve audit records.',
+          style: const TextStyle(color: Color(0xFF37474F), fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            key: const Key('product_delete_cancel_button'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF78909C), fontWeight: FontWeight.w700)),
+          ),
+          ElevatedButton(
+            key: const Key('product_delete_confirm_button'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFD32F2F),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete Product'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _isUpdatingStatus = true;
+    });
+
+    try {
+      final res = await widget.catalogueApi!.deleteProduct(_product.id);
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.of(context).pop();
+      widget.onProductDeleted?.call();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(res['message']?.toString() ?? 'Product processed'),
+          backgroundColor: res['was_deactivated'] == true
+              ? const Color(0xFFE65100)
+              : const Color(0xFF2E7D32),
+        ),
+      );
+    } on AdminApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isUpdatingStatus = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isUpdatingStatus = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to delete product.'), backgroundColor: Colors.redAccent),
       );
     }
   }
@@ -604,6 +687,27 @@ class _AdminProductDetailSheetState extends State<AdminProductDetailSheet> {
                                   ),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 42,
+                              child: TextButton.icon(
+                                key: const Key('product_detail_delete_button'),
+                                onPressed: _isUpdatingStatus ? null : _handleDeleteProduct,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFFD32F2F),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    side: const BorderSide(color: Color(0xFFFFCDD2), width: 1),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                                label: const Text(
+                                  'Delete Product',
+                                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                                ),
+                              ),
                             ),
                           ],
                         ),

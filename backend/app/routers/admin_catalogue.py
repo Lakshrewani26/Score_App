@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
@@ -9,7 +9,15 @@ from sqlalchemy.orm import Session
 
 from app.core.security import require_admin
 from app.db.session import get_db
-from app.models import Product, ProductCategory, User
+from app.models import (
+    OrderItem,
+    Product,
+    ProductCategory,
+    QrBatch,
+    QrCode,
+    StockRequestItem,
+    User,
+)
 from app.schemas.admin_catalogue import (
     AdminCategoryCreateRequest,
     AdminCategoryResponse,
@@ -322,6 +330,56 @@ def update_product_status(
         image_url=product.image_url,
         is_active=product.is_active,
     )
+
+
+@router.delete("/products/{product_id}")
+def delete_product(
+    product_id: int,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Delete a product where safe, or soft-deactivate if referenced in historical orders/stock requests/QR codes.
+    Preserves data integrity for historical records.
+    """
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found",
+        )
+
+    # Check for references in order items, stock request items, and QR codes
+    has_orders = db.scalar(
+        select(OrderItem.id).where(OrderItem.product_id == product_id).limit(1)
+    ) is not None
+    has_stock_requests = db.scalar(
+        select(StockRequestItem.id).where(StockRequestItem.product_id == product_id).limit(1)
+    ) is not None
+    has_qr_codes = db.scalar(
+        select(QrCode.id).where(QrCode.product_id == product_id).limit(1)
+    ) is not None
+    has_qr_batches = db.scalar(
+        select(QrBatch.id).where(QrBatch.product_id == product_id).limit(1)
+    ) is not None
+
+    if has_orders or has_stock_requests or has_qr_codes or has_qr_batches:
+        # Soft-delete / deactivate
+        product.is_active = False
+        db.commit()
+        return {
+            "message": "Product is referenced in transaction/inventory history and has been deactivated.",
+            "product_id": product_id,
+            "action": "deactivated",
+        }
+    else:
+        db.delete(product)
+        db.commit()
+        return {
+            "message": "Product deleted successfully.",
+            "product_id": product_id,
+            "action": "deleted",
+        }
 
 
 # ---------------------------------------------------------------------------

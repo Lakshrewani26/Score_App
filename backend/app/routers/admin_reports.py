@@ -13,18 +13,31 @@ from app.db.session import get_db
 from app.models import (
     Order,
     OrderItem,
+    PartnerProfile,
     Product,
     ProductCategory,
+    StaffPartnerAssignment,
+    StaffPaymentRecord,
+    StaffProfile,
     StockRequest,
     User,
+    Zone,
 )
 from app.schemas.admin_reports import (
     AdminReportOverviewResponse,
+    AreaWiseReportItem,
+    AreaWiseReportResponse,
     CatalogueSummary,
     OrderTrendPoint,
+    PartnerWiseReportItem,
+    PartnerWiseReportResponse,
     ReportDateFilter,
     ReportOverview,
+    StaffWiseReportItem,
+    StaffWiseReportResponse,
     StatusCount,
+    ZoneWiseReportItem,
+    ZoneWiseReportResponse,
 )
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-reports"])
@@ -412,3 +425,426 @@ def get_report_overview(
         stock_request_status_distribution=stock_request_status_distribution,
         order_trends=order_trends,
     )
+
+
+# ---------------------------------------------------------------------------
+# Zone-Wise Report
+# ---------------------------------------------------------------------------
+
+@router.get("/reports/zone-wise", response_model=ZoneWiseReportResponse)
+def get_zone_wise_report(
+    date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    zone_id: Optional[int] = Query(None, description="Filter by Zone ID"),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> ZoneWiseReportResponse:
+    parsed_date_from = _parse_filter_date(date_from, is_end_of_day=False)
+    parsed_date_to = _parse_filter_date(date_to, is_end_of_day=True)
+
+    if parsed_date_from and parsed_date_to and parsed_date_from > parsed_date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date_from must be earlier than or equal to date_to.",
+        )
+
+    # 1. Fetch relevant zones
+    zones_query = select(Zone).order_by(Zone.name.asc())
+    if zone_id is not None:
+        zones_query = zones_query.where(Zone.id == zone_id)
+    zones = db.scalars(zones_query).all()
+
+    items: list[ZoneWiseReportItem] = []
+    total_all_orders = 0
+    total_all_order_value = Decimal("0.00")
+
+    for z in zones:
+        # Partners in this zone
+        partner_user_ids = db.scalars(
+            select(PartnerProfile.user_id).where(PartnerProfile.zone_id == z.id)
+        ).all()
+        partner_count = len(partner_user_ids)
+
+        order_count = 0
+        total_order_value = Decimal("0.00")
+        if partner_user_ids:
+            order_filters = [Order.partner_id.in_(partner_user_ids)]
+            if parsed_date_from:
+                order_filters.append(Order.created_at >= parsed_date_from)
+            if parsed_date_to:
+                order_filters.append(Order.created_at <= parsed_date_to)
+
+            order_count = db.scalar(
+                select(func.count(Order.id)).where(*order_filters)
+            ) or 0
+
+            val = db.scalar(
+                select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
+                .select_from(OrderItem)
+                .join(Order, OrderItem.order_id == Order.id)
+                .where(*order_filters)
+            )
+            total_order_value = Decimal(str(val or 0))
+
+        # Payments for partners in this zone
+        payment_count = 0
+        total_payments_collected = Decimal("0.00")
+        if partner_user_ids:
+            payment_filters = [
+                StaffPaymentRecord.partner_id.in_(partner_user_ids),
+                StaffPaymentRecord.status == "recorded",
+            ]
+            if parsed_date_from:
+                payment_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)
+            if parsed_date_to:
+                payment_filters.append(StaffPaymentRecord.recorded_at <= parsed_date_to)
+
+            payment_count = db.scalar(
+                select(func.count(StaffPaymentRecord.id)).where(*payment_filters)
+            ) or 0
+            pval = db.scalar(
+                select(func.coalesce(func.sum(StaffPaymentRecord.amount), 0)).where(*payment_filters)
+            )
+            total_payments_collected = Decimal(str(pval or 0))
+
+        items.append(
+            ZoneWiseReportItem(
+                zone_id=z.id,
+                zone_name=z.name,
+                partner_count=partner_count,
+                order_count=order_count,
+                total_order_value=total_order_value,
+                payment_count=payment_count,
+                total_payments_collected=total_payments_collected,
+            )
+        )
+        total_all_orders += order_count
+        total_all_order_value += total_order_value
+
+    # If no specific zone filter, also check for unassigned partners
+    if zone_id is None:
+        unassigned_partner_ids = db.scalars(
+            select(PartnerProfile.user_id).where(PartnerProfile.zone_id.is_(None))
+        ).all()
+        if unassigned_partner_ids:
+            order_filters = [Order.partner_id.in_(unassigned_partner_ids)]
+            if parsed_date_from:
+                order_filters.append(Order.created_at >= parsed_date_from)
+            if parsed_date_to:
+                order_filters.append(Order.created_at <= parsed_date_to)
+
+            u_order_count = db.scalar(
+                select(func.count(Order.id)).where(*order_filters)
+            ) or 0
+            u_val = db.scalar(
+                select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
+                .select_from(OrderItem)
+                .join(Order, OrderItem.order_id == Order.id)
+                .where(*order_filters)
+            )
+            u_total_order_value = Decimal(str(u_val or 0))
+
+            payment_filters = [
+                StaffPaymentRecord.partner_id.in_(unassigned_partner_ids),
+                StaffPaymentRecord.status == "recorded",
+            ]
+            if parsed_date_from:
+                payment_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)
+            if parsed_date_to:
+                payment_filters.append(StaffPaymentRecord.recorded_at <= parsed_date_to)
+
+            u_payment_count = db.scalar(
+                select(func.count(StaffPaymentRecord.id)).where(*payment_filters)
+            ) or 0
+            u_pval = db.scalar(
+                select(func.coalesce(func.sum(StaffPaymentRecord.amount), 0)).where(*payment_filters)
+            )
+            u_total_payments = Decimal(str(u_pval or 0))
+
+            items.append(
+                ZoneWiseReportItem(
+                    zone_id=None,
+                    zone_name="Unassigned Zone",
+                    partner_count=len(unassigned_partner_ids),
+                    order_count=u_order_count,
+                    total_order_value=u_total_order_value,
+                    payment_count=u_payment_count,
+                    total_payments_collected=u_total_payments,
+                )
+            )
+            total_all_orders += u_order_count
+            total_all_order_value += u_total_order_value
+
+    return ZoneWiseReportResponse(
+        items=items,
+        total_zones=len(items),
+        total_orders=total_all_orders,
+        total_order_value=total_all_order_value,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Area-Wise Report
+# ---------------------------------------------------------------------------
+
+@router.get("/reports/area-wise", response_model=AreaWiseReportResponse)
+def get_area_wise_report(
+    date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    zone_id: Optional[int] = Query(None, description="Filter by Zone ID"),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AreaWiseReportResponse:
+    parsed_date_from = _parse_filter_date(date_from, is_end_of_day=False)
+    parsed_date_to = _parse_filter_date(date_to, is_end_of_day=True)
+
+    if parsed_date_from and parsed_date_to and parsed_date_from > parsed_date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date_from must be earlier than or equal to date_to.",
+        )
+
+    # Fetch distinct addresses/areas from partner profiles
+    partner_query = select(PartnerProfile)
+    if zone_id is not None:
+        partner_query = partner_query.where(PartnerProfile.zone_id == zone_id)
+    partners = db.scalars(partner_query).all()
+
+    # Group partners by address / area string
+    areas_map: dict[str, list[int]] = {}
+    for p in partners:
+        area_key = (p.business_address or "Unknown Area").strip()
+        if not area_key:
+            area_key = "Unknown Area"
+        areas_map.setdefault(area_key, []).append(p.user_id)
+
+    items: list[AreaWiseReportItem] = []
+    for area_name, uids in sorted(areas_map.items()):
+        order_filters = [Order.partner_id.in_(uids)]
+        if parsed_date_from:
+            order_filters.append(Order.created_at >= parsed_date_from)
+        if parsed_date_to:
+            order_filters.append(Order.created_at <= parsed_date_to)
+
+        order_count = db.scalar(
+            select(func.count(Order.id)).where(*order_filters)
+        ) or 0
+
+        val = db.scalar(
+            select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
+            .select_from(OrderItem)
+            .join(Order, OrderItem.order_id == Order.id)
+            .where(*order_filters)
+        )
+        total_order_value = Decimal(str(val or 0))
+
+        items.append(
+            AreaWiseReportItem(
+                area_name=area_name,
+                partner_count=len(uids),
+                order_count=order_count,
+                total_order_value=total_order_value,
+            )
+        )
+
+    return AreaWiseReportResponse(items=items, total_areas=len(items))
+
+
+# ---------------------------------------------------------------------------
+# Staff-Wise Report
+# ---------------------------------------------------------------------------
+
+@router.get("/reports/staff-wise", response_model=StaffWiseReportResponse)
+def get_staff_wise_report(
+    date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    staff_id: Optional[int] = Query(None, description="Filter by staff user ID"),
+    zone_id: Optional[int] = Query(None, description="Filter by assigned Partner Zone"),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> StaffWiseReportResponse:
+    parsed_date_from = _parse_filter_date(date_from, is_end_of_day=False)
+    parsed_date_to = _parse_filter_date(date_to, is_end_of_day=True)
+
+    if parsed_date_from and parsed_date_to and parsed_date_from > parsed_date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date_from must be earlier than or equal to date_to.",
+        )
+
+    staff_query = select(StaffProfile, User).join(User, StaffProfile.user_id == User.id).order_by(User.name.asc())
+    if staff_id is not None:
+        staff_query = staff_query.where(StaffProfile.user_id == staff_id)
+    staff_rows = db.execute(staff_query).all()
+
+    items: list[StaffWiseReportItem] = []
+    for sp, u in staff_rows:
+        # Active assignments for this staff
+        assignment_query = select(StaffPartnerAssignment.partner_id).where(
+            StaffPartnerAssignment.staff_id == sp.user_id,
+            StaffPartnerAssignment.is_active.is_(True),
+        )
+        assigned_partner_ids = db.scalars(assignment_query).all()
+
+        if zone_id is not None and assigned_partner_ids:
+            # Further filter assigned partners by zone
+            assigned_partner_ids = db.scalars(
+                select(PartnerProfile.user_id).where(
+                    PartnerProfile.user_id.in_(assigned_partner_ids),
+                    PartnerProfile.zone_id == zone_id,
+                )
+            ).all()
+
+        order_count = 0
+        total_order_value = Decimal("0.00")
+        if assigned_partner_ids:
+            order_filters = [Order.partner_id.in_(assigned_partner_ids)]
+            if parsed_date_from:
+                order_filters.append(Order.created_at >= parsed_date_from)
+            if parsed_date_to:
+                order_filters.append(Order.created_at <= parsed_date_to)
+
+            order_count = db.scalar(
+                select(func.count(Order.id)).where(*order_filters)
+            ) or 0
+            val = db.scalar(
+                select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
+                .select_from(OrderItem)
+                .join(Order, OrderItem.order_id == Order.id)
+                .where(*order_filters)
+            )
+            total_order_value = Decimal(str(val or 0))
+
+        # Payments recorded by this staff
+        payment_filters = [
+            StaffPaymentRecord.staff_id == sp.user_id,
+            StaffPaymentRecord.status == "recorded",
+        ]
+        if parsed_date_from:
+            payment_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)
+        if parsed_date_to:
+            payment_filters.append(StaffPaymentRecord.recorded_at <= parsed_date_to)
+
+        payment_count = db.scalar(
+            select(func.count(StaffPaymentRecord.id)).where(*payment_filters)
+        ) or 0
+        pval = db.scalar(
+            select(func.coalesce(func.sum(StaffPaymentRecord.amount), 0)).where(*payment_filters)
+        )
+        total_payments_collected = Decimal(str(pval or 0))
+
+        items.append(
+            StaffWiseReportItem(
+                staff_user_id=sp.user_id,
+                staff_id=sp.staff_id,
+                name=u.name,
+                mobile=u.mobile,
+                assigned_partner_count=len(assigned_partner_ids),
+                order_count=order_count,
+                total_order_value=total_order_value,
+                payment_count=payment_count,
+                total_payments_collected=total_payments_collected,
+            )
+        )
+
+    return StaffWiseReportResponse(items=items, total_staff=len(items))
+
+
+# ---------------------------------------------------------------------------
+# Partner-Wise Report
+# ---------------------------------------------------------------------------
+
+@router.get("/reports/partner-wise", response_model=PartnerWiseReportResponse)
+def get_partner_wise_report(
+    date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    partner_id: Optional[int] = Query(None, description="Filter by Partner user ID"),
+    zone_id: Optional[int] = Query(None, description="Filter by Zone ID"),
+    staff_id: Optional[int] = Query(None, description="Filter by assigned Staff ID"),
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> PartnerWiseReportResponse:
+    parsed_date_from = _parse_filter_date(date_from, is_end_of_day=False)
+    parsed_date_to = _parse_filter_date(date_to, is_end_of_day=True)
+
+    if parsed_date_from and parsed_date_to and parsed_date_from > parsed_date_to:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="date_from must be earlier than or equal to date_to.",
+        )
+
+    partner_query = (
+        select(PartnerProfile, User, Zone.name.label("zone_name"))
+        .join(User, PartnerProfile.user_id == User.id)
+        .outerjoin(Zone, PartnerProfile.zone_id == Zone.id)
+        .order_by(User.name.asc())
+    )
+
+    if partner_id is not None:
+        partner_query = partner_query.where(PartnerProfile.user_id == partner_id)
+    if zone_id is not None:
+        partner_query = partner_query.where(PartnerProfile.zone_id == zone_id)
+    if staff_id is not None:
+        assigned_pids = db.scalars(
+            select(StaffPartnerAssignment.partner_id).where(
+                StaffPartnerAssignment.staff_id == staff_id,
+                StaffPartnerAssignment.is_active.is_(True),
+            )
+        ).all()
+        partner_query = partner_query.where(PartnerProfile.user_id.in_(assigned_pids))
+
+    partner_rows = db.execute(partner_query).all()
+
+    items: list[PartnerWiseReportItem] = []
+    for pp, u, zname in partner_rows:
+        order_filters = [Order.partner_id == pp.user_id]
+        if parsed_date_from:
+            order_filters.append(Order.created_at >= parsed_date_from)
+        if parsed_date_to:
+            order_filters.append(Order.created_at <= parsed_date_to)
+
+        order_count = db.scalar(
+            select(func.count(Order.id)).where(*order_filters)
+        ) or 0
+        val = db.scalar(
+            select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
+            .select_from(OrderItem)
+            .join(Order, OrderItem.order_id == Order.id)
+            .where(*order_filters)
+        )
+        total_order_value = Decimal(str(val or 0))
+
+        payment_filters = [
+            StaffPaymentRecord.partner_id == pp.user_id,
+            StaffPaymentRecord.status == "recorded",
+        ]
+        if parsed_date_from:
+            payment_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)
+        if parsed_date_to:
+            payment_filters.append(StaffPaymentRecord.recorded_at <= parsed_date_to)
+
+        payment_count = db.scalar(
+            select(func.count(StaffPaymentRecord.id)).where(*payment_filters)
+        ) or 0
+        pval = db.scalar(
+            select(func.coalesce(func.sum(StaffPaymentRecord.amount), 0)).where(*payment_filters)
+        )
+        total_payments_made = Decimal(str(pval or 0))
+
+        items.append(
+            PartnerWiseReportItem(
+                partner_user_id=pp.user_id,
+                partner_name=u.name,
+                business_name=pp.business_name,
+                mobile=u.mobile,
+                partner_code=pp.partner_code,
+                zone_name=zname or "Unassigned",
+                order_count=order_count,
+                total_order_value=total_order_value,
+                payment_count=payment_count,
+                total_payments_made=total_payments_made,
+            )
+        )
+
+    return PartnerWiseReportResponse(items=items, total_partners=len(items))
+

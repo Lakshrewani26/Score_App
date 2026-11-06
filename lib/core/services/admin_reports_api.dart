@@ -149,4 +149,192 @@ class AdminReportsApi {
 
     throw _parseError(response, 'Failed to fetch report overview (${response.statusCode})');
   }
+
+  /// Fetch zone-wise report
+  Future<ZoneWiseReportResponse> getZoneWiseReport({
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    int? zoneId,
+    String? token,
+  }) async {
+    final authToken = await _getAuthToken(token);
+    final queryParams = <String, dynamic>{};
+    if (dateFrom != null) {
+      queryParams['date_from'] =
+          '${dateFrom.year.toString().padLeft(4, '0')}-${dateFrom.month.toString().padLeft(2, '0')}-${dateFrom.day.toString().padLeft(2, '0')}';
+    }
+    if (dateTo != null) {
+      queryParams['date_to'] =
+          '${dateTo.year.toString().padLeft(4, '0')}-${dateTo.month.toString().padLeft(2, '0')}-${dateTo.day.toString().padLeft(2, '0')}';
+    }
+    if (zoneId != null) {
+      queryParams['zone_id'] = zoneId.toString();
+    }
+
+    final url = _uri('/api/v1/admin/reports/zone-wise', queryParams);
+    final response = await _sendWithTimeout(
+      () => _client.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Accept': 'application/json',
+        },
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return ZoneWiseReportResponse.fromJson(decoded);
+        }
+        throw AdminApiException('Invalid response format received from server.');
+      } catch (e) {
+        if (e is AdminApiException) rethrow;
+        throw AdminApiException('Failed to parse zone-wise report: $e');
+      }
+    }
+    throw _parseError(response, 'Failed to fetch zone-wise report (${response.statusCode})');
+  }
+
+  /// Fetch area-wise report
+  Future<AreaWiseReportResponse> getAreaWiseReport({
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    String? token,
+  }) async {
+    final authToken = await _getAuthToken(token);
+    final queryParams = <String, dynamic>{};
+    if (dateFrom != null) {
+      queryParams['date_from'] =
+          '${dateFrom.year.toString().padLeft(4, '0')}-${dateFrom.month.toString().padLeft(2, '0')}-${dateFrom.day.toString().padLeft(2, '0')}';
+    }
+    if (dateTo != null) {
+      queryParams['date_to'] =
+          '${dateTo.year.toString().padLeft(4, '0')}-${dateTo.month.toString().padLeft(2, '0')}-${dateTo.day.toString().padLeft(2, '0')}';
+    }
+
+    final url = _uri('/api/v1/admin/reports/area-wise', queryParams);
+    final response = await _sendWithTimeout(
+      () => _client.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Accept': 'application/json',
+        },
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return AreaWiseReportResponse.fromJson(decoded);
+        }
+        throw AdminApiException('Invalid response format received from server.');
+      } catch (e) {
+        if (e is AdminApiException) rethrow;
+        throw AdminApiException('Failed to parse area-wise report: $e');
+      }
+    }
+    throw _parseError(response, 'Failed to fetch area-wise report (${response.statusCode})');
+  }
+
+  /// Fetch staff-wise report
+  Future<StaffWiseReportResponse> getStaffWiseReport({
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    int? staffId,
+    String? token,
+  }) async {
+    final authToken = await _getAuthToken(token);
+    final queryParams = <String, dynamic>{};
+    if (dateFrom != null) {
+      queryParams['date_from'] =
+          '${dateFrom.year.toString().padLeft(4, '0')}-${dateFrom.month.toString().padLeft(2, '0')}-${dateFrom.day.toString().padLeft(2, '0')}';
+    }
+    if (dateTo != null) {
+      queryParams['date_to'] =
+          '${dateTo.year.toString().padLeft(4, '0')}-${dateTo.month.toString().padLeft(2, '0')}-${dateTo.day.toString().padLeft(2, '0')}';
+    }
+    if (staffId != null) {
+      queryParams['staff_id'] = staffId.toString();
+    }
+
+    final url = _uri('/api/v1/admin/reports/staff-wise', queryParams);
+    final response = await _sendWithTimeout(
+      () => _client.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Accept': 'application/json',
+        },
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return StaffWiseReportResponse.fromJson(decoded);
+        }
+        throw AdminApiException('Invalid response format received from server.');
+      } catch (e) {
+        if (e is AdminApiException) rethrow;
+        throw AdminApiException('Failed to parse staff-wise report: $e');
+      }
+    }
+    throw _parseError(response, 'Failed to fetch staff-wise report (${response.statusCode})');
+  }
+
+  /// Fetch partner-wise report
+  Future<PartnerWiseReportResponse> getPartnerWiseReport({
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    int? zoneId,
+    int? partnerId,
+    String? token,
+  }) async {
+    final authToken = await _getAuthToken(token);
+    final queryParams = <String, dynamic>{};
+    if (dateFrom != null) {
+      queryParams['date_from'] =
+          '${dateFrom.year.toString().padLeft(4, '0')}-${dateFrom.month.toString().padLeft(2, '0')}-${dateFrom.day.toString().padLeft(2, '0')}';
+    }
+    if (dateTo != null) {
+      queryParams['date_to'] =
+          '${dateTo.year.toString().padLeft(4, '0')}-${dateTo.month.toString().padLeft(2, '0')}-${dateTo.day.toString().padLeft(2, '0')}';
+    }
+    if (zoneId != null) {
+      queryParams['zone_id'] = zoneId.toString();
+    }
+    if (partnerId != null) {
+      queryParams['partner_id'] = partnerId.toString();
+    }
+
+    final url = _uri('/api/v1/admin/reports/partner-wise', queryParams);
+    final response = await _sendWithTimeout(
+      () => _client.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Accept': 'application/json',
+        },
+      ),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          return PartnerWiseReportResponse.fromJson(decoded);
+        }
+        throw AdminApiException('Invalid response format received from server.');
+      } catch (e) {
+        if (e is AdminApiException) rethrow;
+        throw AdminApiException('Failed to parse partner-wise report: $e');
+      }
+    }
+    throw _parseError(response, 'Failed to fetch partner-wise report (${response.statusCode})');
+  }
 }
