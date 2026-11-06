@@ -187,3 +187,49 @@ def test_package_quantity_migration_upgrade_and_downgrade() -> None:
             column["name"] for column in inspect(connection).get_columns("products")
         }
     engine.dispose()
+
+
+def test_zones_migration_upgrade_and_downgrade() -> None:
+    backend_dir = Path(__file__).resolve().parents[1]
+    migration_path = (
+        backend_dir
+        / "migrations"
+        / "versions"
+        / "f3b2c1d4e5a6_create_zones_and_partner_zone_fk.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "zones_migration", migration_path
+    )
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE partner_profiles (id INTEGER PRIMARY KEY, business_name VARCHAR(200))"
+        )
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+
+        tables = set(inspect(connection).get_table_names())
+        assert "zones" in tables
+
+        column = next(
+            column
+            for column in inspect(connection).get_columns("partner_profiles")
+            if column["name"] == "zone_id"
+        )
+        assert column["nullable"] is True
+
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+
+        tables_after = set(inspect(connection).get_table_names())
+        assert "zones" not in tables_after
+        assert "zone_id" not in {
+            column["name"]
+            for column in inspect(connection).get_columns("partner_profiles")
+        }
+    engine.dispose()
+

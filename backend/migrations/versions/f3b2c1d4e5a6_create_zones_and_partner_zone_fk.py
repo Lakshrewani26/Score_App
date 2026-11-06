@@ -33,21 +33,21 @@ def upgrade() -> None:
     )
 
     # 2. Add zone_id column and foreign key to partner_profiles
-    op.add_column(
-        "partner_profiles",
-        sa.Column("zone_id", sa.Integer(), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_partner_profiles_zone_id_zones",
-        "partner_profiles",
-        "zones",
-        ["zone_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    with op.batch_alter_table("partner_profiles") as batch_op:
+        batch_op.add_column(
+            sa.Column("zone_id", sa.Integer(), nullable=True),
+        )
+        batch_op.create_foreign_key(
+            "fk_partner_profiles_zone_id_zones",
+            "zones",
+            ["zone_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_partner_profiles_zone_id_zones", "partner_profiles", type_="foreignkey")
-    op.drop_column("partner_profiles", "zone_id")
+    with op.batch_alter_table("partner_profiles") as batch_op:
+        batch_op.drop_constraint("fk_partner_profiles_zone_id_zones", type_="foreignkey")
+        batch_op.drop_column("zone_id")
     op.drop_table("zones")
