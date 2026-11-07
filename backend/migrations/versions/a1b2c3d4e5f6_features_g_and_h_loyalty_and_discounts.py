@@ -49,24 +49,24 @@ def upgrade() -> None:
         )
         # Drop old check constraint on category that lacked customer_qr_scan and partner_qr_scan
         if should_drop_category_constraint:
-            batch_op.drop_constraint("ck_points_rules_supported_rule_category", type_="check")
+            batch_op.drop_constraint(op.f("ck_points_rules_supported_rule_category"), type_="check")
         # Recreate check constraint with all supported categories
         batch_op.create_check_constraint(
-            "ck_points_rules_supported_rule_category",
+            op.f("ck_points_rules_supported_rule_category"),
             "category IN ('customer_qr_scan', 'partner_qr_scan', 'product_qr_scan', "
             "'invoice_qr_scan', 'redemption', 'customer_to_partner_transfer', "
             "'partner_to_staff_transfer')",
         )
         batch_op.create_check_constraint(
-            "ck_points_rules_nonnegative_conversion_rate",
+            op.f("ck_points_rules_nonnegative_conversion_rate"),
             "conversion_rate IS NULL OR conversion_rate >= 0",
         )
         batch_op.create_check_constraint(
-            "ck_points_rules_nonnegative_point_value",
+            op.f("ck_points_rules_nonnegative_point_value"),
             "point_value IS NULL OR point_value >= 0",
         )
         batch_op.create_check_constraint(
-            "ck_points_rules_positive_rule_version",
+            op.f("ck_points_rules_positive_rule_version"),
             "version >= 1",
         )
 
@@ -208,16 +208,16 @@ def downgrade() -> None:
 
     with op.batch_alter_table("points_rules") as batch_op:
         if not is_sqlite or "ck_points_rules_positive_rule_version" in existing_checks:
-            batch_op.drop_constraint("ck_points_rules_positive_rule_version", type_="check")
+            batch_op.drop_constraint(op.f("ck_points_rules_positive_rule_version"), type_="check")
         if not is_sqlite or "ck_points_rules_nonnegative_point_value" in existing_checks:
-            batch_op.drop_constraint("ck_points_rules_nonnegative_point_value", type_="check")
+            batch_op.drop_constraint(op.f("ck_points_rules_nonnegative_point_value"), type_="check")
         if not is_sqlite or "ck_points_rules_nonnegative_conversion_rate" in existing_checks:
-            batch_op.drop_constraint("ck_points_rules_nonnegative_conversion_rate", type_="check")
+            batch_op.drop_constraint(op.f("ck_points_rules_nonnegative_conversion_rate"), type_="check")
         if not is_sqlite or "ck_points_rules_supported_rule_category" in existing_checks:
-            batch_op.drop_constraint("ck_points_rules_supported_rule_category", type_="check")
+            batch_op.drop_constraint(op.f("ck_points_rules_supported_rule_category"), type_="check")
         # Restore the original check constraint from migration e7b2c9d4f1a3
         batch_op.create_check_constraint(
-            "ck_points_rules_supported_rule_category",
+            op.f("ck_points_rules_supported_rule_category"),
             "category IN ('product_qr_scan', 'invoice_qr_scan', 'redemption', "
             "'customer_to_partner_transfer', 'partner_to_staff_transfer')",
         )
