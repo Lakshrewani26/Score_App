@@ -722,6 +722,8 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             child: Row(
               children: [
                 _buildCategoryFilterChip('all', 'All Categories'),
+                _buildCategoryFilterChip('customer_qr_scan', 'Customer QR'),
+                _buildCategoryFilterChip('partner_qr_scan', 'Partner QR'),
                 _buildCategoryFilterChip('product_qr_scan', 'Product QR'),
                 _buildCategoryFilterChip('invoice_qr_scan', 'Invoice QR'),
                 _buildCategoryFilterChip('redemption', 'Redemption'),
@@ -932,57 +934,122 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           // Row 1: Category badge & Active status
           Row(
             children: [
+              Flexible(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: catColor.withAlpha(24),
+                    borderRadius: BorderRadius.circular(6),
+                    border:
+                        Border.all(color: catColor.withAlpha(90), width: 0.8),
+                  ),
+                  child: Text(
+                    rule.categoryLabel,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: catColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: catColor.withAlpha(24),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: catColor.withAlpha(90), width: 0.8),
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(4),
+                  border:
+                      Border.all(color: const Color(0xFFCBD5E1), width: 0.8),
                 ),
                 child: Text(
-                  rule.categoryLabel,
-                  style: TextStyle(
-                    color: catColor,
-                    fontSize: 11,
+                  'v${rule.version}',
+                  style: const TextStyle(
+                    color: Color(0xFF475569),
+                    fontSize: 10.5,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
+              if (rule.isCurrent) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE3F2FD),
+                    borderRadius: BorderRadius.circular(4),
+                    border:
+                        Border.all(color: const Color(0xFF90CAF9), width: 0.8),
+                  ),
+                  child: const Text(
+                    'LATEST',
+                    style: TextStyle(
+                      color: Color(0xFF1565C0),
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
               const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: rule.isActive
-                      ? const Color(0xFFE8F8EE)
-                      : const Color(0xFFEEEEEE),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      rule.isActive
-                          ? Icons.check_circle_rounded
-                          : Icons.pause_circle_outline_rounded,
-                      size: 13,
-                      color: rule.isActive
-                          ? const Color(0xFF2E7D32)
-                          : const Color(0xFF757575),
+              Builder(
+                builder: (context) {
+                  final Color badgeBg;
+                  final Color badgeFg;
+                  final IconData badgeIcon;
+                  final String badgeLabel;
+
+                  if (!rule.isActive) {
+                    badgeBg = const Color(0xFFEEEEEE);
+                    badgeFg = const Color(0xFF757575);
+                    badgeIcon = Icons.pause_circle_outline_rounded;
+                    badgeLabel = 'INACTIVE';
+                  } else if (rule.isFutureScheduled) {
+                    badgeBg = const Color(0xFFEDE7F6);
+                    badgeFg = const Color(0xFF5E35B1);
+                    badgeIcon = Icons.schedule_rounded;
+                    badgeLabel = 'SCHEDULED';
+                  } else if (rule.effectiveStatus == 'expired') {
+                    badgeBg = const Color(0xFFEEEEEE);
+                    badgeFg = const Color(0xFF757575);
+                    badgeIcon = Icons.history_toggle_off_rounded;
+                    badgeLabel = 'EXPIRED';
+                  } else {
+                    badgeBg = const Color(0xFFE8F8EE);
+                    badgeFg = const Color(0xFF2E7D32);
+                    badgeIcon = Icons.check_circle_rounded;
+                    badgeLabel = 'EFFECTIVE';
+                  }
+
+                  return Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: badgeBg,
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      rule.isActive ? 'ACTIVE' : 'INACTIVE',
-                      style: TextStyle(
-                        color: rule.isActive
-                            ? const Color(0xFF2E7D32)
-                            : const Color(0xFF757575),
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.3,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(badgeIcon, size: 13, color: badgeFg),
+                        const SizedBox(width: 4),
+                        Text(
+                          badgeLabel,
+                          style: TextStyle(
+                            color: badgeFg,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ],
           ),
@@ -997,6 +1064,34 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
               fontWeight: FontWeight.w800,
             ),
           ),
+          if (rule.isFutureScheduled) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3E5F5),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE1BEE7)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      size: 14, color: Color(0xFF7B1FA2)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Scheduled version v${rule.version}: Takes effect on ${_formatDate(rule.effectiveFrom)}. Not currently effective.',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Color(0xFF4A148C),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (rule.ruleDescription != null &&
               rule.ruleDescription!.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -1035,6 +1130,18 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     '${rule.pointsRequired} pts',
                     _royalBlue,
                   ),
+                if (rule.pointValue != null)
+                  _buildMetricPill(
+                    'Point Value',
+                    '₹${rule.pointValue!.toStringAsFixed(2)}',
+                    const Color(0xFF00796B),
+                  ),
+                if (rule.conversionRate != null)
+                  _buildMetricPill(
+                    'Conversion',
+                    '${rule.conversionRate!.toStringAsFixed(2)}x',
+                    const Color(0xFF0277BD),
+                  ),
                 if (rule.minTransactionValue != null ||
                     rule.maxTransactionValue != null)
                   _buildMetricPill(
@@ -1067,8 +1174,9 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     : 'Audit ID: #${rule.id}',
                 style: const TextStyle(color: Color(0xFF90A4AE), fontSize: 11),
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   OutlinedButton.icon(
                     key: Key('edit_rule_${rule.id}'),
@@ -1086,7 +1194,22 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                     label: const Text('Edit',
                         style: TextStyle(color: _royalBlue, fontSize: 12)),
                   ),
-                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    key: Key('history_rule_${rule.id}'),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: _borderBlue),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _showRuleHistory(rule),
+                    icon: const Icon(Icons.history_rounded,
+                        size: 14, color: _royalBlue),
+                    label: const Text('History',
+                        style: TextStyle(color: _royalBlue, fontSize: 12)),
+                  ),
                   OutlinedButton.icon(
                     key: Key('toggle_status_rule_${rule.id}'),
                     style: OutlinedButton.styleFrom(
@@ -1158,6 +1281,10 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
 
   Color _getCategoryColor(String category) {
     switch (category) {
+      case 'customer_qr_scan':
+        return const Color(0xFF00897B);
+      case 'partner_qr_scan':
+        return const Color(0xFFE65100);
       case 'product_qr_scan':
         return const Color(0xFF0055B8);
       case 'invoice_qr_scan':
@@ -1171,6 +1298,178 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       default:
         return const Color(0xFF0055B8);
     }
+  }
+
+  Future<void> _showRuleHistory(AdminPointsRule rule) async {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return FutureBuilder<AdminPointsRuleHistoryResponse>(
+          future: _settingsApi.getPointsRuleHistory(rule.id),
+          builder: (context, snapshot) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.history_rounded, color: _royalBlue),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Rule Version History',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _deepBlue),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 480,
+                child: snapshot.connectionState == ConnectionState.waiting
+                    ? const SizedBox(
+                        height: 120,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : snapshot.hasError
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Text(
+                              'Failed to load history: ${snapshot.error}',
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          )
+                        : (snapshot.data?.history.isEmpty ?? true)
+                            ? const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 16),
+                                child: Text('No historical revisions found.'),
+                              )
+                            : ListView.separated(
+                                shrinkWrap: true,
+                                itemCount: snapshot.data!.history.length,
+                                separatorBuilder: (_, __) => const Divider(height: 16),
+                                itemBuilder: (context, index) {
+                                  final item = snapshot.data!.history[index];
+                                  final isCurrent = item.isCurrent;
+                                  return ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: CircleAvatar(
+                                      backgroundColor: isCurrent ? _royalBlue : Colors.grey.shade400,
+                                      foregroundColor: Colors.white,
+                                      child: Text(
+                                        'v${item.version}',
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                    title: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            item.ruleName,
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                          ),
+                                        ),
+                                        if (isCurrent) ...[
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFE3F2FD),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: const Color(0xFF90CAF9), width: 0.8),
+                                            ),
+                                            child: const Text(
+                                              'LATEST',
+                                              style: TextStyle(
+                                                color: Color(0xFF1565C0),
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                        ],
+                                        if (item.isCurrentlyEffective)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFE8F8EE),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Text(
+                                              'EFFECTIVE NOW',
+                                              style: TextStyle(
+                                                color: Color(0xFF2E7D32),
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          )
+                                        else if (item.isFutureScheduled)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFEDE7F6),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Text(
+                                              'SCHEDULED',
+                                              style: TextStyle(
+                                                color: Color(0xFF5E35B1),
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          )
+                                        else if (!item.isActive)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFEEEEEE),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Text(
+                                              'INACTIVE',
+                                              style: TextStyle(
+                                                color: Color(0xFF757575),
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          )
+                                        else
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFF1F5F9),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Text(
+                                              'SUPERSEDED',
+                                              style: TextStyle(
+                                                color: Color(0xFF64748B),
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    subtitle: Text(
+                                      'Points: ${item.pointsAwarded ?? 0} | Value: ₹${(item.pointValue ?? 0).toStringAsFixed(2)} | Rate: ${(item.conversionRate ?? 1).toStringAsFixed(2)}x\nEffective: ${_formatDateRange(item.effectiveFrom, item.effectiveTo)}',
+                                      style: const TextStyle(fontSize: 11, height: 1.3),
+                                    ),
+                                  );
+                                },
+                              ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   String _formatRange(double? min, double? max) {
@@ -1193,5 +1492,10 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
       return 'Until ${end.day}/${end.month}/${end.year}';
     }
     return 'Always';
+  }
+
+  String _formatDate(DateTime? dt) {
+    if (dt == null) return 'N/A';
+    return '${dt.day}/${dt.month}/${dt.year}';
   }
 }

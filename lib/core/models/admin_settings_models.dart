@@ -36,11 +36,19 @@ class AdminPointsRule {
     required this.category,
     this.pointsAwarded,
     this.pointsRequired,
+    this.conversionRate,
+    this.pointValue,
     this.minTransactionValue,
     this.maxTransactionValue,
     this.effectiveFrom,
     this.effectiveTo,
     required this.isActive,
+    this.isCurrent = true,
+    this.version = 1,
+    this.parentRuleId,
+    this.effectiveStatus = 'currently_effective',
+    this.isCurrentlyEffective = true,
+    this.isFutureScheduled = false,
     required this.createdAt,
     required this.updatedAt,
     this.createdBy,
@@ -55,11 +63,19 @@ class AdminPointsRule {
   final String category;
   final int? pointsAwarded;
   final int? pointsRequired;
+  final double? conversionRate;
+  final double? pointValue;
   final double? minTransactionValue;
   final double? maxTransactionValue;
   final DateTime? effectiveFrom;
   final DateTime? effectiveTo;
   final bool isActive;
+  final bool isCurrent;
+  final int version;
+  final int? parentRuleId;
+  final String effectiveStatus;
+  final bool isCurrentlyEffective;
+  final bool isFutureScheduled;
   final DateTime createdAt;
   final DateTime updatedAt;
   final int? createdBy;
@@ -69,6 +85,10 @@ class AdminPointsRule {
 
   String get categoryLabel {
     switch (category) {
+      case 'customer_qr_scan':
+        return 'Customer QR Scan';
+      case 'partner_qr_scan':
+        return 'Partner QR Scan';
       case 'product_qr_scan':
         return 'Product QR Scan';
       case 'invoice_qr_scan':
@@ -84,7 +104,37 @@ class AdminPointsRule {
     }
   }
 
+  static String _deriveEffectiveStatus({
+    required bool isActive,
+    DateTime? effectiveFrom,
+    DateTime? effectiveTo,
+  }) {
+    if (!isActive) return 'inactive';
+    final now = DateTime.now();
+    if (effectiveFrom != null && effectiveFrom.isAfter(now)) {
+      return 'future_scheduled';
+    }
+    if (effectiveTo != null && effectiveTo.isBefore(now)) {
+      return 'expired';
+    }
+    return 'currently_effective';
+  }
+
   factory AdminPointsRule.fromJson(Map<String, dynamic> json) {
+    final isActive = json['is_active'] as bool? ?? true;
+    final effectiveFrom = json['effective_from'] != null
+        ? DateTime.tryParse(json['effective_from'] as String)
+        : null;
+    final effectiveTo = json['effective_to'] != null
+        ? DateTime.tryParse(json['effective_to'] as String)
+        : null;
+    final derivedStatus = _deriveEffectiveStatus(
+      isActive: isActive,
+      effectiveFrom: effectiveFrom,
+      effectiveTo: effectiveTo,
+    );
+    final statusStr = json['effective_status'] as String? ?? derivedStatus;
+
     return AdminPointsRule(
       id: json['id'] as int,
       ruleName: json['rule_name'] as String? ?? '',
@@ -92,19 +142,29 @@ class AdminPointsRule {
       category: json['category'] as String? ?? 'product_qr_scan',
       pointsAwarded: json['points_awarded'] as int?,
       pointsRequired: json['points_required'] as int?,
+      conversionRate: json['conversion_rate'] != null
+          ? double.tryParse(json['conversion_rate'].toString())
+          : null,
+      pointValue: json['point_value'] != null
+          ? double.tryParse(json['point_value'].toString())
+          : null,
       minTransactionValue: json['min_transaction_value'] != null
           ? double.tryParse(json['min_transaction_value'].toString())
           : null,
       maxTransactionValue: json['max_transaction_value'] != null
           ? double.tryParse(json['max_transaction_value'].toString())
           : null,
-      effectiveFrom: json['effective_from'] != null
-          ? DateTime.tryParse(json['effective_from'] as String)
-          : null,
-      effectiveTo: json['effective_to'] != null
-          ? DateTime.tryParse(json['effective_to'] as String)
-          : null,
-      isActive: json['is_active'] as bool? ?? true,
+      effectiveFrom: effectiveFrom,
+      effectiveTo: effectiveTo,
+      isActive: isActive,
+      isCurrent: json['is_current'] as bool? ?? true,
+      version: json['version'] as int? ?? 1,
+      parentRuleId: json['parent_rule_id'] as int?,
+      effectiveStatus: statusStr,
+      isCurrentlyEffective: json['is_currently_effective'] as bool? ??
+          (statusStr == 'currently_effective'),
+      isFutureScheduled: json['is_future_scheduled'] as bool? ??
+          (statusStr == 'future_scheduled'),
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
@@ -125,11 +185,19 @@ class AdminPointsRule {
         'category': category,
         'points_awarded': pointsAwarded,
         'points_required': pointsRequired,
+        'conversion_rate': conversionRate,
+        'point_value': pointValue,
         'min_transaction_value': minTransactionValue,
         'max_transaction_value': maxTransactionValue,
         'effective_from': effectiveFrom?.toIso8601String(),
         'effective_to': effectiveTo?.toIso8601String(),
         'is_active': isActive,
+        'is_current': isCurrent,
+        'version': version,
+        'parent_rule_id': parentRuleId,
+        'effective_status': effectiveStatus,
+        'is_currently_effective': isCurrentlyEffective,
+        'is_future_scheduled': isFutureScheduled,
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
         'created_by': createdBy,
@@ -145,11 +213,19 @@ class AdminPointsRule {
     String? category,
     int? pointsAwarded,
     int? pointsRequired,
+    double? conversionRate,
+    double? pointValue,
     double? minTransactionValue,
     double? maxTransactionValue,
     DateTime? effectiveFrom,
     DateTime? effectiveTo,
     bool? isActive,
+    bool? isCurrent,
+    int? version,
+    int? parentRuleId,
+    String? effectiveStatus,
+    bool? isCurrentlyEffective,
+    bool? isFutureScheduled,
     DateTime? createdAt,
     DateTime? updatedAt,
     int? createdBy,
@@ -164,17 +240,57 @@ class AdminPointsRule {
       category: category ?? this.category,
       pointsAwarded: pointsAwarded ?? this.pointsAwarded,
       pointsRequired: pointsRequired ?? this.pointsRequired,
+      conversionRate: conversionRate ?? this.conversionRate,
+      pointValue: pointValue ?? this.pointValue,
       minTransactionValue: minTransactionValue ?? this.minTransactionValue,
       maxTransactionValue: maxTransactionValue ?? this.maxTransactionValue,
       effectiveFrom: effectiveFrom ?? this.effectiveFrom,
       effectiveTo: effectiveTo ?? this.effectiveTo,
       isActive: isActive ?? this.isActive,
+      isCurrent: isCurrent ?? this.isCurrent,
+      version: version ?? this.version,
+      parentRuleId: parentRuleId ?? this.parentRuleId,
+      effectiveStatus: effectiveStatus ?? this.effectiveStatus,
+      isCurrentlyEffective: isCurrentlyEffective ?? this.isCurrentlyEffective,
+      isFutureScheduled: isFutureScheduled ?? this.isFutureScheduled,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,
       updatedBy: updatedBy ?? this.updatedBy,
       createdByName: createdByName ?? this.createdByName,
       updatedByName: updatedByName ?? this.updatedByName,
+    );
+  }
+}
+
+class AdminPointsRuleHistoryResponse {
+  const AdminPointsRuleHistoryResponse({
+    required this.ruleId,
+    required this.ruleName,
+    required this.currentVersion,
+    this.latestVersion = 1,
+    this.effectiveVersion,
+    required this.history,
+  });
+
+  final int ruleId;
+  final String ruleName;
+  final int currentVersion;
+  final int latestVersion;
+  final int? effectiveVersion;
+  final List<AdminPointsRule> history;
+
+  factory AdminPointsRuleHistoryResponse.fromJson(Map<String, dynamic> json) {
+    final list = json['history'] as List<dynamic>? ?? [];
+    return AdminPointsRuleHistoryResponse(
+      ruleId: json['rule_id'] as int? ?? 0,
+      ruleName: json['rule_name'] as String? ?? '',
+      currentVersion: json['current_version'] as int? ?? 1,
+      latestVersion: json['latest_version'] as int? ?? (json['current_version'] as int? ?? 1),
+      effectiveVersion: json['effective_version'] as int?,
+      history: list
+          .map((item) => AdminPointsRule.fromJson(item as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
@@ -206,6 +322,8 @@ class AdminPointsRulePayload {
     required this.category,
     this.pointsAwarded,
     this.pointsRequired,
+    this.conversionRate,
+    this.pointValue,
     this.minTransactionValue,
     this.maxTransactionValue,
     this.effectiveFrom,
@@ -218,6 +336,8 @@ class AdminPointsRulePayload {
   final String category;
   final int? pointsAwarded;
   final int? pointsRequired;
+  final double? conversionRate;
+  final double? pointValue;
   final double? minTransactionValue;
   final double? maxTransactionValue;
   final DateTime? effectiveFrom;
@@ -241,6 +361,12 @@ class AdminPointsRulePayload {
     }
     if (pointsRequired != null) {
       map['points_required'] = pointsRequired;
+    }
+    if (conversionRate != null) {
+      map['conversion_rate'] = conversionRate;
+    }
+    if (pointValue != null) {
+      map['point_value'] = pointValue;
     }
     if (minTransactionValue != null) {
       map['min_transaction_value'] = minTransactionValue;

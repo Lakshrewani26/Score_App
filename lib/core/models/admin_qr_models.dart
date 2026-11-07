@@ -252,3 +252,50 @@ class AdminQrBatchPayload {
     return map;
   }
 }
+
+class ProductQrLabelItem {
+  final int productId;
+  final String productName;
+  final String productCode;
+  final String qrNumber;
+
+  const ProductQrLabelItem({
+    required this.productId,
+    required this.productName,
+    required this.productCode,
+    required this.qrNumber,
+  });
+
+  factory ProductQrLabelItem.fromJson(Map<String, dynamic> json) {
+    return ProductQrLabelItem(
+      productId: json['product_id'] as int,
+      productName: json['product_name'] as String? ?? '',
+      productCode: json['product_code'] as String? ?? '',
+      qrNumber: json['qr_number'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'product_id': productId,
+        'product_name': productName,
+        'product_code': productCode,
+        'qr_number': qrNumber,
+      };
+}
+
+class ProductQrLabelListResponse {
+  final List<ProductQrLabelItem> items;
+  final int total;
+
+  const ProductQrLabelListResponse({required this.items, required this.total});
+
+  factory ProductQrLabelListResponse.fromJson(Map<String, dynamic> json) {
+    return ProductQrLabelListResponse(
+      items: (json['items'] as List<dynamic>?)
+              ?.map((e) => ProductQrLabelItem.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      total: json['total'] as int? ?? 0,
+    );
+  }
+}

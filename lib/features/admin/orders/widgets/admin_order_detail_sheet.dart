@@ -488,6 +488,18 @@ class _AdminOrderDetailSheetState extends State<AdminOrderDetailSheet> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
+              if (item.discountPercentage != null &&
+                  item.discountPercentage! > 0) ...[
+                Text(
+                  'MRP: ${item.displayOriginalPrice} (-${item.discountPercentage!.toStringAsFixed(1)}%)',
+                  style: const TextStyle(
+                    color: Color(0xFF00897B),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 1),
+              ],
               Text(
                 '${item.quantity} × ${item.displayUnitPrice}',
                 style: const TextStyle(
@@ -512,6 +524,16 @@ class _AdminOrderDetailSheetState extends State<AdminOrderDetailSheet> {
   }
 
   Widget _buildOrderSummarySection() {
+    final hasDiscount = (_detail?.totalDiscount != null &&
+            _detail!.totalDiscount! > 0) ||
+        (_summary.totalDiscount != null && _summary.totalDiscount! > 0);
+    final subtotalBefore = _detail?.subtotalBeforeDiscount ??
+        _summary.subtotalBeforeDiscount;
+    final discountPct =
+        _detail?.discountPercentage ?? _summary.discountPercentage;
+    final totalDiscount =
+        _detail?.totalDiscount ?? _summary.totalDiscount;
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -537,6 +559,48 @@ class _AdminOrderDetailSheetState extends State<AdminOrderDetailSheet> {
               ),
             ],
           ),
+          if (hasDiscount && subtotalBefore != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Subtotal Before Discount',
+                  style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                ),
+                Text(
+                  formatCurrency(subtotalBefore),
+                  style: const TextStyle(
+                    color: Color(0xFF1E293B),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Partner Discount (${(discountPct ?? 0).toStringAsFixed(1)}%)',
+                  style: const TextStyle(
+                    color: Color(0xFF00897B),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '-${formatCurrency(totalDiscount)}',
+                  style: const TextStyle(
+                    color: Color(0xFF00897B),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           const Divider(height: 1, color: Color(0xFFCBD5E1)),
           const SizedBox(height: 8),

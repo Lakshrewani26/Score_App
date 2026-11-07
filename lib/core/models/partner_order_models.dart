@@ -58,6 +58,10 @@ class PartnerOrderItemResponse {
     required this.quantity,
     required this.unitPrice,
     required this.subtotal,
+    this.originalPrice,
+    this.discountPercentage,
+    this.discountAmount,
+    this.discountedPrice,
   });
 
   final int id;
@@ -68,6 +72,10 @@ class PartnerOrderItemResponse {
   final int quantity;
   final num unitPrice;
   final num subtotal;
+  final num? originalPrice;
+  final num? discountPercentage;
+  final num? discountAmount;
+  final num? discountedPrice;
 
   factory PartnerOrderItemResponse.fromJson(Map<String, dynamic> json) {
     return PartnerOrderItemResponse(
@@ -79,6 +87,18 @@ class PartnerOrderItemResponse {
       quantity: json['quantity'] as int? ?? 0,
       unitPrice: num.tryParse(json['unit_price']?.toString() ?? '0') ?? 0,
       subtotal: num.tryParse(json['subtotal']?.toString() ?? '0') ?? 0,
+      originalPrice: json['original_price'] != null
+          ? num.tryParse(json['original_price'].toString())
+          : null,
+      discountPercentage: json['discount_percentage'] != null
+          ? num.tryParse(json['discount_percentage'].toString())
+          : null,
+      discountAmount: json['discount_amount'] != null
+          ? num.tryParse(json['discount_amount'].toString())
+          : null,
+      discountedPrice: json['discounted_price'] != null
+          ? num.tryParse(json['discounted_price'].toString())
+          : null,
     );
   }
 }
@@ -102,6 +122,10 @@ class PartnerOrderResponse {
     required this.totalQuantity,
     required this.orderTotal,
     this.items = const [],
+    this.subtotalBeforeDiscount,
+    this.discountPercentage,
+    this.totalDiscount,
+    this.finalTotal,
   });
 
   final int id;
@@ -121,6 +145,10 @@ class PartnerOrderResponse {
   final int totalQuantity;
   final num orderTotal;
   final List<PartnerOrderItemResponse> items;
+  final num? subtotalBeforeDiscount;
+  final num? discountPercentage;
+  final num? totalDiscount;
+  final num? finalTotal;
 
   factory PartnerOrderResponse.fromJson(Map<String, dynamic> json) {
     final rawItems = json['items'] as List<dynamic>? ?? [];
@@ -149,6 +177,18 @@ class PartnerOrderResponse {
           .map((item) =>
               PartnerOrderItemResponse.fromJson(item as Map<String, dynamic>))
           .toList(),
+      subtotalBeforeDiscount: json['subtotal_before_discount'] != null
+          ? num.tryParse(json['subtotal_before_discount'].toString())
+          : null,
+      discountPercentage: json['discount_percentage'] != null
+          ? num.tryParse(json['discount_percentage'].toString())
+          : null,
+      totalDiscount: json['total_discount'] != null
+          ? num.tryParse(json['total_discount'].toString())
+          : null,
+      finalTotal: json['final_total'] != null
+          ? num.tryParse(json['final_total'].toString())
+          : null,
     );
   }
 
@@ -199,12 +239,20 @@ class PartnerOrderPreviewResponse {
     required this.totalQuantity,
     required this.grandTotal,
     this.items = const [],
+    this.subtotalBeforeDiscount,
+    this.discountPercentage,
+    this.totalDiscount,
+    this.finalTotal,
   });
 
   final int itemCount;
   final int totalQuantity;
   final num grandTotal;
   final List<PartnerOrderItemResponse> items;
+  final num? subtotalBeforeDiscount;
+  final num? discountPercentage;
+  final num? totalDiscount;
+  final num? finalTotal;
 
   factory PartnerOrderPreviewResponse.fromJson(Map<String, dynamic> json) {
     final rawItems = json['items'] as List<dynamic>? ?? [];
@@ -216,6 +264,18 @@ class PartnerOrderPreviewResponse {
           .map((item) =>
               PartnerOrderItemResponse.fromJson(item as Map<String, dynamic>))
           .toList(),
+      subtotalBeforeDiscount: json['subtotal_before_discount'] != null
+          ? num.tryParse(json['subtotal_before_discount'].toString())
+          : null,
+      discountPercentage: json['discount_percentage'] != null
+          ? num.tryParse(json['discount_percentage'].toString())
+          : null,
+      totalDiscount: json['total_discount'] != null
+          ? num.tryParse(json['total_discount'].toString())
+          : null,
+      finalTotal: json['final_total'] != null
+          ? num.tryParse(json['final_total'].toString())
+          : null,
     );
   }
 }

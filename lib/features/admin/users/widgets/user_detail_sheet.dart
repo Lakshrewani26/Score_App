@@ -722,6 +722,11 @@ class _UserDetailSheetState extends State<UserDetailSheet> {
             ),
             const SizedBox(height: 8),
             _buildInfoRow(
+              'Partner Discount',
+              '${(partner?.discountPercentage ?? detail.discountPercentage ?? _currentUser.discountPercentage ?? 0.0).toStringAsFixed(2)}%',
+            ),
+            const SizedBox(height: 8),
+            _buildInfoRow(
               'Business Address',
               partner?.businessAddress.isNotEmpty == true ? partner!.businessAddress : 'N/A',
             ),

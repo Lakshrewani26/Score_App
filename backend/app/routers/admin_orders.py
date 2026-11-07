@@ -70,7 +70,11 @@ def _build_order_summary(order: Order) -> AdminOrderSummary:
     items = order.items or []
     item_count = len(items)
     total_quantity = sum(item.quantity for item in items)
-    order_total = sum(item.quantity * item.unit_price for item in items)
+    order_total = (
+        order.final_total
+        if order.final_total is not None
+        else sum(item.quantity * item.unit_price for item in items)
+    )
 
     return AdminOrderSummary(
         id=order.id,
@@ -88,6 +92,26 @@ def _build_order_summary(order: Order) -> AdminOrderSummary:
         item_count=item_count,
         total_quantity=total_quantity,
         order_total=Decimal(str(order_total)),
+        subtotal_before_discount=(
+            Decimal(str(order.subtotal_before_discount))
+            if order.subtotal_before_discount is not None
+            else Decimal(str(order_total))
+        ),
+        discount_percentage=(
+            Decimal(str(order.discount_percentage))
+            if order.discount_percentage is not None
+            else Decimal("0.00")
+        ),
+        total_discount=(
+            Decimal(str(order.total_discount))
+            if order.total_discount is not None
+            else Decimal("0.00")
+        ),
+        final_total=(
+            Decimal(str(order.final_total))
+            if order.final_total is not None
+            else Decimal(str(order_total))
+        ),
     )
 
 
@@ -104,6 +128,10 @@ def _build_order_detail(order: Order) -> AdminOrderDetail:
             quantity=item.quantity,
             unit_price=item.unit_price,
             subtotal=item.quantity * item.unit_price,
+            original_price=item.original_price if item.original_price is not None else item.unit_price,
+            discount_percentage=item.discount_percentage if item.discount_percentage is not None else Decimal("0.00"),
+            discount_amount=item.discount_amount if item.discount_amount is not None else Decimal("0.00"),
+            discounted_price=item.discounted_price if item.discounted_price is not None else item.unit_price,
         )
         for item in (order.items or [])
     ]

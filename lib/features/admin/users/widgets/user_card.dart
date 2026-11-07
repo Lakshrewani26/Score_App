@@ -204,6 +204,29 @@ class UserCard extends StatelessWidget {
                           ],
                         ),
                       ],
+                      if (user.role.toLowerCase() == 'partner' &&
+                          user.discountPercentage != null &&
+                          user.discountPercentage! > 0) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.percent_rounded,
+                              size: 11,
+                              color: Color(0xFF00897B),
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              'Discount: ${user.discountPercentage!.toStringAsFixed(1)}%',
+                              style: const TextStyle(
+                                color: Color(0xFF00897B),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

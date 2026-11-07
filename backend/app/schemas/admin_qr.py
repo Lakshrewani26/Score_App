@@ -86,3 +86,26 @@ class QrCodeStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["active", "voided"]
+
+
+class ProductQrLabelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    product_ids: list[int] = Field(..., min_length=1, max_length=500, description="List of product IDs to print labels for")
+
+
+class ProductQrLabelItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    product_id: int
+    product_name: str
+    product_code: str
+    qr_number: str
+
+
+class ProductQrLabelListResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[ProductQrLabelItem]
+    total: int
+

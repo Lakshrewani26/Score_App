@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/partner_order_api.dart';
 import '../../../core/services/partner_session_manager.dart';
+import '../../customer/qr_scanner/customer_qr_scanner.dart';
 import '../home/partner_home_screen.dart';
 import '../profile/partner_profile_screen.dart';
 
@@ -157,6 +158,8 @@ class _PartnerBalanceScreenState extends State<PartnerBalanceScreen> {
                               const _AccentBars(),
                               const SizedBox(height: 20),
                               _buildPointsSummaryCard(),
+                              const SizedBox(height: 14),
+                              _buildScanProductQrButton(),
                               const SizedBox(height: 16),
                               _buildDetailedBreakdownCard(),
                               const SizedBox(height: 16),
@@ -223,6 +226,59 @@ class _PartnerBalanceScreenState extends State<PartnerBalanceScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildScanProductQrButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        key: const Key('partner_scan_product_qr_button'),
+        onPressed: _openProductQrScanner,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _royalBlue,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 2,
+        ),
+        icon: const Icon(Icons.qr_code_scanner_rounded, size: 22),
+        label: const Text(
+          'Scan Product QR Code',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openProductQrScanner() async {
+    final token = await _sessionManager.getToken();
+    if (!mounted) return;
+    await CustomerQrScannerSheet.show(
+      context,
+      mode: ScannerMode.scan,
+      autoSubmit: true,
+      authToken: token,
+      onScanSuccess: (scanResult) {
+        if (mounted) {
+          _loadStats();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Awarded ${scanResult.pointsAwarded} partner loyalty points! Updated balance: ${scanResult.newBalance}',
+              ),
+              backgroundColor: const Color(0xFF16A34A),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      },
     );
   }
 

@@ -14,6 +14,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
     true,
@@ -92,6 +93,12 @@ class Zone(Base):
 
 class PartnerProfile(Base):
     __tablename__ = "partner_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "discount_percentage >= 0 AND discount_percentage <= 100",
+            name="valid_partner_discount_percentage",
+        ),
+    )
 
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
@@ -100,6 +107,9 @@ class PartnerProfile(Base):
     business_address: Mapped[str] = mapped_column(Text, nullable=False)
     partner_code: Mapped[Optional[str]] = mapped_column(
         String(50), unique=True, nullable=True
+    )
+    discount_percentage: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("0.00"), server_default="0.00"
     )
     zone_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("zones.id", ondelete="SET NULL"), nullable=True
@@ -208,6 +218,22 @@ class Order(Base):
             "'delivered', 'rejected', 'cancelled')",
             name="supported_status",
         ),
+        CheckConstraint(
+            "subtotal_before_discount IS NULL OR subtotal_before_discount >= 0",
+            name="nonnegative_subtotal_before_discount",
+        ),
+        CheckConstraint(
+            "discount_percentage IS NULL OR (discount_percentage >= 0 AND discount_percentage <= 100)",
+            name="valid_order_discount_percentage",
+        ),
+        CheckConstraint(
+            "total_discount IS NULL OR total_discount >= 0",
+            name="nonnegative_total_discount",
+        ),
+        CheckConstraint(
+            "final_total IS NULL OR final_total >= 0",
+            name="nonnegative_final_total",
+        ),
         Index("ix_orders_partner_id", "partner_id"),
     )
 
@@ -221,6 +247,18 @@ class Order(Base):
         server_default="pending_approval",
     )
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    subtotal_before_discount: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    discount_percentage: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2), nullable=True
+    )
+    total_discount: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    final_total: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -244,6 +282,22 @@ class OrderItem(Base):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="positive_quantity"),
         CheckConstraint("unit_price >= 0", name="nonnegative_unit_price"),
+        CheckConstraint(
+            "original_price IS NULL OR original_price >= 0",
+            name="nonnegative_original_price",
+        ),
+        CheckConstraint(
+            "discount_percentage IS NULL OR (discount_percentage >= 0 AND discount_percentage <= 100)",
+            name="valid_item_discount_percentage",
+        ),
+        CheckConstraint(
+            "discount_amount IS NULL OR discount_amount >= 0",
+            name="nonnegative_discount_amount",
+        ),
+        CheckConstraint(
+            "discounted_price IS NULL OR discounted_price >= 0",
+            name="nonnegative_discounted_price",
+        ),
         Index("ix_order_items_order_id", "order_id"),
     )
 
@@ -256,6 +310,18 @@ class OrderItem(Base):
     )
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    original_price: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    discount_percentage: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2), nullable=True
+    )
+    discount_amount: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    discounted_price: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
 
     order: Mapped[Order] = relationship(back_populates="items")
     product: Mapped[Product] = relationship()
@@ -495,8 +561,9 @@ class PointsRule(Base):
     __tablename__ = "points_rules"
     __table_args__ = (
         CheckConstraint(
-            "category IN ('product_qr_scan', 'invoice_qr_scan', 'redemption', "
-            "'customer_to_partner_transfer', 'partner_to_staff_transfer')",
+            "category IN ('customer_qr_scan', 'partner_qr_scan', 'product_qr_scan', "
+            "'invoice_qr_scan', 'redemption', 'customer_to_partner_transfer', "
+            "'partner_to_staff_transfer')",
             name="supported_rule_category",
         ),
         CheckConstraint(
@@ -508,6 +575,15 @@ class PointsRule(Base):
             name="nonnegative_points_required",
         ),
         CheckConstraint(
+            "conversion_rate IS NULL OR conversion_rate >= 0",
+            name="nonnegative_conversion_rate",
+        ),
+        CheckConstraint(
+            "point_value IS NULL OR point_value >= 0",
+            name="nonnegative_point_value",
+        ),
+        CheckConstraint("version >= 1", name="positive_rule_version"),
+        CheckConstraint(
             "min_transaction_value IS NULL OR min_transaction_value >= 0",
             name="nonnegative_min_transaction_value",
         ),
@@ -515,8 +591,11 @@ class PointsRule(Base):
             "max_transaction_value IS NULL OR max_transaction_value >= 0",
             name="nonnegative_max_transaction_value",
         ),
+        UniqueConstraint("parent_rule_id", "version", name="uq_points_rules_parent_rule_id_version"),
         Index("ix_points_rules_category", "category"),
         Index("ix_points_rules_is_active", "is_active"),
+        Index("ix_points_rules_is_current", "is_current"),
+        Index("ix_points_rules_parent_rule_id", "parent_rule_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -525,6 +604,12 @@ class PointsRule(Base):
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     points_awarded: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     points_required: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    conversion_rate: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 4), nullable=True
+    )
+    point_value: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 4), nullable=True
+    )
     min_transaction_value: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(12, 2), nullable=True
     )
@@ -539,6 +624,15 @@ class PointsRule(Base):
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
+    )
+    is_current: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    parent_rule_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("points_rules.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -558,6 +652,9 @@ class PointsRule(Base):
 
     creator: Mapped[Optional[User]] = relationship(foreign_keys=[created_by])
     updater: Mapped[Optional[User]] = relationship(foreign_keys=[updated_by])
+    parent_rule: Mapped[Optional[PointsRule]] = relationship(
+        "PointsRule", remote_side="PointsRule.id", foreign_keys=[parent_rule_id], backref="historical_versions"
+    )
 
 
 class QrBatch(Base):
@@ -665,3 +762,41 @@ class QrCode(Base):
     product: Mapped[Optional[Product]] = relationship()
     target_user: Mapped[Optional[User]] = relationship(foreign_keys=[target_user_id])
     redeemer: Mapped[Optional[User]] = relationship(foreign_keys=[redeemed_by])
+
+
+class PointTransaction(Base):
+    __tablename__ = "point_transactions"
+    __table_args__ = (
+        CheckConstraint("points_awarded >= 0", name="nonnegative_points_awarded_trans"),
+        UniqueConstraint("qr_code_id", name="uq_point_transactions_qr_code_id"),
+        Index("ix_point_transactions_user_id", "user_id"),
+        Index("ix_point_transactions_qr_code_id", "qr_code_id"),
+        Index("ix_point_transactions_qr_token", "qr_token"),
+        Index("ix_point_transactions_points_rule_id", "points_rule_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    qr_code_id: Mapped[int] = mapped_column(
+        ForeignKey("qr_codes.id", ondelete="RESTRICT"), nullable=False
+    )
+    qr_token: Mapped[str] = mapped_column(String(64), nullable=False)
+    points_rule_id: Mapped[int] = mapped_column(
+        ForeignKey("points_rules.id", ondelete="RESTRICT"), nullable=False
+    )
+    points_awarded: Mapped[int] = mapped_column(Integer, nullable=False)
+    qr_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    transaction_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="qr_scan", server_default="qr_scan"
+    )
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    user: Mapped[User] = relationship()
+    qr_code: Mapped[QrCode] = relationship()
+    points_rule: Mapped[PointsRule] = relationship()
+

@@ -15,10 +15,18 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
 from app.core.security import require_admin
 from app.db.session import get_db
 from app.models import PointsRule, Product, QrBatch, QrCode, User
 from app.schemas.admin_qr import (
+    ProductQrLabelItem,
+    ProductQrLabelListResponse,
+    ProductQrLabelRequest,
     QrBatchCreate,
     QrBatchListResponse,
     QrBatchResponse,
@@ -596,3 +604,305 @@ def update_qr_code_status(
 
     logger.info("Admin %s updated QR code %s status to %s", admin.id, code.id, payload.status)
     return _to_code_response(code)
+
+
+# -----------------------------------------------------------------------------
+# Product QR Number Printing (Feature H1)
+# -----------------------------------------------------------------------------
+
+
+def _get_or_create_product_labels(
+    product_ids: list[int],
+    db: Session,
+    admin: User,
+) -> list[ProductQrLabelItem]:
+    """Retrieve existing unique QR numbers for the given products, or generate them
+
+    preserving the existing generation mechanism and uniqueness.
+    Never replaces or changes QR numbers already assigned to products.
+    """
+    products = (
+        db.execute(
+            select(Product)
+            .where(Product.id.in_(product_ids))
+            .order_by(Product.name.asc())
+        )
+        .scalars()
+        .all()
+    )
+
+    if not products:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No matching products found for the specified IDs",
+        )
+
+    labels: list[ProductQrLabelItem] = []
+    default_batch: Optional[QrBatch] = None
+
+    for product in products:
+        # 1. Check for existing active product QR code
+        existing_code = (
+            db.execute(
+                select(QrCode)
+                .where(
+                    QrCode.product_id == product.id,
+                    QrCode.qr_type == "product",
+                    QrCode.status == "active",
+                )
+                .order_by(QrCode.id.desc())
+            )
+            .scalars()
+            .first()
+        )
+
+        if existing_code:
+            qr_number = existing_code.token
+        else:
+            # 2. Generate a new unique QR number using the existing token mechanism
+            if default_batch is None:
+                date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+                batch_number = f"BATCH-PROD-{date_str}-{secrets.token_hex(3).upper()}"
+                while db.execute(
+                    select(QrBatch).where(QrBatch.batch_number == batch_number)
+                ).scalar_one_or_none():
+                    batch_number = f"BATCH-PROD-{date_str}-{secrets.token_hex(3).upper()}"
+
+                default_batch = QrBatch(
+                    batch_number=batch_number,
+                    qr_type="product",
+                    description="Auto-generated batch for product QR labels",
+                    quantity=1,
+                    status="completed",
+                    created_by=admin.id,
+                )
+                db.add(default_batch)
+                db.flush()
+
+            token = secrets.token_hex(16).upper()  # 32 characters
+            while db.execute(
+                select(QrCode).where(QrCode.token == token)
+            ).scalar_one_or_none():
+                token = secrets.token_hex(16).upper()
+
+            code_data = f"score://qr/v1?token={token}&type=product"
+            new_code = QrCode(
+                batch_id=default_batch.id,
+                qr_type="product",
+                token=token,
+                code_data=code_data,
+                points_awarded=None,
+                product_id=product.id,
+                status="active",
+            )
+            db.add(new_code)
+            db.flush()
+            qr_number = token
+
+        labels.append(
+            ProductQrLabelItem(
+                product_id=product.id,
+                product_name=product.name,
+                product_code=product.product_code,
+                qr_number=qr_number,
+            )
+        )
+
+    db.commit()
+    return labels
+
+
+def generate_product_qr_labels_pdf(labels: list[ProductQrLabelItem]) -> io.BytesIO:
+    """Generate a clean, readable label layout PDF for physical product labeling.
+
+    NO QR images or graphics are generated. Only the unique QR identification number,
+    product name, and product code are rendered.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36,
+    )
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "DocTitle",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor("#1E293B"),
+        alignment=1,  # Center
+    )
+    subtitle_style = ParagraphStyle(
+        "DocSubtitle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=10,
+        leading=14,
+        textColor=colors.HexColor("#64748B"),
+        alignment=1,
+    )
+    card_title_style = ParagraphStyle(
+        "CardTitle",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=15,
+        textColor=colors.HexColor("#0F172A"),
+    )
+    card_meta_style = ParagraphStyle(
+        "CardMeta",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#475569"),
+    )
+    card_qr_title_style = ParagraphStyle(
+        "CardQrTitle",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#64748B"),
+    )
+    card_qr_style = ParagraphStyle(
+        "CardQr",
+        parent=styles["Normal"],
+        fontName="Courier-Bold",
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor("#1E40AF"),
+    )
+
+    story = []
+    story.append(Paragraph("SCORE APP — PRODUCT QR LABELS", title_style))
+    story.append(Paragraph("Physical Identification Labels (Text Format)", subtitle_style))
+    story.append(Spacer(1, 16))
+
+    # Grid of 2 label cards per row
+    rows_data = []
+    current_row = []
+
+    for item in labels:
+        card_content = [
+            [Paragraph(f"<b>{item.product_name}</b>", card_title_style)],
+            [Paragraph(f"SKU / CODE: <b>{item.product_code}</b>", card_meta_style)],
+            [Paragraph("UNIQUE QR IDENTIFICATION NUMBER:", card_qr_title_style)],
+            [Paragraph(f"<b>{item.qr_number}</b>", card_qr_style)],
+        ]
+        card_table = Table(card_content, colWidths=[250])
+        card_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+                    ("BOX", (0, 0), (-1, -1), 1.5, colors.HexColor("#CBD5E1")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                    ("LINEBELOW", (0, 1), (0, 1), 0.5, colors.HexColor("#E2E8F0")),
+                ]
+            )
+        )
+
+        current_row.append(card_table)
+        if len(current_row) == 2:
+            rows_data.append(current_row)
+            current_row = []
+
+    if current_row:
+        # Pad with empty cell if odd number of cards
+        current_row.append("")
+        rows_data.append(current_row)
+
+    if rows_data:
+        layout_table = Table(rows_data, colWidths=[265, 265])
+        layout_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+        story.append(layout_table)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+@router.post(
+    "/products/labels",
+    response_model=ProductQrLabelListResponse,
+    summary="Get or retrieve existing product QR identification numbers for selected products",
+)
+def get_product_qr_labels(
+    payload: ProductQrLabelRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> ProductQrLabelListResponse:
+    labels = _get_or_create_product_labels(payload.product_ids, db, admin)
+    return ProductQrLabelListResponse(items=labels, total=len(labels))
+
+
+@router.post(
+    "/products/labels/pdf",
+    summary="Download printable PDF of product QR identification numbers (no QR images)",
+)
+def download_product_qr_labels_pdf(
+    payload: ProductQrLabelRequest,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    labels = _get_or_create_product_labels(payload.product_ids, db, admin)
+    pdf_buffer = generate_product_qr_labels_pdf(labels)
+
+    filename = f"product_qr_labels_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.pdf"
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/products/labels/pdf",
+    summary="Download printable PDF via GET query params (comma-separated product_ids)",
+)
+def download_product_qr_labels_pdf_get(
+    product_ids: str = Query(..., description="Comma-separated product IDs, e.g. 1,2,3"),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    try:
+        parsed_ids = [int(p.strip()) for p in product_ids.split(",") if p.strip()]
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid product_ids format. Must be comma-separated integers.",
+        )
+    if not parsed_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="product_ids cannot be empty",
+        )
+
+    labels = _get_or_create_product_labels(parsed_ids, db, admin)
+    pdf_buffer = generate_product_qr_labels_pdf(labels)
+
+    filename = f"product_qr_labels_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.pdf"
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

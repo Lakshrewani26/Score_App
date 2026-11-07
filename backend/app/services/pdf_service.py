@@ -251,54 +251,129 @@ def generate_order_pdf(order: Order) -> bytes:
             Paragraph("<b>#</b>", table_header_style),
             Paragraph("<b>SKU / Code</b>", table_header_style),
             Paragraph("<b>Product Name</b>", table_header_style),
-            Paragraph("<b>Vehicle</b>", table_header_style),
             Paragraph("<b>Qty</b>", table_header_style),
-            Paragraph("<b>Unit Price</b>", table_header_style),
+            Paragraph("<b>Orig. Price</b>", table_header_style),
+            Paragraph("<b>Discount</b>", table_header_style),
+            Paragraph("<b>Final Price</b>", table_header_style),
             Paragraph("<b>Line Total</b>", table_header_style),
         ]
     ]
 
     total_qty = 0
-    grand_total = Decimal("0.00")
+    calculated_subtotal = Decimal("0.00")
+    calculated_discount = Decimal("0.00")
 
     for idx, item in enumerate(items, start=1):
         product = item.product
         sku = product.product_code if product else f"PRD-{item.product_id}"
         prod_name = product.name if product else f"Product #{item.product_id}"
-        vtype = product.vehicle_type if product else "N/A"
         qty = item.quantity
-        unit_price = Decimal(str(item.unit_price))
-        line_total = qty * unit_price
+
+        orig_price = (
+            Decimal(str(item.original_price))
+            if item.original_price is not None
+            else Decimal(str(item.unit_price))
+        )
+        disc_pct = (
+            Decimal(str(item.discount_percentage))
+            if item.discount_percentage is not None
+            else (
+                Decimal(str(order.discount_percentage or 0))
+                if order.discount_percentage
+                else Decimal("0.00")
+            )
+        )
+        disc_amt = (
+            Decimal(str(item.discount_amount))
+            if item.discount_amount is not None
+            else Decimal("0.00")
+        )
+        final_price = (
+            Decimal(str(item.discounted_price))
+            if item.discounted_price is not None
+            else Decimal(str(item.unit_price))
+        )
+        line_total = qty * final_price
 
         total_qty += qty
-        grand_total += line_total
+        calculated_subtotal += (qty * orig_price)
+        calculated_discount += (qty * disc_amt)
+
+        disc_display = f"{disc_pct:.1f}% (-Rs. {disc_amt:,.2f})" if disc_amt > 0 else "-"
 
         items_data.append(
             [
                 Paragraph(str(idx), table_cell_style),
                 Paragraph(sku, table_cell_style),
                 Paragraph(prod_name, table_cell_style),
-                Paragraph(vtype, table_cell_style),
                 Paragraph(str(qty), table_cell_style),
-                Paragraph(f"Rs. {unit_price:,.2f}", table_cell_right_style),
+                Paragraph(f"Rs. {orig_price:,.2f}", table_cell_right_style),
+                Paragraph(disc_display, table_cell_right_style),
+                Paragraph(f"Rs. {final_price:,.2f}", table_cell_right_style),
                 Paragraph(f"Rs. {line_total:,.2f}", table_cell_right_style),
             ]
         )
 
-    # Grand total summary rows
+    order_subtotal = (
+        Decimal(str(order.subtotal_before_discount))
+        if order.subtotal_before_discount is not None
+        else calculated_subtotal
+    )
+    order_discount = (
+        Decimal(str(order.total_discount))
+        if order.total_discount is not None
+        else calculated_discount
+    )
+    order_final = (
+        Decimal(str(order.final_total))
+        if order.final_total is not None
+        else (order_subtotal - order_discount)
+    )
+
+    # Subtotal row
     items_data.append(
         [
             "",
             "",
             Paragraph("<b>Total Items:</b>", total_label_style),
             Paragraph(f"<b>{len(items)}</b>", table_cell_style),
+            "",
+            Paragraph("<b>Subtotal Before Discount:</b>", total_label_style),
+            "",
+            Paragraph(f"<b>Rs. {order_subtotal:,.2f}</b>", total_value_style),
+        ]
+    )
+    # Total discount row
+    disc_summary_label = (
+        f"<b>Partner Discount ({order.discount_percentage or 0}%):</b>"
+    )
+    items_data.append(
+        [
+            "",
+            "",
+            Paragraph("<b>Total Quantity:</b>", total_label_style),
             Paragraph(f"<b>{total_qty}</b>", table_cell_style),
-            Paragraph("<b>Grand Total:</b>", total_label_style),
-            Paragraph(f"<b>Rs. {grand_total:,.2f}</b>", total_value_style),
+            "",
+            Paragraph(disc_summary_label, total_label_style),
+            "",
+            Paragraph(f"<b>- Rs. {order_discount:,.2f}</b>", total_value_style),
+        ]
+    )
+    # Final total row
+    items_data.append(
+        [
+            "",
+            "",
+            "",
+            "",
+            "",
+            Paragraph("<b>Final Order Total:</b>", total_label_style),
+            "",
+            Paragraph(f"<b>Rs. {order_final:,.2f}</b>", total_value_style),
         ]
     )
 
-    col_widths = [25, 95, 175, 65, 35, 70, 75]
+    col_widths = [20, 75, 140, 30, 65, 80, 65, 65]
     items_table = Table(items_data, colWidths=col_widths, repeatRows=1)
     items_table.setStyle(
         TableStyle(
@@ -308,10 +383,10 @@ def generate_order_pdf(order: Order) -> bytes:
                 ("TOPPADDING", (0, 0), (-1, -1), 5),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
                 ("BOX", (0, 0), (-1, -1), 0.5, border_blue),
-                ("INNERGRID", (0, 0), (-1, -2), 0.5, colors.HexColor("#E2E8F0")),
+                ("INNERGRID", (0, 0), (-1, -4), 0.5, colors.HexColor("#E2E8F0")),
                 # Total row styling
-                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#F1F5F9")),
-                ("LINEABOVE", (0, -1), (-1, -1), 1.2, primary_color),
+                ("BACKGROUND", (0, -3), (-1, -1), colors.HexColor("#F1F5F9")),
+                ("LINEABOVE", (0, -3), (-1, -3), 1.2, primary_color),
             ]
         )
     )

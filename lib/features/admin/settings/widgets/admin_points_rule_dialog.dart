@@ -29,6 +29,8 @@ class _AdminPointsRuleDialogState extends State<AdminPointsRuleDialog> {
   late final TextEditingController _descriptionController;
   late final TextEditingController _pointsAwardedController;
   late final TextEditingController _pointsRequiredController;
+  late final TextEditingController _conversionRateController;
+  late final TextEditingController _pointValueController;
   late final TextEditingController _minValController;
   late final TextEditingController _maxValController;
 
@@ -54,6 +56,12 @@ class _AdminPointsRuleDialogState extends State<AdminPointsRuleDialog> {
     _pointsRequiredController = TextEditingController(
       text: r?.pointsRequired != null ? r!.pointsRequired.toString() : '',
     );
+    _conversionRateController = TextEditingController(
+      text: r?.conversionRate != null ? r!.conversionRate.toString() : '',
+    );
+    _pointValueController = TextEditingController(
+      text: r?.pointValue != null ? r!.pointValue.toString() : '',
+    );
     _minValController = TextEditingController(
       text: r?.minTransactionValue != null ? r!.minTransactionValue.toString() : '',
     );
@@ -61,7 +69,7 @@ class _AdminPointsRuleDialogState extends State<AdminPointsRuleDialog> {
       text: r?.maxTransactionValue != null ? r!.maxTransactionValue.toString() : '',
     );
 
-    _selectedCategory = r?.category ?? 'product_qr_scan';
+    _selectedCategory = r?.category ?? 'customer_qr_scan';
     _isActive = r?.isActive ?? true;
     _effectiveFrom = r?.effectiveFrom;
     _effectiveTo = r?.effectiveTo;
@@ -73,6 +81,8 @@ class _AdminPointsRuleDialogState extends State<AdminPointsRuleDialog> {
     _descriptionController.dispose();
     _pointsAwardedController.dispose();
     _pointsRequiredController.dispose();
+    _conversionRateController.dispose();
+    _pointValueController.dispose();
     _minValController.dispose();
     _maxValController.dispose();
     super.dispose();
@@ -155,6 +165,11 @@ class _AdminPointsRuleDialogState extends State<AdminPointsRuleDialog> {
     final ptsAwarded = ptsAwardedText.isNotEmpty ? int.tryParse(ptsAwardedText) : null;
     final ptsReq = ptsReqText.isNotEmpty ? int.tryParse(ptsReqText) : null;
 
+    final convRateText = _conversionRateController.text.trim();
+    final ptValText = _pointValueController.text.trim();
+    final convRate = convRateText.isNotEmpty ? double.tryParse(convRateText) : null;
+    final ptVal = ptValText.isNotEmpty ? double.tryParse(ptValText) : null;
+
     final payload = AdminPointsRulePayload(
       ruleName: _nameController.text.trim(),
       ruleDescription: _descriptionController.text.trim().isEmpty
@@ -163,6 +178,8 @@ class _AdminPointsRuleDialogState extends State<AdminPointsRuleDialog> {
       category: _selectedCategory,
       pointsAwarded: ptsAwarded,
       pointsRequired: ptsReq,
+      conversionRate: convRate,
+      pointValue: ptVal,
       minTransactionValue: minVal,
       maxTransactionValue: maxVal,
       effectiveFrom: _effectiveFrom,
@@ -321,12 +338,20 @@ class _AdminPointsRuleDialogState extends State<AdminPointsRuleDialog> {
                         initialValue: _selectedCategory,
                         items: const [
                           DropdownMenuItem(
+                            value: 'customer_qr_scan',
+                            child: Text('Customer QR Scanning'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'partner_qr_scan',
+                            child: Text('Partner QR Scanning'),
+                          ),
+                          DropdownMenuItem(
                             value: 'product_qr_scan',
-                            child: Text('Product QR Scan (Customer Earning)'),
+                            child: Text('Product QR Scan (Default)'),
                           ),
                           DropdownMenuItem(
                             value: 'invoice_qr_scan',
-                            child: Text('Invoice QR Scan (Partner Earning)'),
+                            child: Text('Invoice QR Scan'),
                           ),
                           DropdownMenuItem(
                             value: 'redemption',
@@ -405,6 +430,62 @@ class _AdminPointsRuleDialogState extends State<AdminPointsRuleDialog> {
                                   validator: (v) {
                                     if (v != null && v.trim().isNotEmpty) {
                                       final parsed = int.tryParse(v.trim());
+                                      if (parsed == null || parsed < 0) {
+                                        return 'Must be >= 0';
+                                      }
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Point Value & Conversion Rate
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildFieldLabel('Point Value (₹ / pt)'),
+                                TextFormField(
+                                  key: const Key('point_value_field'),
+                                  controller: _pointValueController,
+                                  enabled: !_isSubmitting,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  decoration: _inputDecoration('e.g. 1.50'),
+                                  validator: (v) {
+                                    if (v != null && v.trim().isNotEmpty) {
+                                      final parsed = double.tryParse(v.trim());
+                                      if (parsed == null || parsed < 0) {
+                                        return 'Must be >= 0';
+                                      }
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildFieldLabel('Conversion Rate'),
+                                TextFormField(
+                                  key: const Key('conversion_rate_field'),
+                                  controller: _conversionRateController,
+                                  enabled: !_isSubmitting,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  decoration: _inputDecoration('e.g. 1.00'),
+                                  validator: (v) {
+                                    if (v != null && v.trim().isNotEmpty) {
+                                      final parsed = double.tryParse(v.trim());
                                       if (parsed == null || parsed < 0) {
                                         return 'Must be >= 0';
                                       }
@@ -589,7 +670,7 @@ class _AdminPointsRuleDialogState extends State<AdminPointsRuleDialog> {
             // Footer
             const Divider(height: 1, color: Color(0xFFE0EDF8)),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -597,14 +678,14 @@ class _AdminPointsRuleDialogState extends State<AdminPointsRuleDialog> {
                     onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(false),
                     child: const Text('Cancel', style: TextStyle(color: Color(0xFF78909C))),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   ElevatedButton(
                     key: const Key('save_rule_button'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _royalBlue,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     ),
                     onPressed: _isSubmitting ? null : _handleSubmit,
                     child: _isSubmitting

@@ -35,6 +35,7 @@ EXPECTED_TABLES = {
     "qr_batches",
     "qr_codes",
     "zones",
+    "point_transactions",
 }
 
 INITIAL_EXPECTED_TABLES = EXPECTED_TABLES - {
@@ -43,6 +44,7 @@ INITIAL_EXPECTED_TABLES = EXPECTED_TABLES - {
     "qr_batches",
     "qr_codes",
     "zones",
+    "point_transactions",
 }
 
 
@@ -127,11 +129,11 @@ def test_single_initial_alembic_revision_is_available() -> None:
     scripts = ScriptDirectory.from_config(config)
 
     assert len(scripts.get_heads()) == 1
-    assert len(list(scripts.walk_revisions())) == 6
-    latest_revision = scripts.get_revision("f3b2c1d4e5a6")
+    assert len(list(scripts.walk_revisions())) == 7
+    latest_revision = scripts.get_revision("a1b2c3d4e5f6")
     assert latest_revision is not None
-    assert latest_revision.down_revision == "c9a4f0e2b713"
-    assert scripts.get_heads() == ["f3b2c1d4e5a6"]
+    assert latest_revision.down_revision == "f3b2c1d4e5a6"
+    assert scripts.get_heads() == ["a1b2c3d4e5f6"]
     revision = scripts.get_revision("56ecec28acb3")
     assert revision is not None
     assert revision.down_revision is None
@@ -232,4 +234,83 @@ def test_zones_migration_upgrade_and_downgrade() -> None:
             for column in inspect(connection).get_columns("partner_profiles")
         }
     engine.dispose()
+
+
+def test_loyalty_and_discounts_migration_upgrade_and_downgrade() -> None:
+    backend_dir = Path(__file__).resolve().parents[1]
+    migration_path = (
+        backend_dir
+        / "migrations"
+        / "versions"
+        / "a1b2c3d4e5f6_features_g_and_h_loyalty_and_discounts.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "loyalty_and_discounts_migration", migration_path
+    )
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, name VARCHAR(150))"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE qr_codes (id INTEGER PRIMARY KEY, token VARCHAR(64))"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE points_rules (id INTEGER PRIMARY KEY, rule_name VARCHAR(120), category VARCHAR(50))"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE partner_profiles (user_id INTEGER PRIMARY KEY, business_name VARCHAR(200))"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE orders (id INTEGER PRIMARY KEY, order_number VARCHAR(50))"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE order_items (id INTEGER PRIMARY KEY, quantity INTEGER, unit_price NUMERIC)"
+        )
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+
+        tables = set(inspect(connection).get_table_names())
+        assert "point_transactions" in tables
+
+        pr_cols = {c["name"] for c in inspect(connection).get_columns("points_rules")}
+        assert "conversion_rate" in pr_cols
+        assert "point_value" in pr_cols
+        assert "version" in pr_cols
+        assert "parent_rule_id" in pr_cols
+        assert "is_current" in pr_cols
+
+        partner_cols = {c["name"] for c in inspect(connection).get_columns("partner_profiles")}
+        assert "discount_percentage" in partner_cols
+
+        order_cols = {c["name"] for c in inspect(connection).get_columns("orders")}
+        assert "subtotal_before_discount" in order_cols
+        assert "discount_percentage" in order_cols
+        assert "total_discount" in order_cols
+        assert "final_total" in order_cols
+
+        order_item_cols = {c["name"] for c in inspect(connection).get_columns("order_items")}
+        assert "original_price" in order_item_cols
+        assert "discount_percentage" in order_item_cols
+        assert "discount_amount" in order_item_cols
+        assert "discounted_price" in order_item_cols
+
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+
+        tables_after = set(inspect(connection).get_table_names())
+        assert "point_transactions" not in tables_after
+        pr_cols_after = {c["name"] for c in inspect(connection).get_columns("points_rules")}
+        assert "conversion_rate" not in pr_cols_after
+        assert "point_value" not in pr_cols_after
+        assert "version" not in pr_cols_after
+        assert "parent_rule_id" not in pr_cols_after
+        assert "is_current" not in pr_cols_after
+
+    engine.dispose()
+
 

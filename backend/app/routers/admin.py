@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -502,6 +503,11 @@ def create_partner_user(
             business_address=payload.business_address,
             partner_code=payload.partner_code,
             zone_id=payload.zone_id,
+            discount_percentage=(
+                payload.discount_percentage
+                if payload.discount_percentage is not None
+                else Decimal("0.00")
+            ),
         )
         db.add(profile)
         db.commit()
@@ -799,6 +805,9 @@ def update_user(
                     detail="Cannot assign an inactive Zone",
                 )
             target_user.partner_profile.zone_id = updates["zone_id"]
+
+        if "discount_percentage" in updates and updates["discount_percentage"] is not None:
+            target_user.partner_profile.discount_percentage = updates["discount_percentage"]
 
     elif target_user.role == "staff":
         if not target_user.staff_profile:

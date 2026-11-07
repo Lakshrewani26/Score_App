@@ -42,6 +42,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
   late final TextEditingController _businessNameController;
   late final TextEditingController _businessAddressController;
   late final TextEditingController _partnerCodeController;
+  late final TextEditingController _discountController;
   int? _selectedZoneId;
   List<AdminZone> _availableZones = [];
   bool _isLoadingZones = false;
@@ -78,6 +79,12 @@ class _EditUserDialogState extends State<EditUserDialog> {
     _partnerCodeController = TextEditingController(
       text: partner?.partnerCode ?? d?.partnerCode ?? u.partnerCode ?? '',
     );
+    final initialDiscount = partner?.discountPercentage ??
+        d?.discountPercentage ??
+        u.discountPercentage ??
+        0.0;
+    _discountController =
+        TextEditingController(text: initialDiscount.toStringAsFixed(2));
     _selectedZoneId = partner?.zoneId ?? d?.zoneId ?? u.zoneId;
 
     // Staff
@@ -120,6 +127,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
     _businessNameController.dispose();
     _businessAddressController.dispose();
     _partnerCodeController.dispose();
+    _discountController.dispose();
     _staffIdController.dispose();
     super.dispose();
   }
@@ -163,6 +171,8 @@ class _EditUserDialogState extends State<EditUserDialog> {
             widget.detail?.zoneId ??
             widget.user.zoneId;
         final zoneChanged = _selectedZoneId != initialZoneId;
+        final discountVal =
+            double.tryParse(_discountController.text.trim()) ?? 0.0;
 
         payload = UpdateUserPayload(
           name: _nameController.text.trim(),
@@ -176,6 +186,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
               : null,
           zoneId: zoneChanged ? _selectedZoneId : null,
           clearZone: zoneChanged && _selectedZoneId == null ? true : null,
+          discountPercentage: discountVal,
         );
       } else if (role == 'staff') {
         payload = UpdateUserPayload(
@@ -444,6 +455,28 @@ class _EditUserDialogState extends State<EditUserDialog> {
                     hint: 'e.g. PART001',
                     icon: Icons.tag_rounded,
                     maxLength: 50,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildTextField(
+                    key: const Key('edit_partner_discount_field'),
+                    controller: _discountController,
+                    label: 'Partner Discount (%)',
+                    hint: '0.0% to 100.0%',
+                    icon: Icons.percent_rounded,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    validator: (val) {
+                      if (val != null && val.trim().isNotEmpty) {
+                        final discount = double.tryParse(val.trim());
+                        if (discount == null) {
+                          return 'Please enter a valid numeric discount';
+                        }
+                        if (discount < 0.0 || discount > 100.0) {
+                          return 'Discount must be between 0% and 100%';
+                        }
+                      }
+                      return null;
+                    },
                   ),
                 ],
 

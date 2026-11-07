@@ -31,6 +31,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
   final _businessNameController = TextEditingController();
   final _businessAddressController = TextEditingController();
   final _partnerCodeController = TextEditingController();
+  final _discountController = TextEditingController(text: '0.0');
 
   int? _selectedZoneId;
   List<AdminZone> _availableZones = [];
@@ -70,6 +71,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
     _businessNameController.dispose();
     _businessAddressController.dispose();
     _partnerCodeController.dispose();
+    _discountController.dispose();
     super.dispose();
   }
 
@@ -89,6 +91,8 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
     });
 
     try {
+      final discountVal =
+          double.tryParse(_discountController.text.trim()) ?? 0.0;
       final payload = CreatePartnerPayload(
         name: _nameController.text.trim(),
         mobile: _mobileController.text.trim(),
@@ -99,6 +103,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
             ? _partnerCodeController.text.trim()
             : null,
         zoneId: _selectedZoneId,
+        discountPercentage: discountVal,
       );
 
       await widget.adminApi.createPartner(
@@ -141,11 +146,11 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       backgroundColor: Colors.white,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
           child: Form(
             key: _formKey,
             child: Column(
@@ -197,7 +202,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 6),
 
                 // Server error banner
                 if (_serverErrorMessage != null) ...[
@@ -249,7 +254,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 3),
 
                 // Mobile Number
                 _buildTextField(
@@ -271,7 +276,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 3),
 
                 // Password
                 _buildTextField(
@@ -305,7 +310,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 3),
 
                 // Business Name
                 _buildTextField(
@@ -322,7 +327,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 3),
 
                 // Business Address
                 _buildTextField(
@@ -339,11 +344,11 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                     return null;
                   },
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 3),
 
                 // Zone Dropdown (Admin-side attribute)
                 _buildZoneDropdown(),
-                const SizedBox(height: 5),
+                const SizedBox(height: 3),
 
                 // Partner Code (Optional)
                 _buildTextField(
@@ -354,7 +359,31 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                   icon: Icons.tag_rounded,
                   maxLength: 50,
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 3),
+
+                // Partner Discount (%)
+                _buildTextField(
+                  key: const Key('partner_discount_field'),
+                  controller: _discountController,
+                  label: 'Partner Discount (%)',
+                  hint: '0.0% to 100.0%',
+                  icon: Icons.percent_rounded,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  validator: (val) {
+                    if (val != null && val.trim().isNotEmpty) {
+                      final discount = double.tryParse(val.trim());
+                      if (discount == null) {
+                        return 'Please enter a valid numeric discount';
+                      }
+                      if (discount < 0.0 || discount > 100.0) {
+                        return 'Discount must be between 0% and 100%';
+                      }
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 6),
 
                 // Action buttons
                 Row(
@@ -363,7 +392,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                       child: OutlinedButton(
                         onPressed: _isSubmitting ? null : () => Navigator.of(context).pop(),
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -382,7 +411,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF00897B),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -420,11 +449,11 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
           'Assigned Zone (Admin Only)',
           style: TextStyle(
             color: _deepBlue,
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         if (_isLoadingZones)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
@@ -531,7 +560,7 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 2),
+        const SizedBox(height: 1),
         TextFormField(
           key: key,
           controller: controller,
@@ -540,17 +569,17 @@ class _CreatePartnerDialogState extends State<CreatePartnerDialog> {
           maxLines: maxLines,
           maxLength: maxLength,
           validator: validator,
-          style: const TextStyle(color: _deepBlue, fontSize: 14),
+          style: const TextStyle(color: _deepBlue, fontSize: 13),
           decoration: InputDecoration(
             counterText: '',
             hintText: hint,
-            hintStyle: const TextStyle(color: Color(0xFF90A4AE), fontSize: 13),
-            prefixIcon: Icon(icon, color: _royalBlue, size: 18),
+            hintStyle: const TextStyle(color: Color(0xFF90A4AE), fontSize: 12),
+            prefixIcon: Icon(icon, color: _royalBlue, size: 17),
             suffixIcon: suffixIcon,
             filled: true,
             fillColor: Colors.white,
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: _fieldBorderBlue, width: 1.2),

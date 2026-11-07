@@ -55,6 +55,10 @@ class AdminOrderItem {
   final int quantity;
   final num? unitPrice;
   final num? subtotal;
+  final num? originalPrice;
+  final num? discountPercentage;
+  final num? discountAmount;
+  final num? discountedPrice;
 
   const AdminOrderItem({
     required this.id,
@@ -65,19 +69,49 @@ class AdminOrderItem {
     required this.quantity,
     this.unitPrice,
     this.subtotal,
+    this.originalPrice,
+    this.discountPercentage,
+    this.discountAmount,
+    this.discountedPrice,
   });
 
   factory AdminOrderItem.fromJson(Map<String, dynamic> json) {
     final rawUnitPrice = json['unit_price'];
     final rawSubtotal = json['subtotal'];
+    final rawOriginalPrice = json['original_price'];
+    final rawDiscountPercentage = json['discount_percentage'];
+    final rawDiscountAmount = json['discount_amount'];
+    final rawDiscountedPrice = json['discounted_price'];
+
     num? parsedUnitPrice;
     num? parsedSubtotal;
+    num? parsedOriginalPrice;
+    num? parsedDiscountPercentage;
+    num? parsedDiscountAmount;
+    num? parsedDiscountedPrice;
 
     if (rawUnitPrice != null && rawUnitPrice.toString().trim().isNotEmpty) {
       parsedUnitPrice = num.tryParse(rawUnitPrice.toString());
     }
     if (rawSubtotal != null && rawSubtotal.toString().trim().isNotEmpty) {
       parsedSubtotal = num.tryParse(rawSubtotal.toString());
+    }
+    if (rawOriginalPrice != null &&
+        rawOriginalPrice.toString().trim().isNotEmpty) {
+      parsedOriginalPrice = num.tryParse(rawOriginalPrice.toString());
+    }
+    if (rawDiscountPercentage != null &&
+        rawDiscountPercentage.toString().trim().isNotEmpty) {
+      parsedDiscountPercentage =
+          num.tryParse(rawDiscountPercentage.toString());
+    }
+    if (rawDiscountAmount != null &&
+        rawDiscountAmount.toString().trim().isNotEmpty) {
+      parsedDiscountAmount = num.tryParse(rawDiscountAmount.toString());
+    }
+    if (rawDiscountedPrice != null &&
+        rawDiscountedPrice.toString().trim().isNotEmpty) {
+      parsedDiscountedPrice = num.tryParse(rawDiscountedPrice.toString());
     }
 
     return AdminOrderItem(
@@ -89,11 +123,17 @@ class AdminOrderItem {
       quantity: json['quantity'] as int? ?? 0,
       unitPrice: parsedUnitPrice,
       subtotal: parsedSubtotal,
+      originalPrice: parsedOriginalPrice,
+      discountPercentage: parsedDiscountPercentage,
+      discountAmount: parsedDiscountAmount,
+      discountedPrice: parsedDiscountedPrice,
     );
   }
 
   String get displayUnitPrice => formatCurrency(unitPrice);
   String get displaySubtotal => formatCurrency(subtotal);
+  String get displayOriginalPrice => formatCurrency(originalPrice);
+  String get displayDiscountAmount => formatCurrency(discountAmount);
 }
 
 class AdminOrderStatusHistory {
@@ -149,6 +189,10 @@ class AdminOrderSummary {
   final int itemCount;
   final int totalQuantity;
   final num? orderTotal;
+  final num? subtotalBeforeDiscount;
+  final num? discountPercentage;
+  final num? totalDiscount;
+  final num? finalTotal;
 
   const AdminOrderSummary({
     required this.id,
@@ -166,13 +210,41 @@ class AdminOrderSummary {
     required this.itemCount,
     required this.totalQuantity,
     this.orderTotal,
+    this.subtotalBeforeDiscount,
+    this.discountPercentage,
+    this.totalDiscount,
+    this.finalTotal,
   });
 
   factory AdminOrderSummary.fromJson(Map<String, dynamic> json) {
     final rawTotal = json['order_total'];
+    final rawSubtotalBefore = json['subtotal_before_discount'];
+    final rawDiscountPct = json['discount_percentage'];
+    final rawTotalDiscount = json['total_discount'];
+    final rawFinalTotal = json['final_total'];
+
     num? parsedTotal;
+    num? parsedSubtotalBefore;
+    num? parsedDiscountPct;
+    num? parsedTotalDiscount;
+    num? parsedFinalTotal;
+
     if (rawTotal != null && rawTotal.toString().trim().isNotEmpty) {
       parsedTotal = num.tryParse(rawTotal.toString());
+    }
+    if (rawSubtotalBefore != null &&
+        rawSubtotalBefore.toString().trim().isNotEmpty) {
+      parsedSubtotalBefore = num.tryParse(rawSubtotalBefore.toString());
+    }
+    if (rawDiscountPct != null && rawDiscountPct.toString().trim().isNotEmpty) {
+      parsedDiscountPct = num.tryParse(rawDiscountPct.toString());
+    }
+    if (rawTotalDiscount != null &&
+        rawTotalDiscount.toString().trim().isNotEmpty) {
+      parsedTotalDiscount = num.tryParse(rawTotalDiscount.toString());
+    }
+    if (rawFinalTotal != null && rawFinalTotal.toString().trim().isNotEmpty) {
+      parsedFinalTotal = num.tryParse(rawFinalTotal.toString());
     }
 
     return AdminOrderSummary(
@@ -195,11 +267,18 @@ class AdminOrderSummary {
       itemCount: json['item_count'] as int? ?? 0,
       totalQuantity: json['total_quantity'] as int? ?? 0,
       orderTotal: parsedTotal,
+      subtotalBeforeDiscount: parsedSubtotalBefore,
+      discountPercentage: parsedDiscountPct,
+      totalDiscount: parsedTotalDiscount,
+      finalTotal: parsedFinalTotal,
     );
   }
 
   String get displayStatus => formatStatus(status);
-  String get displayOrderTotal => formatCurrency(orderTotal);
+  String get displayOrderTotal => formatCurrency(finalTotal ?? orderTotal);
+  String get displaySubtotalBeforeDiscount =>
+      formatCurrency(subtotalBeforeDiscount);
+  String get displayTotalDiscount => formatCurrency(totalDiscount);
   String get displayDate => formatDateTime(createdAt);
 
   bool get canDispatch => status == 'approved_processing';
@@ -226,6 +305,10 @@ class AdminOrderDetail extends AdminOrderSummary {
     required super.itemCount,
     required super.totalQuantity,
     super.orderTotal,
+    super.subtotalBeforeDiscount,
+    super.discountPercentage,
+    super.totalDiscount,
+    super.finalTotal,
     required this.items,
     required this.statusHistory,
   });
@@ -251,11 +334,16 @@ class AdminOrderDetail extends AdminOrderSummary {
       itemCount: summary.itemCount,
       totalQuantity: summary.totalQuantity,
       orderTotal: summary.orderTotal,
+      subtotalBeforeDiscount: summary.subtotalBeforeDiscount,
+      discountPercentage: summary.discountPercentage,
+      totalDiscount: summary.totalDiscount,
+      finalTotal: summary.finalTotal,
       items: rawItems
           .map((i) => AdminOrderItem.fromJson(i as Map<String, dynamic>))
           .toList(),
       statusHistory: rawHistory
-          .map((h) => AdminOrderStatusHistory.fromJson(h as Map<String, dynamic>))
+          .map((h) =>
+              AdminOrderStatusHistory.fromJson(h as Map<String, dynamic>))
           .toList(),
     );
   }

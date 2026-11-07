@@ -6,6 +6,7 @@ import '../../../core/services/admin_api.dart';
 import '../../../core/services/admin_qr_excel_exporter.dart';
 import '../../../core/services/admin_qr_api.dart';
 import 'widgets/admin_create_qr_batch_dialog.dart';
+import 'widgets/admin_print_product_qr_dialog.dart';
 import 'widgets/admin_view_qr_codes_dialog.dart';
 
 class AdminQrGenerationScreen extends StatefulWidget {
@@ -152,6 +153,23 @@ class _AdminQrGenerationScreenState extends State<AdminQrGenerationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
+      floatingActionButton: FloatingActionButton.extended(
+        key: const Key('print_product_qr_labels_button'),
+        onPressed: () {
+          AdminPrintProductQrDialog.show(
+            context,
+            qrApi: _qrApi,
+            adminApi: _adminApi,
+          );
+        },
+        backgroundColor: _royalBlue,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.print_outlined),
+        label: const Text(
+          'Print QR Labels',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
       body: SafeArea(
         top: false,
         bottom: false,

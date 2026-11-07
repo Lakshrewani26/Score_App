@@ -49,6 +49,7 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
   String? _loadOrderErrorMessage;
   bool _isCancelling = false;
   bool _isDownloadingPdf = false;
+  PartnerOrderPreviewResponse? _orderPreview;
 
   bool get _isDynamicMode => widget.cartItems != null;
   bool get _isViewMode => widget.orderId != null || widget.existingOrder != null;
@@ -65,6 +66,24 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
       _loadedOrder = widget.existingOrder;
     } else if (widget.orderId != null) {
       _loadExistingOrder(widget.orderId!);
+    } else if (_items.isNotEmpty) {
+      _fetchPreview();
+    }
+  }
+
+  Future<void> _fetchPreview() async {
+    if (_items.isEmpty) {
+      if (mounted) setState(() => _orderPreview = null);
+      return;
+    }
+    try {
+      final preview = await _api.previewOrder(_items);
+      if (!mounted) return;
+      setState(() {
+        _orderPreview = preview;
+      });
+    } catch (_) {
+      // preview is best-effort fallback
     }
   }
 
@@ -278,6 +297,7 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
       updatedQuantities[item.product.id] = item.quantity;
     }
     widget.onCartUpdated?.call(updatedQuantities);
+    _fetchPreview();
   }
 
   Future<void> _handlePlaceOrder() async {
@@ -1162,44 +1182,106 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
   }
 
   Widget _buildGrandTotalFooter() {
+    final preview = _orderPreview;
+    final hasDiscount = preview != null &&
+        (preview.totalDiscount != null && preview.totalDiscount! > 0);
+
     return Container(
       width: double.infinity,
       color: const Color(0xFFF8FAFC),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          if (hasDiscount) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Grand Total',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: _royalBlue,
+                const Expanded(
+                  child: Text(
+                    'Subtotal Before Discount',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _subtitleColor,
+                    ),
                   ),
                 ),
                 Text(
-                  '${_items.length} items · $_totalQuantity units',
+                  '₹ ${(preview.subtotalBeforeDiscount ?? _grandTotal ?? 0).toStringAsFixed(2)}',
                   style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: _subtitleColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF334155),
                   ),
                 ),
               ],
             ),
-          ),
-          Text(
-            _displayGrandTotal,
-            key: const Key('order-grand-total-text'),
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: _royalBlue,
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Partner Discount (${(preview.discountPercentage ?? 0).toStringAsFixed(1)}%)',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF00897B),
+                    ),
+                  ),
+                ),
+                Text(
+                  '-₹ ${(preview.totalDiscount ?? 0).toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF00897B),
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 6),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            const SizedBox(height: 6),
+          ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Grand Total',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: _royalBlue,
+                      ),
+                    ),
+                    Text(
+                      '${_items.length} items · $_totalQuantity units',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: _subtitleColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                hasDiscount && preview.finalTotal != null
+                    ? '₹ ${preview.finalTotal!.toStringAsFixed(2)}'
+                    : _displayGrandTotal,
+                key: const Key('order-grand-total-text'),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: _royalBlue,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1295,6 +1377,18 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                     color: _subtitleColor,
                   ),
                 ),
+                if (item.discountPercentage != null &&
+                    item.discountPercentage! > 0) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    'MRP: ₹ ${item.originalPrice?.toStringAsFixed(2) ?? ''} (-${item.discountPercentage!.toStringAsFixed(1)}%)',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF00897B),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1341,44 +1435,103 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
   }
 
   Widget _buildViewGrandTotalFooter(PartnerOrderResponse order) {
+    final hasDiscount =
+        order.totalDiscount != null && order.totalDiscount! > 0;
+
     return Container(
       width: double.infinity,
       color: const Color(0xFFF8FAFC),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          if (hasDiscount) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Grand Total',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: _royalBlue,
+                const Expanded(
+                  child: Text(
+                    'Subtotal Before Discount',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _subtitleColor,
+                    ),
                   ),
                 ),
                 Text(
-                  '${order.itemCount} items · ${order.totalQuantity} units',
+                  '₹ ${(order.subtotalBeforeDiscount ?? order.orderTotal).toStringAsFixed(2)}',
                   style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: _subtitleColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF334155),
                   ),
                 ),
               ],
             ),
-          ),
-          Text(
-            order.displayGrandTotal,
-            key: const Key('order-grand-total-text'),
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: _royalBlue,
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Partner Discount (${(order.discountPercentage ?? 0).toStringAsFixed(1)}%)',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF00897B),
+                    ),
+                  ),
+                ),
+                Text(
+                  '-₹ ${(order.totalDiscount ?? 0).toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF00897B),
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 6),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            const SizedBox(height: 6),
+          ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Grand Total',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: _royalBlue,
+                      ),
+                    ),
+                    Text(
+                      '${order.itemCount} items · ${order.totalQuantity} units',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: _subtitleColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                order.displayGrandTotal,
+                key: const Key('order-grand-total-text'),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: _royalBlue,
+                ),
+              ),
+            ],
           ),
         ],
       ),

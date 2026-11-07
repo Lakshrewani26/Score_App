@@ -27,6 +27,10 @@ class AdminOrderItemDetail(BaseModel):
     quantity: int
     unit_price: Decimal
     subtotal: Decimal
+    original_price: Optional[Decimal] = None
+    discount_percentage: Optional[Decimal] = None
+    discount_amount: Optional[Decimal] = None
+    discounted_price: Optional[Decimal] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,6 +63,10 @@ class AdminOrderSummary(BaseModel):
     item_count: int
     total_quantity: int
     order_total: Decimal
+    subtotal_before_discount: Optional[Decimal] = None
+    discount_percentage: Optional[Decimal] = None
+    total_discount: Optional[Decimal] = None
+    final_total: Optional[Decimal] = None
 
     model_config = ConfigDict(from_attributes=True)
 

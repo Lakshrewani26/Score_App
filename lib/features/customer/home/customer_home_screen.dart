@@ -588,8 +588,24 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 iconBgColor: const Color(0xFFD4F0FF),
                 label: 'Scan QR',
                 accentColor: const Color(0xFF00B0FF),
-                onTap: () {
-                  CustomerQrScannerSheet.show(context);
+                onTap: () async {
+                  await CustomerQrScannerSheet.show(
+                    context,
+                    autoSubmit: true,
+                    onScanSuccess: (scanResult) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Awarded ${scanResult.pointsAwarded} loyalty points! New balance: ${scanResult.newBalance}',
+                            ),
+                            backgroundColor: const Color(0xFF16A34A),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    },
+                  );
                 },
               ),
             ),

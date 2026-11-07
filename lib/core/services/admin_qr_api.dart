@@ -247,6 +247,55 @@ class AdminQrApi {
     _handleError(res);
   }
 
+  /// Retrieves product QR identification labels (text format) for selected product IDs.
+  Future<ProductQrLabelListResponse> getProductQrLabels(
+    List<int> productIds, {
+    String? token,
+  }) async {
+    final authToken = await _getAuthToken(token);
+    final uri = _uri('/api/v1/admin/qr/products/labels');
+
+    final res = await _sendWithTimeout(() => _client.post(
+          uri,
+          headers: {
+            'Authorization': 'Bearer $authToken',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: jsonEncode({'product_ids': productIds}),
+        ));
+
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      final decoded = jsonDecode(res.body) as Map<String, dynamic>;
+      return ProductQrLabelListResponse.fromJson(decoded);
+    }
+    _handleError(res);
+  }
+
+  /// Downloads printable PDF containing unique product QR identification numbers.
+  Future<Uint8List> downloadProductQrLabelsPdf(
+    List<int> productIds, {
+    String? token,
+  }) async {
+    final authToken = await _getAuthToken(token);
+    final uri = _uri('/api/v1/admin/qr/products/labels/pdf');
+
+    final res = await _sendWithTimeout(() => _client.post(
+          uri,
+          headers: {
+            'Authorization': 'Bearer $authToken',
+            'Content-Type': 'application/json',
+            'Accept': 'application/pdf',
+          },
+          body: jsonEncode({'product_ids': productIds}),
+        ));
+
+    if (res.statusCode == 200) {
+      return res.bodyBytes;
+    }
+    _handleError(res);
+  }
+
   /// Updates status of an individual QR code (e.g. void or activate).
   Future<AdminQrCode> updateCodeStatus(
     int codeId,

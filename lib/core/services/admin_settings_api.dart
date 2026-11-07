@@ -363,4 +363,38 @@ class AdminSettingsApi {
 
     throw _parseError(response, 'Failed to update rule status');
   }
+
+  /// Retrieves the version history of a points rule via `GET /api/v1/admin/points-rules/{rule_id}/history`.
+  Future<AdminPointsRuleHistoryResponse> getPointsRuleHistory(
+    int ruleId, {
+    String? token,
+  }) async {
+    final activeToken = await _getAuthToken(token);
+    final url = _uri('/api/v1/admin/points-rules/$ruleId/history');
+
+    final response = await _sendWithTimeout(() => _client.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $activeToken',
+        'Accept': 'application/json',
+      },
+    ));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('Expected JSON object');
+        }
+        return AdminPointsRuleHistoryResponse.fromJson(decoded);
+      } catch (e) {
+        throw AdminApiException(
+          'Invalid rule history response received from server',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+
+    throw _parseError(response, 'Failed to fetch rule history');
+  }
 }

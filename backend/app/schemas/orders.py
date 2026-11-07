@@ -31,6 +31,10 @@ class OrderItemResponse(BaseModel):
     quantity: int
     unit_price: Decimal
     subtotal: Decimal
+    original_price: Optional[Decimal] = None
+    discount_percentage: Optional[Decimal] = None
+    discount_amount: Optional[Decimal] = None
+    discounted_price: Optional[Decimal] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -52,6 +56,10 @@ class OrderResponse(BaseModel):
     item_count: int
     total_quantity: int
     order_total: Decimal
+    subtotal_before_discount: Optional[Decimal] = None
+    discount_percentage: Optional[Decimal] = None
+    total_discount: Optional[Decimal] = None
+    final_total: Optional[Decimal] = None
     items: list[OrderItemResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
@@ -64,6 +72,10 @@ class OrderPreviewItem(BaseModel):
     vehicle_type: str
     quantity: int
     unit_price: Decimal
+    original_price: Decimal
+    discount_percentage: Decimal
+    discount_amount: Decimal
+    discounted_price: Decimal
     subtotal: Decimal
 
 
@@ -71,6 +83,10 @@ class OrderPreviewResponse(BaseModel):
     items: list[OrderPreviewItem]
     item_count: int
     total_quantity: int
+    subtotal_before_discount: Decimal
+    discount_percentage: Decimal
+    total_discount: Decimal
+    final_total: Decimal
     grand_total: Decimal
 
 

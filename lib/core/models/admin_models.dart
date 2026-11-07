@@ -163,6 +163,7 @@ class AdminUserSummary {
   final String? staffId;
   final int? zoneId;
   final String? zoneName;
+  final double? discountPercentage;
 
   const AdminUserSummary({
     required this.id,
@@ -176,6 +177,7 @@ class AdminUserSummary {
     this.staffId,
     this.zoneId,
     this.zoneName,
+    this.discountPercentage,
   });
 
   factory AdminUserSummary.fromJson(Map<String, dynamic> json) {
@@ -193,6 +195,13 @@ class AdminUserSummary {
       staffId: json['staff_id'] as String?,
       zoneId: json['zone_id'] as int?,
       zoneName: json['zone_name'] as String?,
+      discountPercentage: json['discount_percentage'] != null
+          ? double.tryParse(json['discount_percentage'].toString())
+          : (json['partner_profile'] is Map<String, dynamic>
+              ? double.tryParse(
+                  json['partner_profile']['discount_percentage']?.toString() ??
+                      '')
+              : null),
     );
   }
 
@@ -208,6 +217,8 @@ class AdminUserSummary {
         if (staffId != null) 'staff_id': staffId,
         if (zoneId != null) 'zone_id': zoneId,
         if (zoneName != null) 'zone_name': zoneName,
+        if (discountPercentage != null)
+          'discount_percentage': discountPercentage,
       };
 
   @override
@@ -224,7 +235,8 @@ class AdminUserSummary {
           partnerCode == other.partnerCode &&
           staffId == other.staffId &&
           zoneId == other.zoneId &&
-          zoneName == other.zoneName;
+          zoneName == other.zoneName &&
+          discountPercentage == other.discountPercentage;
 
   @override
   int get hashCode =>
@@ -237,7 +249,8 @@ class AdminUserSummary {
       partnerCode.hashCode ^
       staffId.hashCode ^
       zoneId.hashCode ^
-      zoneName.hashCode;
+      zoneName.hashCode ^
+      discountPercentage.hashCode;
 }
 
 class AdminStaffPartnerAssignment {
@@ -321,6 +334,7 @@ class PartnerProfileData {
   final String? partnerCode;
   final int? zoneId;
   final String? zoneName;
+  final double? discountPercentage;
 
   const PartnerProfileData({
     required this.businessName,
@@ -328,6 +342,7 @@ class PartnerProfileData {
     this.partnerCode,
     this.zoneId,
     this.zoneName,
+    this.discountPercentage,
   });
 
   factory PartnerProfileData.fromJson(Map<String, dynamic> json) {
@@ -337,6 +352,9 @@ class PartnerProfileData {
       partnerCode: json['partner_code'] as String?,
       zoneId: json['zone_id'] as int?,
       zoneName: json['zone_name'] as String?,
+      discountPercentage: json['discount_percentage'] != null
+          ? double.tryParse(json['discount_percentage'].toString())
+          : null,
     );
   }
 
@@ -346,6 +364,8 @@ class PartnerProfileData {
         if (partnerCode != null) 'partner_code': partnerCode,
         if (zoneId != null) 'zone_id': zoneId,
         if (zoneName != null) 'zone_name': zoneName,
+        if (discountPercentage != null)
+          'discount_percentage': discountPercentage,
       };
 }
 
@@ -379,6 +399,7 @@ class AdminUserDetail {
   final String? staffId;
   final int? zoneId;
   final String? zoneName;
+  final double? discountPercentage;
   final CustomerProfileData? customerProfile;
   final PartnerProfileData? partnerProfile;
   final StaffProfileData? staffProfile;
@@ -395,6 +416,7 @@ class AdminUserDetail {
     this.staffId,
     this.zoneId,
     this.zoneName,
+    this.discountPercentage,
     this.customerProfile,
     this.partnerProfile,
     this.staffProfile,
@@ -420,6 +442,13 @@ class AdminUserDetail {
       zoneName: json['zone_name'] as String? ??
           (json['partner_profile'] is Map<String, dynamic>
               ? json['partner_profile']['zone_name'] as String?
+              : null),
+      discountPercentage: json['discount_percentage'] != null
+          ? double.tryParse(json['discount_percentage'].toString())
+          : (json['partner_profile'] is Map<String, dynamic>
+              ? double.tryParse(
+                  json['partner_profile']['discount_percentage']?.toString() ??
+                      '')
               : null),
       customerProfile: json['customer_profile'] is Map<String, dynamic>
           ? CustomerProfileData.fromJson(
@@ -448,6 +477,8 @@ class AdminUserDetail {
         if (staffId != null) 'staff_id': staffId,
         if (zoneId != null) 'zone_id': zoneId,
         if (zoneName != null) 'zone_name': zoneName,
+        if (discountPercentage != null)
+          'discount_percentage': discountPercentage,
         if (customerProfile != null)
           'customer_profile': customerProfile!.toJson(),
         if (partnerProfile != null) 'partner_profile': partnerProfile!.toJson(),
@@ -466,6 +497,8 @@ class AdminUserDetail {
         staffId: staffId ?? staffProfile?.staffId,
         zoneId: zoneId ?? partnerProfile?.zoneId,
         zoneName: zoneName ?? partnerProfile?.zoneName,
+        discountPercentage:
+            discountPercentage ?? partnerProfile?.discountPercentage,
       );
 }
 
@@ -507,6 +540,7 @@ class CreatePartnerPayload {
   final String businessAddress;
   final String? partnerCode;
   final int? zoneId;
+  final double? discountPercentage;
 
   const CreatePartnerPayload({
     required this.name,
@@ -516,6 +550,7 @@ class CreatePartnerPayload {
     required this.businessAddress,
     this.partnerCode,
     this.zoneId,
+    this.discountPercentage,
   });
 
   Map<String, dynamic> toJson() {
@@ -531,6 +566,9 @@ class CreatePartnerPayload {
     }
     if (zoneId != null) {
       map['zone_id'] = zoneId;
+    }
+    if (discountPercentage != null) {
+      map['discount_percentage'] = discountPercentage;
     }
     return map;
   }
@@ -578,6 +616,7 @@ class UpdateUserPayload {
   final int? zoneId;
   final bool? clearZone;
   final String? staffId;
+  final double? discountPercentage;
 
   const UpdateUserPayload({
     this.name,
@@ -591,6 +630,7 @@ class UpdateUserPayload {
     this.zoneId,
     this.clearZone,
     this.staffId,
+    this.discountPercentage,
   });
 
   Map<String, dynamic> toJson() {
@@ -606,6 +646,9 @@ class UpdateUserPayload {
     if (zoneId != null) map['zone_id'] = zoneId;
     if (clearZone != null) map['clear_zone'] = clearZone;
     if (staffId != null) map['staff_id'] = staffId;
+    if (discountPercentage != null) {
+      map['discount_percentage'] = discountPercentage;
+    }
     return map;
   }
 }

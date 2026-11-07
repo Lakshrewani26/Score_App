@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import logging
 import uuid
 from typing import Optional
@@ -47,22 +47,77 @@ def _build_order_response(order: Order) -> OrderResponse:
     approver = order.approver
 
     items = order.items or []
-    item_responses = [
-        OrderItemResponse(
-            id=item.id,
-            product_id=item.product_id,
-            product_code=item.product.product_code if item.product else f"PRD-{item.product_id}",
-            product_name=item.product.name if item.product else f"Product #{item.product_id}",
-            vehicle_type=item.product.vehicle_type if item.product else "",
-            quantity=item.quantity,
-            unit_price=Decimal(str(item.unit_price)),
-            subtotal=Decimal(str(item.quantity * item.unit_price)),
-        )
-        for item in items
-    ]
+    item_responses = []
+    total_qty = 0
+    calculated_subtotal_before = Decimal("0.00")
+    calculated_total_discount = Decimal("0.00")
+    calculated_final = Decimal("0.00")
 
-    total_qty = sum(item.quantity for item in items)
-    order_total = sum(item.quantity * item.unit_price for item in items) if items else Decimal("0.00")
+    for item in items:
+        total_qty += item.quantity
+        orig_price = (
+            Decimal(str(item.original_price))
+            if item.original_price is not None
+            else Decimal(str(item.unit_price))
+        )
+        disc_pct = (
+            Decimal(str(item.discount_percentage))
+            if item.discount_percentage is not None
+            else Decimal("0.00")
+        )
+        disc_amt = (
+            Decimal(str(item.discount_amount))
+            if item.discount_amount is not None
+            else Decimal("0.00")
+        )
+        disc_price = (
+            Decimal(str(item.discounted_price))
+            if item.discounted_price is not None
+            else Decimal(str(item.unit_price))
+        )
+        line_subtotal = Decimal(str(item.quantity * disc_price))
+
+        calculated_subtotal_before += Decimal(str(item.quantity * orig_price))
+        calculated_total_discount += Decimal(str(item.quantity * disc_amt))
+        calculated_final += line_subtotal
+
+        item_responses.append(
+            OrderItemResponse(
+                id=item.id,
+                product_id=item.product_id,
+                product_code=item.product.product_code if item.product else f"PRD-{item.product_id}",
+                product_name=item.product.name if item.product else f"Product #{item.product_id}",
+                vehicle_type=item.product.vehicle_type if item.product else "",
+                quantity=item.quantity,
+                unit_price=disc_price,
+                subtotal=line_subtotal,
+                original_price=orig_price,
+                discount_percentage=disc_pct,
+                discount_amount=disc_amt,
+                discounted_price=disc_price,
+            )
+        )
+
+    subtotal_before = (
+        Decimal(str(order.subtotal_before_discount))
+        if order.subtotal_before_discount is not None
+        else calculated_subtotal_before
+    )
+    disc_pct_order = (
+        Decimal(str(order.discount_percentage))
+        if order.discount_percentage is not None
+        else (Decimal(str(partner_profile.discount_percentage or 0)) if partner_profile else Decimal("0.00"))
+    )
+    total_disc_order = (
+        Decimal(str(order.total_discount))
+        if order.total_discount is not None
+        else calculated_total_discount
+    )
+    final_tot = (
+        Decimal(str(order.final_total))
+        if order.final_total is not None
+        else calculated_final
+    )
 
     return OrderResponse(
         id=order.id,
@@ -80,7 +135,11 @@ def _build_order_response(order: Order) -> OrderResponse:
         approved_at=order.approved_at,
         item_count=len(items),
         total_quantity=total_qty,
-        order_total=Decimal(str(order_total)),
+        order_total=final_tot,
+        subtotal_before_discount=subtotal_before,
+        discount_percentage=disc_pct_order,
+        total_discount=total_disc_order,
+        final_total=final_tot,
         items=item_responses,
     )
 
@@ -104,7 +163,8 @@ def preview_order_totals(
 ) -> OrderPreviewResponse:
     """
     Validates requested products and calculates authoritative server-side line totals
-    and grand total without creating an order.
+    and grand total without creating an order, automatically applying the partner's
+    configured discount percentage.
     Rejects any product without a valid price.
     """
     if not payload.items:
@@ -113,13 +173,25 @@ def preview_order_totals(
             detail="Order must contain at least one item.",
         )
 
+    partner_profile = getattr(current_partner, "partner_profile", None)
+    if not partner_profile:
+        partner_profile = db.scalar(
+            select(PartnerProfile).where(PartnerProfile.user_id == current_partner.id)
+        )
+    disc_pct = (
+        Decimal(str(partner_profile.discount_percentage or 0)).quantize(Decimal("0.01"))
+        if partner_profile
+        else Decimal("0.00")
+    )
+
     product_ids = [item.product_id for item in payload.items]
     products = db.scalars(select(Product).where(Product.id.in_(product_ids))).all()
     products_by_id = {p.id: p for p in products}
 
     preview_items: list[OrderPreviewItem] = []
     total_qty = 0
-    grand_total = Decimal("0.00")
+    subtotal_before_discount = Decimal("0.00")
+    total_discount = Decimal("0.00")
 
     for item in payload.items:
         if item.quantity <= 0:
@@ -144,10 +216,18 @@ def preview_order_totals(
                 ),
             )
 
-        unit_price = Decimal(str(product.price))
-        subtotal = item.quantity * unit_price
+        orig_price = Decimal(str(product.price)).quantize(Decimal("0.01"))
+        disc_amt = (orig_price * (disc_pct / Decimal("100"))).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        disc_price = (orig_price - disc_amt).quantize(Decimal("0.01"))
+        line_subtotal = (Decimal(item.quantity) * disc_price).quantize(Decimal("0.01"))
+        line_before = (Decimal(item.quantity) * orig_price).quantize(Decimal("0.01"))
+        line_disc = (Decimal(item.quantity) * disc_amt).quantize(Decimal("0.01"))
+
         total_qty += item.quantity
-        grand_total += subtotal
+        subtotal_before_discount += line_before
+        total_discount += line_disc
 
         preview_items.append(
             OrderPreviewItem(
@@ -156,16 +236,26 @@ def preview_order_totals(
                 product_name=product.name,
                 vehicle_type=product.vehicle_type,
                 quantity=item.quantity,
-                unit_price=unit_price,
-                subtotal=subtotal,
+                unit_price=disc_price,
+                original_price=orig_price,
+                discount_percentage=disc_pct,
+                discount_amount=disc_amt,
+                discounted_price=disc_price,
+                subtotal=line_subtotal,
             )
         )
+
+    final_total = (subtotal_before_discount - total_discount).quantize(Decimal("0.01"))
 
     return OrderPreviewResponse(
         items=preview_items,
         item_count=len(preview_items),
         total_quantity=total_qty,
-        grand_total=grand_total,
+        subtotal_before_discount=subtotal_before_discount,
+        discount_percentage=disc_pct,
+        total_discount=total_discount,
+        final_total=final_total,
+        grand_total=final_total,
     )
 
 
@@ -219,11 +309,24 @@ def create_partner_order(
             return _build_order_response(existing_order)
 
     # 2. Fetch products and validate prices server-side
+    partner_profile = getattr(current_partner, "partner_profile", None)
+    if not partner_profile:
+        partner_profile = db.scalar(
+            select(PartnerProfile).where(PartnerProfile.user_id == current_partner.id)
+        )
+    disc_pct = (
+        Decimal(str(partner_profile.discount_percentage or 0)).quantize(Decimal("0.01"))
+        if partner_profile
+        else Decimal("0.00")
+    )
+
     product_ids = [item.product_id for item in payload.items]
     products = db.scalars(select(Product).where(Product.id.in_(product_ids))).all()
     products_by_id = {p.id: p for p in products}
 
     order_items_to_create: list[OrderItem] = []
+    total_subtotal_before = Decimal("0.00")
+    total_disc = Decimal("0.00")
 
     for item in payload.items:
         if item.quantity <= 0:
@@ -248,13 +351,30 @@ def create_partner_order(
                 ),
             )
 
+        orig_price = Decimal(str(product.price)).quantize(Decimal("0.01"))
+        disc_amt = (orig_price * (disc_pct / Decimal("100"))).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        disc_price = (orig_price - disc_amt).quantize(Decimal("0.01"))
+        line_before = (Decimal(item.quantity) * orig_price).quantize(Decimal("0.01"))
+        line_disc = (Decimal(item.quantity) * disc_amt).quantize(Decimal("0.01"))
+
+        total_subtotal_before += line_before
+        total_disc += line_disc
+
         order_items_to_create.append(
             OrderItem(
                 product_id=product.id,
                 quantity=item.quantity,
-                unit_price=product.price,
+                unit_price=disc_price,
+                original_price=orig_price,
+                discount_percentage=disc_pct,
+                discount_amount=disc_amt,
+                discounted_price=disc_price,
             )
         )
+
+    order_final_total = (total_subtotal_before - total_disc).quantize(Decimal("0.01"))
 
     # 3. Build order record
     notes_parts = []
@@ -270,6 +390,10 @@ def create_partner_order(
         partner_id=current_partner.id,
         status="pending_approval",
         notes=full_notes,
+        subtotal_before_discount=total_subtotal_before,
+        discount_percentage=disc_pct,
+        total_discount=total_disc,
+        final_total=order_final_total,
     )
     db.add(new_order)
     db.flush()  # Populate new_order.id
