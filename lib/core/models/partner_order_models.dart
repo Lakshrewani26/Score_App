@@ -103,6 +103,40 @@ class PartnerOrderItemResponse {
   }
 }
 
+class OrderStatusHistoryItem {
+  final int? id;
+  final String? oldStatus;
+  final String newStatus;
+  final int? changedBy;
+  final String? changedByName;
+  final DateTime changedAt;
+  final String? remarks;
+
+  const OrderStatusHistoryItem({
+    this.id,
+    this.oldStatus,
+    required this.newStatus,
+    this.changedBy,
+    this.changedByName,
+    required this.changedAt,
+    this.remarks,
+  });
+
+  factory OrderStatusHistoryItem.fromJson(Map<String, dynamic> json) {
+    return OrderStatusHistoryItem(
+      id: json['id'] as int?,
+      oldStatus: json['old_status'] as String?,
+      newStatus: (json['new_status'] ?? '').toString(),
+      changedBy: json['changed_by'] as int?,
+      changedByName: json['changed_by_name'] as String?,
+      changedAt: json['changed_at'] != null
+          ? DateTime.tryParse(json['changed_at'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+      remarks: json['remarks'] as String?,
+    );
+  }
+}
+
 class PartnerOrderResponse {
   const PartnerOrderResponse({
     required this.id,
@@ -122,6 +156,7 @@ class PartnerOrderResponse {
     required this.totalQuantity,
     required this.orderTotal,
     this.items = const [],
+    this.statusHistory = const [],
     this.subtotalBeforeDiscount,
     this.discountPercentage,
     this.totalDiscount,
@@ -145,6 +180,7 @@ class PartnerOrderResponse {
   final int totalQuantity;
   final num orderTotal;
   final List<PartnerOrderItemResponse> items;
+  final List<OrderStatusHistoryItem> statusHistory;
   final num? subtotalBeforeDiscount;
   final num? discountPercentage;
   final num? totalDiscount;
@@ -152,6 +188,7 @@ class PartnerOrderResponse {
 
   factory PartnerOrderResponse.fromJson(Map<String, dynamic> json) {
     final rawItems = json['items'] as List<dynamic>? ?? [];
+    final rawHistory = json['status_history'] as List<dynamic>? ?? [];
     return PartnerOrderResponse(
       id: json['id'] as int? ?? 0,
       orderNumber: (json['order_number'] ?? '').toString(),
@@ -177,6 +214,10 @@ class PartnerOrderResponse {
           .map((item) =>
               PartnerOrderItemResponse.fromJson(item as Map<String, dynamic>))
           .toList(),
+      statusHistory: rawHistory
+          .whereType<Map<String, dynamic>>()
+          .map((item) => OrderStatusHistoryItem.fromJson(item))
+          .toList(),
       subtotalBeforeDiscount: json['subtotal_before_discount'] != null
           ? num.tryParse(json['subtotal_before_discount'].toString())
           : null,
@@ -189,6 +230,57 @@ class PartnerOrderResponse {
       finalTotal: json['final_total'] != null
           ? num.tryParse(json['final_total'].toString())
           : null,
+    );
+  }
+
+  PartnerOrderResponse copyWith({
+    int? id,
+    String? orderNumber,
+    int? partnerId,
+    String? partnerName,
+    String? businessName,
+    String? businessAddress,
+    String? partnerMobile,
+    String? status,
+    String? notes,
+    DateTime? createdAt,
+    int? approvedBy,
+    String? approvedByName,
+    DateTime? approvedAt,
+    int? itemCount,
+    int? totalQuantity,
+    num? orderTotal,
+    List<PartnerOrderItemResponse>? items,
+    List<OrderStatusHistoryItem>? statusHistory,
+    num? subtotalBeforeDiscount,
+    num? discountPercentage,
+    num? totalDiscount,
+    num? finalTotal,
+  }) {
+    return PartnerOrderResponse(
+      id: id ?? this.id,
+      orderNumber: orderNumber ?? this.orderNumber,
+      partnerId: partnerId ?? this.partnerId,
+      partnerName: partnerName ?? this.partnerName,
+      businessName: businessName ?? this.businessName,
+      businessAddress: businessAddress ?? this.businessAddress,
+      partnerMobile: partnerMobile ?? this.partnerMobile,
+      status: status ?? this.status,
+      notes: notes ?? this.notes,
+      createdAt: createdAt ?? this.createdAt,
+      approvedBy: approvedBy ?? this.approvedBy,
+      approvedByName: approvedByName ?? this.approvedByName,
+      approvedAt: approvedAt ?? this.approvedAt,
+      itemCount: itemCount ?? this.itemCount,
+      totalQuantity: totalQuantity ?? this.totalQuantity,
+      orderTotal: orderTotal ?? this.orderTotal,
+      items: items ?? this.items,
+      statusHistory: statusHistory ?? this.statusHistory,
+      subtotalBeforeDiscount:
+          subtotalBeforeDiscount ?? this.subtotalBeforeDiscount,
+      discountPercentage: discountPercentage ?? this.discountPercentage,
+      totalDiscount: totalDiscount ?? this.totalDiscount,
+      finalTotal: finalTotal ?? this.finalTotal,
     );
   }
 

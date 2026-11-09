@@ -35,6 +35,7 @@ from app.schemas.admin_orders import (
     PaginatedStockRequestsResponse,
     PaginationMetadata,
 )
+from app.services.order_service import apply_order_status_transition
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-orders"])
 
@@ -379,61 +380,13 @@ def update_order_status(
             detail=f"Order #{order_id} not found",
         )
 
-    old_status = order.status
-    target_status = payload.status
-
-    if old_status == "pending_approval":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Order is pending Staff approval. Admin cannot bypass initial approval.",
-        )
-    elif old_status == "delivered":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Order is already delivered and cannot be modified.",
-        )
-    elif old_status == "rejected":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Order has been rejected and cannot be modified.",
-        )
-    elif old_status == "cancelled":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Order has been cancelled and cannot be modified.",
-        )
-    elif old_status == "approved_processing":
-        if target_status != "dispatched":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Order in 'approved_processing' status can only transition to 'dispatched'.",
-            )
-    elif old_status == "dispatched":
-        if target_status != "delivered":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Order in 'dispatched' status can only transition to 'delivered'.",
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid status transition from '{old_status}' to '{target_status}'.",
-        )
-
-    # Apply transition transactionally
-    order.status = target_status
-    history_entry = OrderStatusHistory(
-        order_id=order.id,
-        old_status=old_status,
-        new_status=target_status,
-        changed_by=current_admin.id,
-        changed_at=datetime.now(timezone.utc),
+    apply_order_status_transition(
+        db=db,
+        order=order,
+        target_status=payload.status,
+        user=current_admin,
         remarks=payload.remarks,
     )
-    db.add(history_entry)
-    order.status_history.append(history_entry)
-    db.commit()
-    db.expire_all()
 
     # Re-fetch order with refreshed relations
     updated_order = db.scalar(

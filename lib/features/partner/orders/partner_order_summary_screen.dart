@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/partner_order_api.dart';
 import '../../../core/services/partner_session_manager.dart';
+import '../../../core/services/staff_api.dart';
 import '../catalogue/partner_two_wheeler_catalogue_screen.dart';
 import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 
@@ -14,6 +15,7 @@ class PartnerOrderSummaryScreen extends StatefulWidget {
     this.onCartUpdated,
     this.onOrderSuccess,
     this.api,
+    this.staffApi,
     this.sessionManager,
     this.orderId,
     this.existingOrder,
@@ -23,6 +25,7 @@ class PartnerOrderSummaryScreen extends StatefulWidget {
   final ValueChanged<Map<int, int>>? onCartUpdated;
   final VoidCallback? onOrderSuccess;
   final PartnerOrderApi? api;
+  final StaffApi? staffApi;
   final PartnerSessionManager? sessionManager;
   final int? orderId;
   final PartnerOrderResponse? existingOrder;
@@ -49,6 +52,7 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
   String? _loadOrderErrorMessage;
   bool _isCancelling = false;
   bool _isDownloadingPdf = false;
+  bool _isUpdatingStatus = false;
   PartnerOrderPreviewResponse? _orderPreview;
 
   bool get _isDynamicMode => widget.cartItems != null;
@@ -756,7 +760,9 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
           ),
           if (_loadedOrder != null) ...[
             const SizedBox(height: 8),
-            Row(
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
               children: [
                 const Text(
                   'Status: ',
@@ -964,6 +970,8 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                       height: 1, thickness: 1.5, color: _cardBorderBlue),
                   _buildViewGrandTotalFooter(order),
                 ],
+                if (order.statusHistory.isNotEmpty)
+                  _buildStatusHistorySection(order.statusHistory),
                 _buildViewModeActions(order),
               ],
             ),
@@ -1538,9 +1546,212 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
     );
   }
 
+  Future<void> _handleStaffFulfillment(String targetStatus) async {
+    if (_loadedOrder == null || _isUpdatingStatus || widget.staffApi == null) {
+      return;
+    }
+
+    final actionLabel = targetStatus == 'dispatched'
+        ? 'Mark as Dispatched'
+        : 'Mark as Delivered';
+    final remarksHint = targetStatus == 'dispatched'
+        ? 'Remarks / Tracking details (Optional)'
+        : 'Remarks / Delivery notes (Optional)';
+    final remarksController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(actionLabel),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Update order ${_loadedOrder!.orderNumber} status to ${targetStatus == 'dispatched' ? 'Dispatched' : 'Delivered'}?',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: remarksController,
+              decoration: InputDecoration(
+                labelText: remarksHint,
+                border: const OutlineInputBorder(),
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            key: const Key('confirm-staff-detail-status-button'),
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: targetStatus == 'dispatched'
+                  ? const Color(0xFF0284C7)
+                  : const Color(0xFF2E7D32),
+              foregroundColor: Colors.white,
+            ),
+            child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isUpdatingStatus = true);
+
+    try {
+      final remarks = remarksController.text.trim();
+      final updated = await widget.staffApi!.updateOrderStatus(
+        _loadedOrder!.id,
+        status: targetStatus,
+        remarks: remarks.isNotEmpty ? remarks : null,
+      );
+      if (!mounted) return;
+      setState(() {
+        _loadedOrder = updated;
+      });
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Order ${_loadedOrder!.orderNumber} marked as ${targetStatus == 'dispatched' ? 'dispatched' : 'delivered'}.',
+          ),
+          backgroundColor: const Color(0xFF059669),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } on StaffApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update order status: ${e.message}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update order status: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUpdatingStatus = false);
+      }
+    }
+  }
+
+  Widget _buildStatusHistorySection(List<OrderStatusHistoryItem> history) {
+    if (history.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFCBEBFF), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A0755B5),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.history_rounded, size: 18, color: _royalBlue),
+              SizedBox(width: 8),
+              Text(
+                'Status History',
+                style: TextStyle(
+                  color: _royalBlue,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...history.map((h) => Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _royalBlue,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _formatStatus(h.newStatus),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                          if (h.changedByName != null || h.remarks != null)
+                            Text(
+                              [
+                                if (h.changedByName != null) 'By ${h.changedByName}',
+                                if (h.remarks != null && h.remarks!.isNotEmpty) h.remarks!,
+                              ].join(' · '),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${h.changedAt.day} ${_monthName(h.changedAt.month)}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF94A3B8),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
   Widget _buildViewModeActions(PartnerOrderResponse order) {
-    final canCancel =
-        _sessionManager.isAuthenticated && order.status == 'pending_approval';
+    final isStaff = widget.staffApi != null;
+    final canCancel = !isStaff &&
+        _sessionManager.isAuthenticated &&
+        order.status == 'pending_approval';
 
     return Padding(
       padding: const EdgeInsets.all(16),
@@ -1574,65 +1785,167 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
               ),
             ),
           ),
-          if (canCancel) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: OutlinedButton.icon(
-                key: const Key('cancel-order-button'),
-                onPressed: _isCancelling ? null : _handleCancelLoadedOrder,
-                icon: _isCancelling
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.cancel_outlined,
-                        color: Color(0xFFFF1725), size: 20),
-                label: Text(
-                  _isCancelling ? 'Cancelling...' : 'Cancel Order',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFFFF1725),
+          if (isStaff) ...[
+            if (order.status == 'approved_processing') ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  key: const Key('staff-detail-dispatch-button'),
+                  onPressed: _isUpdatingStatus
+                      ? null
+                      : () => _handleStaffFulfillment('dispatched'),
+                  icon: _isUpdatingStatus
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2),
+                        )
+                      : const Icon(Icons.local_shipping_outlined, size: 20),
+                  label: Text(
+                    _isUpdatingStatus
+                        ? 'Updating Status...'
+                        : 'Mark as Dispatched',
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w700),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0284C7),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
                 ),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFFF1725), width: 1.5),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+              ),
+            ] else if (order.status == 'dispatched') ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  key: const Key('staff-detail-deliver-button'),
+                  onPressed: _isUpdatingStatus
+                      ? null
+                      : () => _handleStaffFulfillment('delivered'),
+                  icon: _isUpdatingStatus
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check_circle_outline_rounded, size: 20),
+                  label: Text(
+                    _isUpdatingStatus
+                        ? 'Updating Status...'
+                        : 'Mark as Delivered',
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w700),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2E7D32),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
                 ),
               ),
-            ),
-          ] else ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFCBD5E1)),
+            ] else ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline_rounded,
+                        size: 18, color: Color(0xFF64748B)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        order.status == 'delivered'
+                            ? 'Order is Delivered and completed.'
+                            : order.status == 'pending_approval'
+                                ? 'Order is pending Staff approval.'
+                                : 'Order is ${_formatStatus(order.status)}.',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF475569),
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline_rounded,
-                      size: 18, color: Color(0xFF64748B)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Order is ${_formatStatus(order.status)} and cannot be cancelled.',
-                      style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF475569),
-                          fontWeight: FontWeight.w600),
+            ],
+          ] else ...[
+            if (canCancel) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton.icon(
+                  key: const Key('cancel-order-button'),
+                  onPressed: _isCancelling ? null : _handleCancelLoadedOrder,
+                  icon: _isCancelling
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cancel_outlined,
+                          color: Color(0xFFFF1725), size: 20),
+                  label: Text(
+                    _isCancelling ? 'Cancelling...' : 'Cancel Order',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFFF1725),
                     ),
                   ),
-                ],
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFFF1725), width: 1.5),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
               ),
-            ),
+            ] else ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline_rounded,
+                        size: 18, color: Color(0xFF64748B)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Order is ${_formatStatus(order.status)} and cannot be cancelled.',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF475569),
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ],
       ),

@@ -28,6 +28,11 @@ from app.schemas.staff import (
     StaffDashboardStatsResponse,
     StaffOrderActionRequest,
     StaffOrderCreateRequest,
+    StaffOrderStatusUpdateRequest,
+)
+from app.services.order_service import (
+    apply_order_status_transition,
+    verify_staff_partner_assignment,
 )
 
 router = APIRouter(prefix="/api/v1/staff", tags=["staff"])
@@ -201,6 +206,7 @@ def get_staff_order_detail(
             selectinload(Order.partner).selectinload(User.partner_profile),
             selectinload(Order.approver),
             selectinload(Order.items).selectinload(OrderItem.product),
+            selectinload(Order.status_history).selectinload(OrderStatusHistory.actor),
         )
         .where(Order.id == order_id)
     ).first()
@@ -211,18 +217,7 @@ def get_staff_order_detail(
             detail="Order not found",
         )
 
-    is_assigned = db.scalar(
-        select(func.count(StaffPartnerAssignment.id)).where(
-            StaffPartnerAssignment.staff_id == current_staff.id,
-            StaffPartnerAssignment.partner_id == order.partner_id,
-            StaffPartnerAssignment.is_active.is_(True),
-        )
-    )
-    if not is_assigned:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: You are not assigned to this partner's account.",
-        )
+    verify_staff_partner_assignment(db, current_staff.id, order.partner_id)
 
     return _build_order_response(order)
 
@@ -247,6 +242,7 @@ def approve_order(
             selectinload(Order.partner).selectinload(User.partner_profile),
             selectinload(Order.approver),
             selectinload(Order.items).selectinload(OrderItem.product),
+            selectinload(Order.status_history).selectinload(OrderStatusHistory.actor),
         )
         .where(Order.id == order_id)
         .with_for_update()
@@ -258,18 +254,7 @@ def approve_order(
             detail="Order not found",
         )
 
-    is_assigned = db.scalar(
-        select(func.count(StaffPartnerAssignment.id)).where(
-            StaffPartnerAssignment.staff_id == current_staff.id,
-            StaffPartnerAssignment.partner_id == order.partner_id,
-            StaffPartnerAssignment.is_active.is_(True),
-        )
-    )
-    if not is_assigned:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: You are not assigned to this partner's account.",
-        )
+    verify_staff_partner_assignment(db, current_staff.id, order.partner_id)
 
     if order.status != "pending_approval":
         raise HTTPException(
@@ -314,6 +299,7 @@ def reject_order(
             selectinload(Order.partner).selectinload(User.partner_profile),
             selectinload(Order.approver),
             selectinload(Order.items).selectinload(OrderItem.product),
+            selectinload(Order.status_history).selectinload(OrderStatusHistory.actor),
         )
         .where(Order.id == order_id)
         .with_for_update()
@@ -325,18 +311,7 @@ def reject_order(
             detail="Order not found",
         )
 
-    is_assigned = db.scalar(
-        select(func.count(StaffPartnerAssignment.id)).where(
-            StaffPartnerAssignment.staff_id == current_staff.id,
-            StaffPartnerAssignment.partner_id == order.partner_id,
-            StaffPartnerAssignment.is_active.is_(True),
-        )
-    )
-    if not is_assigned:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: You are not assigned to this partner's account.",
-        )
+    verify_staff_partner_assignment(db, current_staff.id, order.partner_id)
 
     if order.status != "pending_approval":
         raise HTTPException(
@@ -363,6 +338,65 @@ def reject_order(
     db.commit()
 
     return _build_order_response(order)
+
+
+@router.patch("/orders/{order_id}/status", response_model=OrderResponse)
+def update_staff_order_status(
+    order_id: int,
+    payload: StaffOrderStatusUpdateRequest,
+    current_staff: User = Depends(require_staff),
+    db: Session = Depends(get_db),
+) -> OrderResponse:
+    """
+    Updates order fulfillment status for an assigned partner's order:
+    - Verifies staff authentication and role via require_staff.
+    - Locks order row with FOR UPDATE.
+    - Verifies active Staff-Partner assignment.
+    - Enforces order state machine (approved_processing -> dispatched -> delivered).
+    - Persists order status update and order_status_history audit record atomically.
+    - Returns refreshed order with status history.
+    """
+    order = db.scalars(
+        select(Order)
+        .options(
+            selectinload(Order.partner).selectinload(User.partner_profile),
+            selectinload(Order.approver),
+            selectinload(Order.items).selectinload(OrderItem.product),
+            selectinload(Order.status_history).selectinload(OrderStatusHistory.actor),
+        )
+        .where(Order.id == order_id)
+        .with_for_update()
+    ).first()
+
+    if order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Order not found",
+        )
+
+    verify_staff_partner_assignment(db, current_staff.id, order.partner_id)
+
+    apply_order_status_transition(
+        db=db,
+        order=order,
+        target_status=payload.status,
+        user=current_staff,
+        remarks=payload.remarks,
+    )
+
+    # Re-fetch order with refreshed relations
+    updated_order = db.scalars(
+        select(Order)
+        .options(
+            selectinload(Order.partner).selectinload(User.partner_profile),
+            selectinload(Order.approver),
+            selectinload(Order.items).selectinload(OrderItem.product),
+            selectinload(Order.status_history).selectinload(OrderStatusHistory.actor),
+        )
+        .where(Order.id == order_id)
+    ).first()
+
+    return _build_order_response(updated_order or order)
 
 
 @router.post("/orders", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)

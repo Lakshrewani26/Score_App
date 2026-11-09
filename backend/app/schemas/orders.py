@@ -39,6 +39,18 @@ class OrderItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class OrderStatusHistoryResponse(BaseModel):
+    id: Optional[int] = None
+    old_status: Optional[str] = None
+    new_status: str
+    changed_by: Optional[int] = None
+    changed_by_name: Optional[str] = None
+    changed_at: datetime
+    remarks: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class OrderResponse(BaseModel):
     id: int
     order_number: str
@@ -61,6 +73,7 @@ class OrderResponse(BaseModel):
     total_discount: Optional[Decimal] = None
     final_total: Optional[Decimal] = None
     items: list[OrderItemResponse] = []
+    status_history: list[OrderStatusHistoryResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 

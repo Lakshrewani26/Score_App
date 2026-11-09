@@ -383,6 +383,43 @@ class StaffApi {
     }
   }
 
+
+  Future<PartnerOrderResponse> updateOrderStatus(
+    int orderId, {
+    required String status,
+    String? remarks,
+  }) async {
+    final token = await _getToken();
+    final response = await _send(
+      () => _client.patch(
+        _uri('/api/v1/staff/orders/$orderId/status'),
+        headers: {
+          ..._authHeaders(token),
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'status': status,
+          if (remarks != null && remarks.isNotEmpty) 'remarks': remarks,
+        }),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to update order status');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return PartnerOrderResponse.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
   Future<PartnerOrderResponse> createOrder({
     required int partnerId,
     required List<CartItem> items,

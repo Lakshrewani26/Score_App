@@ -7,7 +7,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import get_current_active_user, require_partner, require_partner_or_staff_or_admin
@@ -30,6 +30,7 @@ from app.schemas.orders import (
     OrderPreviewItem,
     OrderPreviewResponse,
     OrderResponse,
+    OrderStatusHistoryResponse,
     PartnerDashboardStatsResponse,
     WhatsAppDeliveryResult,
 )
@@ -119,6 +120,22 @@ def _build_order_response(order: Order) -> OrderResponse:
         else calculated_final
     )
 
+    history_responses: list[OrderStatusHistoryResponse] = []
+    insp = inspect(order)
+    if "status_history" not in insp.unloaded and order.status_history:
+        history_responses = [
+            OrderStatusHistoryResponse(
+                id=h.id,
+                old_status=h.old_status,
+                new_status=h.new_status,
+                changed_by=h.changed_by,
+                changed_by_name=h.actor.name if getattr(h, "actor", None) else None,
+                changed_at=h.changed_at,
+                remarks=h.remarks,
+            )
+            for h in sorted(order.status_history, key=lambda item: item.changed_at or datetime.min)
+        ]
+
     return OrderResponse(
         id=order.id,
         order_number=order.order_number,
@@ -141,6 +158,7 @@ def _build_order_response(order: Order) -> OrderResponse:
         total_discount=total_disc_order,
         final_total=final_tot,
         items=item_responses,
+        status_history=history_responses,
     )
 
 
