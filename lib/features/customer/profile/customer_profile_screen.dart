@@ -86,8 +86,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                               const SizedBox(height: 16),
                               _buildAccountDetailsCard(),
                               const SizedBox(height: 16),
-                              _buildPointsSummaryCard(),
-                              const SizedBox(height: 16),
                               _buildLogoutCard(),
                               const SizedBox(height: 24),
                             ],
@@ -308,131 +306,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 
-  Widget _buildPointsSummaryCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _cardBorderBlue, width: 1.5),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1F0755B5),
-            blurRadius: 18,
-            spreadRadius: 1,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          children: [
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 60,
-              child: CustomPaint(
-                painter: _SummaryCardBottomWavePainter(),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
-              child: IntrinsicHeight(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _buildSummaryColumn(
-                        icon: Icons.star_rounded,
-                        iconColor: const Color(0xFF0755C7),
-                        bgColor: const Color(0xFFD4F0FF),
-                        label: 'Total Points\nAwarded',
-                        value: '—',
-                      ),
-                    ),
-                    const _VerticalDivider(),
-                    Expanded(
-                      child: _buildSummaryColumn(
-                        icon: Icons.layers_rounded,
-                        iconColor: const Color(0xFF00897B),
-                        bgColor: const Color(0xFFD2F5EC),
-                        label: 'Total Points\nSpent',
-                        value: '—',
-                      ),
-                    ),
-                    const _VerticalDivider(),
-                    Expanded(
-                      child: _buildSummaryColumn(
-                        icon: Icons.percent_rounded,
-                        iconColor: const Color(0xFF673AB7),
-                        bgColor: const Color(0xFFEADBFF),
-                        label: 'Remaining\nBalance',
-                        value: '—',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSummaryColumn({
-    required IconData icon,
-    required Color iconColor,
-    required Color bgColor,
-    required String label,
-    required String value,
-  }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: bgColor,
-          ),
-          child: Icon(
-            icon,
-            color: iconColor,
-            size: 26,
-          ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 34,
-          child: Center(
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _royalBlue,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                height: 1.15,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            color: _royalBlue,
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            height: 1.1,
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildLogoutCard() {
     return Container(
@@ -630,18 +503,6 @@ class _RowDivider extends StatelessWidget {
   }
 }
 
-class _VerticalDivider extends StatelessWidget {
-  const _VerticalDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 1.2,
-      height: 65,
-      color: const Color(0xFFD4EBF9),
-    );
-  }
-}
 
 class _CardBottomWavePainter extends CustomPainter {
   @override
@@ -675,51 +536,3 @@ class _CardBottomWavePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _SummaryCardBottomWavePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final wavePaint1 = Paint()
-      ..color = const Color(0xFFD0F0FF).withAlpha(140)
-      ..style = PaintingStyle.fill;
-
-    final wavePaint2 = Paint()
-      ..color = const Color(0xFFE2CFFF).withAlpha(120)
-      ..style = PaintingStyle.fill;
-
-    final path1 = Path()
-      ..moveTo(0, size.height * 0.5)
-      ..quadraticBezierTo(
-        size.width * 0.25,
-        size.height * 0.2,
-        size.width * 0.6,
-        size.height * 0.6,
-      )
-      ..quadraticBezierTo(
-        size.width * 0.85,
-        size.height * 0.85,
-        size.width,
-        size.height * 0.4,
-      )
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-
-    final path2 = Path()
-      ..moveTo(size.width * 0.4, size.height * 0.7)
-      ..quadraticBezierTo(
-        size.width * 0.7,
-        size.height * 0.3,
-        size.width,
-        size.height * 0.55,
-      )
-      ..lineTo(size.width, size.height)
-      ..lineTo(size.width * 0.4, size.height)
-      ..close();
-
-    canvas.drawPath(path1, wavePaint1);
-    canvas.drawPath(path2, wavePaint2);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

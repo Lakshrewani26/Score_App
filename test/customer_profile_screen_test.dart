@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:score_app/core/services/customer_session_manager.dart';
 import 'package:score_app/features/customer/home/customer_home_screen.dart';
 import 'package:score_app/features/customer/profile/customer_profile_screen.dart';
 import 'package:score_app/features/welcome/welcome_screen.dart';
 
 void main() {
-  testWidgets('displays CustomerProfileScreen with all required UI elements', (WidgetTester tester) async {
+  testWidgets('displays CustomerProfileScreen with all required UI elements and no points summary', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -33,10 +34,10 @@ void main() {
     expect(find.text('City'), findsOneWidget);
     expect(find.text('Address'), findsOneWidget);
 
-    // 4. Points Summary Card
-    expect(find.text('Total Points\nAwarded'), findsOneWidget);
-    expect(find.text('Total Points\nSpent'), findsOneWidget);
-    expect(find.text('Remaining\nBalance'), findsOneWidget);
+    // 4. Points Summary Card is removed (available on dedicated Customer Balance screen)
+    expect(find.text('Total Points\nAwarded'), findsNothing);
+    expect(find.text('Total Points\nSpent'), findsNothing);
+    expect(find.text('Remaining\nBalance'), findsNothing);
 
     // 5. Logout Card
     expect(find.text('Logout'), findsOneWidget);
@@ -48,6 +49,81 @@ void main() {
     expect(find.text('Change Password'), findsNothing);
 
     // 8. Verify no layout overflow
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('renders populated CustomerUser details without points summary card', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final sessionManager = CustomerSessionManager(
+      tokenStorage: InMemoryCustomerTokenStorage(),
+    );
+    await sessionManager.saveSession(
+      token: 'test_token',
+      user: const CustomerUser(
+        id: 42,
+        name: 'Jane Doe',
+        mobile: '9876543210',
+        role: 'customer',
+        segment: '2W',
+        state: 'Maharashtra',
+        city: 'Mumbai',
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CustomerProfileScreen(sessionManager: sessionManager),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify customer details
+    expect(find.text('Jane Doe'), findsOneWidget);
+    expect(find.text('9876543210'), findsOneWidget);
+    expect(find.text('2W'), findsOneWidget);
+    expect(find.text('Maharashtra'), findsOneWidget);
+    expect(find.text('Mumbai'), findsOneWidget);
+    expect(find.text('Not available'), findsOneWidget); // Address only
+
+    // Verify points summary does not exist
+    expect(find.text('Total Points\nAwarded'), findsNothing);
+    expect(find.text('Total Points\nSpent'), findsNothing);
+    expect(find.text('Remaining\nBalance'), findsNothing);
+
+    // Verify Logout and bottom navigation still exist
+    expect(find.text('Logout'), findsOneWidget);
+    expect(find.text('Home'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('renders cleanly on smaller mobile screen without overflow and logout accessible', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: CustomerProfileScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Profile'), findsWidgets);
+    expect(find.text('Your account details'), findsOneWidget);
+    expect(find.text('Total Points\nAwarded'), findsNothing);
+    expect(find.text('Total Points\nSpent'), findsNothing);
+    expect(find.text('Remaining\nBalance'), findsNothing);
+
+    final logoutFinder = find.text('Logout');
+    await tester.ensureVisible(logoutFinder);
+    await tester.pumpAndSettle();
+    expect(logoutFinder, findsOneWidget);
+
     expect(tester.takeException(), isNull);
   });
 
