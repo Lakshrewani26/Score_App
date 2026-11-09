@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
+import '../models/customer_points_models.dart';
 import 'customer_session_manager.dart';
 
 class CustomerApiException implements Exception {
@@ -39,13 +40,18 @@ class CustomerAuthResponse {
 }
 
 class CustomerApi {
-  CustomerApi({http.Client? client, String? baseUrl})
-      : _client = client ?? http.Client(),
+  CustomerApi({
+    http.Client? client,
+    String? baseUrl,
+    CustomerSessionManager? sessionManager,
+  })  : _client = client ?? http.Client(),
         _baseUrl =
-            (baseUrl ?? AppConfig.baseUrl).replaceAll(RegExp(r'/+$'), '');
+            (baseUrl ?? AppConfig.baseUrl).replaceAll(RegExp(r'/+$'), ''),
+        _sessionManager = sessionManager ?? CustomerSessionManager.instance;
 
   final http.Client _client;
   final String _baseUrl;
+  final CustomerSessionManager _sessionManager;
 
   Future<CustomerAuthResponse> login({
     required String mobile,
@@ -187,7 +193,7 @@ class CustomerApi {
 
   Future<CustomerUser> getMe({String? token}) async {
     final effectiveToken =
-        token ?? await CustomerSessionManager.instance.getToken();
+        token ?? await _sessionManager.getToken();
     if (effectiveToken == null || effectiveToken.isEmpty) {
       throw const CustomerApiException(
         'Not authenticated: no bearer token available',
@@ -231,6 +237,120 @@ class CustomerApi {
         throw const FormatException('Expected JSON object');
       }
       return CustomerUser.fromJson(body);
+    } on FormatException {
+      throw CustomerApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<CustomerBalance> getBalance({String? token}) async {
+    final effectiveToken =
+        token ?? await _sessionManager.getToken();
+    if (effectiveToken == null || effectiveToken.isEmpty) {
+      throw const CustomerApiException(
+        'Not authenticated: no bearer token available',
+        statusCode: 401,
+      );
+    }
+
+    http.Response response;
+    try {
+      response = await _client.get(
+        Uri.parse('$_baseUrl/api/v1/customer/balance'),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $effectiveToken',
+        },
+      ).timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw const CustomerApiException(
+        'Connection timed out. Please check your network.',
+      );
+    } on http.ClientException catch (error) {
+      throw CustomerApiException('Network error: ${error.message}');
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      var message = 'Failed to fetch customer balance';
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map<String, dynamic> && body['detail'] is String) {
+          message = body['detail'] as String;
+        }
+      } on FormatException {
+        // fallback
+      }
+      throw CustomerApiException(message, statusCode: response.statusCode);
+    }
+
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return CustomerBalance.fromJson(body);
+    } on FormatException {
+      throw CustomerApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<CustomerPointsHistoryResponse> getPointsHistory({
+    int page = 1,
+    int pageSize = 20,
+    String? token,
+  }) async {
+    final effectiveToken =
+        token ?? await _sessionManager.getToken();
+    if (effectiveToken == null || effectiveToken.isEmpty) {
+      throw const CustomerApiException(
+        'Not authenticated: no bearer token available',
+        statusCode: 401,
+      );
+    }
+
+    http.Response response;
+    try {
+      response = await _client.get(
+        Uri.parse(
+          '$_baseUrl/api/v1/customer/points-history?page=$page&page_size=$pageSize',
+        ),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $effectiveToken',
+        },
+      ).timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw const CustomerApiException(
+        'Connection timed out. Please check your network.',
+      );
+    } on http.ClientException catch (error) {
+      throw CustomerApiException('Network error: ${error.message}');
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      var message = 'Failed to fetch customer points history';
+      try {
+        final body = jsonDecode(response.body);
+        if (body is Map<String, dynamic> && body['detail'] is String) {
+          message = body['detail'] as String;
+        }
+      } on FormatException {
+        // fallback
+      }
+      throw CustomerApiException(message, statusCode: response.statusCode);
+    }
+
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return CustomerPointsHistoryResponse.fromJson(body);
     } on FormatException {
       throw CustomerApiException(
         'Invalid response received from server',

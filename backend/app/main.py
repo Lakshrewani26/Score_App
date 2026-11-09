@@ -15,6 +15,7 @@ from app.routers.admin_settings import router as admin_settings_router
 from app.routers.admin_zones import router as admin_zones_router
 from app.routers.auth import router as auth_router
 from app.routers.catalogue import router as catalogue_router
+from app.routers.customer import router as customer_router
 from app.routers.orders import router as orders_router
 from app.routers.partner import router as partner_router
 from app.routers.qr_scan import router as qr_scan_router
@@ -40,6 +41,7 @@ elif settings.cors_allowed_origins:
 logger = logging.getLogger(__name__)
 
 app.include_router(auth_router)
+app.include_router(customer_router)
 app.include_router(admin_router)
 app.include_router(catalogue_router)
 app.include_router(orders_router)

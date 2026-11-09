@@ -620,7 +620,9 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const CustomerTransferHistoryScreen(),
+                      builder: (_) => CustomerTransferHistoryScreen(
+                        sessionManager: _session,
+                      ),
                     ),
                   );
                 },

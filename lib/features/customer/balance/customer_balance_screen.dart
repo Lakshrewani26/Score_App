@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/models/customer_points_models.dart';
+import '../../../core/services/customer_api.dart';
 import '../../../core/services/customer_session_manager.dart';
 import '../home/customer_home_screen.dart';
 import '../profile/customer_profile_screen.dart';
@@ -9,12 +11,14 @@ class CustomerBalanceScreen extends StatefulWidget {
   const CustomerBalanceScreen({
     super.key,
     this.sessionManager,
+    this.customerApi,
     this.pointsEarned,
     this.pointsSpent,
     this.remainingBalance,
   });
 
   final CustomerSessionManager? sessionManager;
+  final CustomerApi? customerApi;
   final String? pointsEarned;
   final String? pointsSpent;
   final String? remainingBalance;
@@ -27,15 +31,78 @@ class _CustomerBalanceScreenState extends State<CustomerBalanceScreen> {
   static const _royalBlue = Color(0xFF083FA5);
   static const _cardBorderBlue = Color(0xFFCBEBFF);
 
-  CustomerSessionManager get _session =>
-      widget.sessionManager ?? CustomerSessionManager.instance;
+  late final CustomerSessionManager _session;
+  late final CustomerApi _customerApi;
 
-  String get _displayEarned => widget.pointsEarned ?? '—';
-  String get _displaySpent => widget.pointsSpent ?? '—';
+  bool _isLoading = false;
+  String? _errorMessage;
+  CustomerBalance? _balance;
+
+  @override
+  void initState() {
+    super.initState();
+    _session = widget.sessionManager ?? CustomerSessionManager.instance;
+    _customerApi = widget.customerApi ?? CustomerApi(sessionManager: _session);
+    if (widget.pointsEarned == null ||
+        widget.pointsSpent == null ||
+        widget.remainingBalance == null) {
+      _loadBalance();
+    }
+  }
+
+  Future<void> _loadBalance() async {
+    final token = await _session.getToken();
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final bal = await _customerApi.getBalance(token: token);
+      if (!mounted) return;
+      setState(() {
+        _balance = bal;
+        _isLoading = false;
+        _errorMessage = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e is CustomerApiException
+            ? e.message
+            : 'Unable to load balance. Please check your network.';
+      });
+    }
+  }
+
+  String get _displayEarned {
+    if (widget.pointsEarned != null) return widget.pointsEarned!;
+    if (_balance != null) return _balance!.pointsEarned.toString();
+    return '—';
+  }
+
+  String get _displaySpent {
+    if (widget.pointsSpent != null) return widget.pointsSpent!;
+    if (_balance != null) return _balance!.pointsSpent.toString();
+    return '—';
+  }
 
   String get _displayBalance {
     if (widget.remainingBalance != null) {
       return widget.remainingBalance!;
+    }
+    if (_balance != null) {
+      return _balance!.currentBalance.toString();
     }
     final earned = num.tryParse(_displayEarned);
     final spent = num.tryParse(_displaySpent);
@@ -76,52 +143,73 @@ class _CustomerBalanceScreenState extends State<CustomerBalanceScreen> {
               fit: StackFit.expand,
               children: [
                 const SizedBox.expand(),
-                SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: height - 70),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Center(
-                        child: SizedBox(
-                          width: contentWidth,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              SizedBox(height: height * 0.055),
-                              _buildHeaderRow(context, width),
-                              const SizedBox(height: 14),
-                              const Text(
-                                'Balance',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: _royalBlue,
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.1,
+                RefreshIndicator(
+                  color: _royalBlue,
+                  onRefresh: _loadBalance,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: height - 70),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Center(
+                          child: SizedBox(
+                            width: contentWidth,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                SizedBox(height: height * 0.055),
+                                _buildHeaderRow(context, width),
+                                const SizedBox(height: 14),
+                                const Text(
+                                  'Balance',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _royalBlue,
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.1,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              const Text(
-                                'Points Earned, Points Spent & Balance',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: _royalBlue,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.2,
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'Points Earned, Points Spent & Balance',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _royalBlue,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.2,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              const _AccentBars(),
-                              const SizedBox(height: 20),
-                              _buildPointsSummaryCard(),
-                              const SizedBox(height: 16),
-                              _buildDetailedBreakdownCard(),
-                              const SizedBox(height: 16),
-                              _buildNoticeCard(),
-                              const SizedBox(height: 24),
-                            ],
+                                const SizedBox(height: 10),
+                                const _AccentBars(),
+                                const SizedBox(height: 16),
+                                if (_isLoading)
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 8),
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                        key: Key(
+                                          'customer-balance-loading-indicator',
+                                        ),
+                                        color: _royalBlue,
+                                      ),
+                                    ),
+                                  ),
+                                if (_errorMessage != null)
+                                  _buildErrorCard(),
+                                const SizedBox(height: 10),
+                                _buildPointsSummaryCard(),
+                                const SizedBox(height: 16),
+                                _buildDetailedBreakdownCard(),
+                                const SizedBox(height: 16),
+                                _buildNoticeCard(),
+                                const SizedBox(height: 24),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -134,6 +222,54 @@ class _CustomerBalanceScreenState extends State<CustomerBalanceScreen> {
         ),
       ),
       bottomNavigationBar: _buildBottomNavigationBar(context),
+    );
+  }
+
+  Widget _buildErrorCard() {
+    return Container(
+      key: const Key('customer-balance-error-state'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDE8E8),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF8B4B4), width: 1.2),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            color: Color(0xFFE02424),
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _errorMessage ?? 'Failed to load balance',
+              style: const TextStyle(
+                color: Color(0xFF9B1C1C),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _loadBalance,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Retry',
+              style: TextStyle(
+                color: Color(0xFFE02424),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

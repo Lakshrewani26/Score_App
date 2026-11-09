@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import math
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, inspect, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import PointTransaction, PointTransfer, QrCode, User
+from app.schemas.customer import (
+    CustomerPointHistoryItem,
+    CustomerPointsHistoryResponse,
+)
 
 
 def _get_existing_tables(db: Session) -> set[str]:
@@ -261,3 +267,179 @@ def calculate_user_balance(
     Convenience helper returning just the integer balance for a user.
     """
     return get_user_points_balance(db, user_id, role=role).current_balance
+
+
+def _normalize_dt(dt: Optional[datetime]) -> datetime:
+    """Ensures datetime is timezone-aware UTC for safe comparisons."""
+    if dt is None:
+        return datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def get_customer_points_history(
+    db: Session,
+    user_id: int,
+    page: int = 1,
+    page_size: int = 20,
+) -> CustomerPointsHistoryResponse:
+    """
+    Retrieves the complete, unified, paginated points history for a Customer.
+    Includes:
+    - Product QR scans (PointTransaction)
+    - Legacy redeemed QR codes (QrCode without PointTransaction)
+    - Deductions / transfers sent (PointTransfer)
+    - Inbound transfers received, if applicable (PointTransfer)
+
+    Guarantees:
+    - User isolation: only returns records associated with user_id.
+    - Consistency: points in history directly sum to PointsBalanceSummary.
+    - Deterministic ordering: sorted newest first (created_at DESC), with unique ID tie-breaker.
+    - Safe table inspection for compatibility with isolated test fixtures.
+    """
+    if page < 1:
+        page = 1
+    if page_size < 1:
+        page_size = 20
+    if page_size > 100:
+        page_size = 100
+
+    existing_tables = _get_existing_tables(db)
+    has_pt = "point_transactions" in existing_tables
+    has_ptr = "point_transfers" in existing_tables
+    has_qc = "qr_codes" in existing_tables
+
+    all_items: list[CustomerPointHistoryItem] = []
+
+    # 1. Product QR earnings from PointTransaction
+    if has_pt:
+        txs = db.scalars(
+            select(PointTransaction)
+            .options(selectinload(PointTransaction.points_rule))
+            .where(PointTransaction.user_id == user_id)
+        ).all()
+        for tx in txs:
+            rule_name = tx.points_rule.rule_name if tx.points_rule else None
+            title = f"Points Earned ({rule_name})" if rule_name else "Points Earned (Product QR)"
+            all_items.append(
+                CustomerPointHistoryItem(
+                    id=f"pt-{tx.id}",
+                    transaction_type=tx.transaction_type or "qr_scan",
+                    direction="credit",
+                    points=tx.points_awarded,
+                    amount=tx.points_awarded,
+                    title=title,
+                    description=f"Product QR scan: {tx.qr_token}",
+                    reference_id=tx.qr_token,
+                    created_at=_normalize_dt(tx.created_at),
+                )
+            )
+
+    # 2. Legacy / unlinked redeemed QrCodes (fallback credits)
+    if has_qc:
+        if has_pt:
+            legacy_qrs = db.scalars(
+                select(QrCode).where(
+                    QrCode.redeemed_by == user_id,
+                    QrCode.status == "redeemed",
+                    ~QrCode.id.in_(select(PointTransaction.qr_code_id)),
+                )
+            ).all()
+        else:
+            legacy_qrs = db.scalars(
+                select(QrCode).where(
+                    QrCode.redeemed_by == user_id,
+                    QrCode.status == "redeemed",
+                )
+            ).all()
+
+        for qr in legacy_qrs:
+            pts = qr.points_awarded or 0
+            dt = qr.redeemed_at or qr.created_at
+            all_items.append(
+                CustomerPointHistoryItem(
+                    id=f"qc-{qr.id}",
+                    transaction_type="legacy_qr_scan",
+                    direction="credit",
+                    points=pts,
+                    amount=pts,
+                    title="Points Earned (Product QR)",
+                    description=f"Product QR scan: {qr.token}",
+                    reference_id=qr.token,
+                    created_at=_normalize_dt(dt),
+                )
+            )
+
+    # 3. Deductions / transfers sent (PointTransfer)
+    if has_ptr:
+        sent_transfers = db.scalars(
+            select(PointTransfer)
+            .options(selectinload(PointTransfer.recipient))
+            .where(PointTransfer.sender_id == user_id)
+        ).all()
+        for tr in sent_transfers:
+            recip_name = tr.recipient.name if tr.recipient else "Partner"
+            all_items.append(
+                CustomerPointHistoryItem(
+                    id=f"tr-{tr.id}",
+                    transaction_type="transfer_sent",
+                    direction="debit",
+                    points=-tr.amount,
+                    amount=tr.amount,
+                    title=f"Points Transferred to {recip_name}",
+                    description=tr.remarks or f"Transferred {tr.amount} points to {recip_name}",
+                    reference_id=tr.idempotency_key,
+                    recipient_name=recip_name,
+                    created_at=_normalize_dt(tr.created_at),
+                )
+            )
+
+    # 4. Inbound transfers received (if any exist)
+    if has_ptr:
+        recv_transfers = db.scalars(
+            select(PointTransfer)
+            .options(selectinload(PointTransfer.sender))
+            .where(PointTransfer.recipient_id == user_id)
+        ).all()
+        for tr in recv_transfers:
+            snd_name = tr.sender.name if tr.sender else "User"
+            all_items.append(
+                CustomerPointHistoryItem(
+                    id=f"tr-recv-{tr.id}",
+                    transaction_type="transfer_received",
+                    direction="credit",
+                    points=tr.amount,
+                    amount=tr.amount,
+                    title=f"Points Received from {snd_name}",
+                    description=tr.remarks or f"Received {tr.amount} points from {snd_name}",
+                    reference_id=tr.idempotency_key,
+                    sender_name=snd_name,
+                    created_at=_normalize_dt(tr.created_at),
+                )
+            )
+
+    # Deterministic sorting: newest first, tie-break by deterministic id
+    all_items.sort(
+        key=lambda it: (_normalize_dt(it.created_at), it.id),
+        reverse=True,
+    )
+
+    total = len(all_items)
+    total_pages = math.ceil(total / page_size) if total > 0 else 0
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_items = all_items[start:end]
+
+    has_next = page < total_pages
+    has_prev = page > 1 and page <= total_pages + 1
+
+    return CustomerPointsHistoryResponse(
+        items=page_items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        has_next=has_next,
+        has_prev=has_prev,
+    )

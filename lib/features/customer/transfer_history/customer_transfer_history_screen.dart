@@ -1,27 +1,21 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/models/customer_points_models.dart';
+import '../../../core/services/customer_api.dart';
+import '../../../core/services/customer_session_manager.dart';
 import '../home/customer_home_screen.dart';
 import '../profile/customer_profile_screen.dart';
 
-class TransferTransaction {
-  final String id;
-  final String name;
-  final String date;
-  final String time;
-  final String amount;
-
-  const TransferTransaction({
-    required this.id,
-    required this.name,
-    required this.date,
-    required this.time,
-    required this.amount,
-  });
-}
-
 class CustomerTransferHistoryScreen extends StatefulWidget {
-  const CustomerTransferHistoryScreen({super.key});
+  const CustomerTransferHistoryScreen({
+    super.key,
+    this.sessionManager,
+    this.customerApi,
+  });
+
+  final CustomerSessionManager? sessionManager;
+  final CustomerApi? customerApi;
 
   @override
   State<CustomerTransferHistoryScreen> createState() =>
@@ -32,6 +26,111 @@ class _CustomerTransferHistoryScreenState
     extends State<CustomerTransferHistoryScreen> {
   static const _royalBlue = Color(0xFF083FA5);
   static const _cardBorderBlue = Color(0xFFCBEBFF);
+
+  late final CustomerSessionManager _session;
+  late final CustomerApi _customerApi;
+
+  bool _isLoading = false;
+  bool _isLoadingMore = false;
+  String? _errorMessage;
+  CustomerPointsHistoryResponse? _historyResponse;
+  final List<CustomerPointHistoryItem> _items = [];
+  int _currentPage = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _session = widget.sessionManager ?? CustomerSessionManager.instance;
+    _customerApi = widget.customerApi ?? CustomerApi(sessionManager: _session);
+    _loadHistory(page: 1);
+  }
+
+  Future<void> _loadHistory({int page = 1}) async {
+    final token = await _session.getToken();
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+        _items.clear();
+        _errorMessage = null;
+      });
+      return;
+    }
+
+    if (page == 1) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    } else {
+      setState(() {
+        _isLoadingMore = true;
+      });
+    }
+
+    try {
+      final res = await _customerApi.getPointsHistory(page: page, token: token);
+      if (!mounted) return;
+      setState(() {
+        _historyResponse = res;
+        _currentPage = page;
+        if (page == 1) {
+          _items.clear();
+        }
+        _items.addAll(res.items);
+        _isLoading = false;
+        _isLoadingMore = false;
+        _errorMessage = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+        _errorMessage = e is CustomerApiException
+            ? e.message
+            : 'Unable to load points history. Please check your network.';
+      });
+    }
+  }
+
+  String _formatDate(DateTime dt) {
+    final months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${dt.day.toString().padLeft(2, '0')} ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  String _formatTime(DateTime dt) {
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '$hour:$minute $period';
+  }
+
+  void _navigateBackToHome() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => CustomerHomeScreen(sessionManager: _session),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +143,6 @@ class _CustomerTransferHistoryScreenState
             final width = constraints.maxWidth;
             final height = constraints.maxHeight;
             final contentWidth = math.min(width * 0.92, 420.0);
-
             final containerHeight = math.min(height * 0.54, 410.0);
 
             return Stack(
@@ -115,17 +213,7 @@ class _CustomerTransferHistoryScreenState
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                if (Navigator.of(context).canPop()) {
-                  Navigator.of(context).pop();
-                } else {
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => const CustomerHomeScreen(),
-                    ),
-                  );
-                }
-              },
+              onTap: _navigateBackToHome,
               child: Container(
                 width: 44,
                 height: 44,
@@ -181,21 +269,199 @@ class _CustomerTransferHistoryScreenState
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              'Transfer history is not available yet.',
-              key: Key('customer-transfer-history-empty-state'),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0xFF4A6B94),
-                fontWeight: FontWeight.w600,
+        child: RefreshIndicator(
+          color: _royalBlue,
+          onRefresh: () => _loadHistory(page: 1),
+          child: _buildContainerBody(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContainerBody() {
+    if (_isLoading && _items.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(
+          key: Key('customer-history-loading-indicator'),
+          color: _royalBlue,
+        ),
+      );
+    }
+
+    if (_errorMessage != null && _items.isEmpty) {
+      return Center(
+        key: const Key('customer-history-error-state'),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                color: Color(0xFFE02424),
+                size: 40,
               ),
+              const SizedBox(height: 12),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF9B1C1C),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 14),
+              ElevatedButton.icon(
+                onPressed: () => _loadHistory(page: 1),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _royalBlue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_items.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'No points history available yet.',
+            key: Key('customer-transfer-history-empty-state'),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF4A6B94),
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
+      );
+    }
+
+    return ListView.separated(
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
       ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      itemCount: _items.length + ((_historyResponse?.hasNext ?? false) ? 1 : 0),
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, color: Color(0xFFEBF3FB)),
+      itemBuilder: (context, index) {
+        if (index == _items.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Center(
+              child: _isLoadingMore
+                  ? const CircularProgressIndicator(
+                      color: _royalBlue,
+                      strokeWidth: 2,
+                    )
+                  : TextButton(
+                      onPressed: () => _loadHistory(page: _currentPage + 1),
+                      child: const Text(
+                        'Load More',
+                        style: TextStyle(
+                          color: _royalBlue,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+            ),
+          );
+        }
+
+        final item = _items[index];
+        final isCredit = item.isCredit;
+        final deltaText = isCredit ? '+${item.amount}' : '-${item.amount}';
+        final deltaColor = isCredit
+            ? const Color(0xFF00897B)
+            : const Color(0xFFE53935);
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: isCredit
+                      ? const Color(0xFFD2F5EC)
+                      : const Color(0xFFFFEBEE),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isCredit
+                      ? Icons.add_circle_outline_rounded
+                      : Icons.remove_circle_outline_rounded,
+                  color: deltaColor,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      style: const TextStyle(
+                        color: _royalBlue,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_formatDate(item.createdAt)} • ${_formatTime(item.createdAt)}',
+                      style: const TextStyle(
+                        color: Color(0xFF8A98A8),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (item.referenceId != null &&
+                        item.referenceId!.isNotEmpty) ...[
+                      const SizedBox(height: 1),
+                      Text(
+                        'Ref: ${item.referenceId}',
+                        style: const TextStyle(
+                          color: Color(0xFF718096),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w400,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '$deltaText pts',
+                style: TextStyle(
+                  color: deltaColor,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14.5,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -219,17 +485,7 @@ class _CustomerTransferHistoryScreenState
         children: [
           Expanded(
             child: InkWell(
-              onTap: () {
-                if (Navigator.of(context).canPop()) {
-                  Navigator.of(context).pop();
-                } else {
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (_) => const CustomerHomeScreen(),
-                    ),
-                  );
-                }
-              },
+              onTap: _navigateBackToHome,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -266,7 +522,9 @@ class _CustomerTransferHistoryScreenState
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) => const CustomerProfileScreen(),
+                    builder: (_) => CustomerProfileScreen(
+                      sessionManager: _session,
+                    ),
                   ),
                 );
               },
