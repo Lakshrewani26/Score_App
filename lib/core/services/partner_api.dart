@@ -330,4 +330,65 @@ class PartnerApi {
       );
     }
   }
+
+  /// Fetches paginated points history for the authenticated Partner.
+  Future<PartnerPointsHistoryResponse> getPointsHistory({
+    int page = 1,
+    int pageSize = 20,
+    String? authToken,
+  }) async {
+    final token = await _resolveToken(authToken);
+    if (token == null || token.isEmpty) {
+      throw const PartnerApiException(
+        'Not authenticated: active Partner session required',
+        statusCode: 401,
+      );
+    }
+
+    final queryParams = {
+      'page': page.toString(),
+      'page_size': pageSize.toString(),
+    };
+    final uri = Uri.parse('$_baseUrl/api/v1/partner/points-history')
+        .replace(queryParameters: queryParams);
+
+    http.Response response;
+    try {
+      response = await _client
+          .get(
+            uri,
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw const PartnerApiException(
+        'Connection timed out while loading points history.',
+        statusCode: 408,
+      );
+    } on http.ClientException catch (error) {
+      throw PartnerApiException('Network error: ${error.message}');
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message =
+          _parseErrorMessage(response, 'Failed to fetch points history');
+      throw PartnerApiException(message, statusCode: response.statusCode);
+    }
+
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return PartnerPointsHistoryResponse.fromJson(body);
+    } on FormatException {
+      throw PartnerApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
 }

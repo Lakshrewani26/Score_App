@@ -5,7 +5,7 @@ import logging
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -14,8 +14,16 @@ from app.core.security import require_partner
 from app.db.session import get_db
 from app.models import PointTransfer, PointsRule, QrCode, User
 from app.schemas.admin_settings import _normalize_dt
-from app.schemas.partner import PartnerTransferRequest, PartnerTransferResponse
-from app.services.points_service import get_user_points_balance
+from app.schemas.partner import (
+    PartnerPointHistoryItem,
+    PartnerPointsHistoryResponse,
+    PartnerTransferRequest,
+    PartnerTransferResponse,
+)
+from app.services.points_service import (
+    get_partner_points_history,
+    get_user_points_balance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -406,4 +414,43 @@ def transfer_points_to_staff(
         sender_balance=updated_sender_bal,
         recipient_balance=updated_recip_bal,
         is_idempotent_replay=False,
+    )
+
+
+@router.get(
+    "/points-history",
+    response_model=PartnerPointsHistoryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get partner paginated points history",
+)
+@router.get(
+    "/history",
+    response_model=PartnerPointsHistoryResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+def get_partner_history(
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    page_size: int = Query(default=20, ge=1, le=100, description="Page size (max 100)"),
+    current_partner: User = Depends(require_partner),
+    db: Session = Depends(get_db),
+) -> PartnerPointsHistoryResponse:
+    """
+    Returns paginated points transaction history for the authenticated partner.
+    Includes:
+    - QR-based point earnings (PointTransaction)
+    - Legacy redeemed QR codes (fallback compatibility)
+    - Outbound transfer deductions to staff members (PointTransfer)
+    - Inbound transfers received, if applicable (PointTransfer)
+
+    Guarantees:
+    - Strict partner data isolation: Partner only sees their own transactions.
+    - 100% mathematical consistency with net partner points balance.
+    - Deterministic newest-first sort (created_at DESC, id DESC).
+    """
+    return get_partner_points_history(
+        db,
+        user_id=current_partner.id,
+        page=page,
+        page_size=page_size,
     )

@@ -668,7 +668,9 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 onTap: () async {
                   await Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const PartnerTransferHistoryScreen(),
+                      builder: (_) => PartnerTransferHistoryScreen(
+                        sessionManager: _sessionManager,
+                      ),
                     ),
                   );
                   if (mounted) {

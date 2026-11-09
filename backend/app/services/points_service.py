@@ -12,6 +12,10 @@ from app.schemas.customer import (
     CustomerPointHistoryItem,
     CustomerPointsHistoryResponse,
 )
+from app.schemas.partner import (
+    PartnerPointHistoryItem,
+    PartnerPointsHistoryResponse,
+)
 
 
 def _get_existing_tables(db: Session) -> set[str]:
@@ -435,6 +439,195 @@ def get_customer_points_history(
     has_prev = page > 1 and page <= total_pages + 1
 
     return CustomerPointsHistoryResponse(
+        items=page_items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        has_next=has_next,
+        has_prev=has_prev,
+    )
+
+
+def _extract_id_num(id_str: str) -> int:
+    """Helper to extract trailing integer id for deterministic tie-breaking."""
+    try:
+        return int(id_str.split("-")[-1])
+    except (ValueError, IndexError):
+        return 0
+
+
+def get_partner_points_history(
+    db: Session,
+    user_id: int,
+    page: int = 1,
+    page_size: int = 20,
+) -> PartnerPointsHistoryResponse:
+    """
+    Retrieves the complete, unified, paginated points history for a Partner.
+    Includes:
+    - QR-based point earnings (PointTransaction)
+    - Legacy redeemed QR codes (QrCode without PointTransaction)
+    - Outbound transfers to staff members (PointTransfer)
+    - Inbound transfers received, if applicable (PointTransfer)
+
+    Guarantees:
+    - User isolation: strictly returns records belonging to user_id.
+    - Consistency: points in history directly sum to Net Balance in get_user_points_balance.
+    - Deterministic ordering: sorted newest first (created_at DESC, id DESC).
+    - Safe table inspection for compatibility with isolated test fixtures.
+    """
+    if page < 1:
+        page = 1
+    if page_size < 1:
+        page_size = 20
+    if page_size > 100:
+        page_size = 100
+
+    existing_tables = _get_existing_tables(db)
+    has_pt = "point_transactions" in existing_tables
+    has_ptr = "point_transfers" in existing_tables
+    has_qc = "qr_codes" in existing_tables
+
+    all_items: list[PartnerPointHistoryItem] = []
+
+    # 1. Direct QR scan earnings (PointTransaction)
+    if has_pt:
+        txs = db.scalars(
+            select(PointTransaction)
+            .options(selectinload(PointTransaction.points_rule))
+            .where(PointTransaction.user_id == user_id)
+        ).all()
+        for tx in txs:
+            rule_name = tx.points_rule.rule_name if tx.points_rule else None
+            title = f"Points Earned ({rule_name})" if rule_name else "Points Earned (Product QR)"
+            all_items.append(
+                PartnerPointHistoryItem(
+                    id=f"pt-{tx.id}",
+                    transaction_type=tx.transaction_type or "qr_scan",
+                    direction="credit",
+                    points=tx.points_awarded,
+                    amount=tx.points_awarded,
+                    title=title,
+                    description=f"Product QR scan: {tx.qr_token}",
+                    reference_id=tx.qr_token,
+                    created_at=_normalize_dt(tx.created_at),
+                )
+            )
+
+    # 2. Legacy / unlinked redeemed QrCodes (fallback credits)
+    if has_qc:
+        if has_pt:
+            legacy_qrs = db.scalars(
+                select(QrCode).where(
+                    QrCode.redeemed_by == user_id,
+                    QrCode.status == "redeemed",
+                    ~QrCode.id.in_(select(PointTransaction.qr_code_id)),
+                )
+            ).all()
+        else:
+            legacy_qrs = db.scalars(
+                select(QrCode).where(
+                    QrCode.redeemed_by == user_id,
+                    QrCode.status == "redeemed",
+                )
+            ).all()
+
+        for qr in legacy_qrs:
+            pts = qr.points_awarded or 0
+            dt = qr.redeemed_at or qr.created_at
+            all_items.append(
+                PartnerPointHistoryItem(
+                    id=f"qc-{qr.id}",
+                    transaction_type="legacy_qr_scan",
+                    direction="credit",
+                    points=pts,
+                    amount=pts,
+                    title="Points Earned (Product QR)",
+                    description=f"Product QR scan: {qr.token}",
+                    reference_id=qr.token,
+                    created_at=_normalize_dt(dt),
+                )
+            )
+
+    # 3. Deductions / transfers sent to Staff (PointTransfer)
+    if has_ptr:
+        sent_transfers = db.scalars(
+            select(PointTransfer)
+            .options(
+                selectinload(PointTransfer.recipient).selectinload(User.staff_profile)
+            )
+            .where(PointTransfer.sender_id == user_id)
+        ).all()
+        for tr in sent_transfers:
+            recip = tr.recipient
+            recip_name = recip.name if recip else "Staff Member"
+            recip_badge_id = (
+                recip.staff_profile.staff_id
+                if recip and recip.staff_profile
+                else None
+            )
+            desc = tr.remarks or (
+                f"Transferred {tr.amount} points to {recip_name} ({recip_badge_id})"
+                if recip_badge_id
+                else f"Transferred {tr.amount} points to {recip_name}"
+            )
+            all_items.append(
+                PartnerPointHistoryItem(
+                    id=f"tr-{tr.id}",
+                    transaction_type="transfer_sent",
+                    direction="debit",
+                    points=-tr.amount,
+                    amount=tr.amount,
+                    title=f"Points Transferred to {recip_name}",
+                    description=desc,
+                    reference_id=tr.idempotency_key,
+                    recipient_name=recip_name,
+                    recipient_staff_id=recip_badge_id,
+                    created_at=_normalize_dt(tr.created_at),
+                )
+            )
+
+    # 4. Inbound transfers received (if any exist)
+    if has_ptr:
+        recv_transfers = db.scalars(
+            select(PointTransfer)
+            .options(selectinload(PointTransfer.sender))
+            .where(PointTransfer.recipient_id == user_id)
+        ).all()
+        for tr in recv_transfers:
+            snd_name = tr.sender.name if tr.sender else "User"
+            all_items.append(
+                PartnerPointHistoryItem(
+                    id=f"tr-recv-{tr.id}",
+                    transaction_type="transfer_received",
+                    direction="credit",
+                    points=tr.amount,
+                    amount=tr.amount,
+                    title=f"Points Received from {snd_name}",
+                    description=tr.remarks or f"Received {tr.amount} points from {snd_name}",
+                    reference_id=tr.idempotency_key,
+                    sender_name=snd_name,
+                    created_at=_normalize_dt(tr.created_at),
+                )
+            )
+
+    # Deterministic sorting: newest first (created_at DESC), tie-break by integer id DESC, id DESC
+    all_items.sort(
+        key=lambda it: (_normalize_dt(it.created_at), _extract_id_num(it.id), it.id),
+        reverse=True,
+    )
+
+    total = len(all_items)
+    total_pages = math.ceil(total / page_size) if total > 0 else 0
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_items = all_items[start:end]
+
+    has_next = page < total_pages
+    has_prev = page > 1 and page <= total_pages + 1
+
+    return PartnerPointsHistoryResponse(
         items=page_items,
         total=total,
         page=page,

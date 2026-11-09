@@ -419,5 +419,146 @@ void main() {
         expect(balance, 1000);
       });
     });
+
+    group('getPointsHistory', () {
+      test('throws PartnerApiException with 401 when unauthenticated', () async {
+        final session = PartnerSessionManager();
+        await session.clearSession();
+        final api = PartnerApi(sessionManager: session);
+
+        expect(
+          () => api.getPointsHistory(),
+          throwsA(
+            isA<PartnerApiException>().having((e) => e.statusCode, 'statusCode', 401),
+          ),
+        );
+      });
+
+      test('fetches paginated partner points history and parses items correctly', () async {
+        final session = PartnerSessionManager();
+        await session.saveSession(
+          token: 'partner-jwt-token',
+          user: const PartnerUser(
+            id: 10,
+            name: 'Apex Partner',
+            mobile: '9800000010',
+            role: 'partner',
+          ),
+        );
+
+        final client = MockClient((request) async {
+          expect(request.method, 'GET');
+          expect(request.url.path, '/api/v1/partner/points-history');
+          expect(request.url.queryParameters['page'], '2');
+          expect(request.url.queryParameters['page_size'], '10');
+          expect(request.headers['Authorization'], 'Bearer partner-jwt-token');
+
+          return http.Response(
+            jsonEncode({
+              'items': [
+                {
+                  'id': 'tr-1',
+                  'transaction_type': 'transfer_sent',
+                  'direction': 'debit',
+                  'points': -40,
+                  'amount': 40,
+                  'title': 'Points Transferred to Vikram Staff',
+                  'description': 'Transferred 40 points to Vikram Staff (STF-001)',
+                  'reference_id': 'idem-tr-40',
+                  'recipient_name': 'Vikram Staff',
+                  'recipient_staff_id': 'STF-001',
+                  'created_at': '2026-11-10T10:30:00Z',
+                },
+                {
+                  'id': 'pt-2',
+                  'transaction_type': 'qr_scan',
+                  'direction': 'credit',
+                  'points': 50,
+                  'amount': 50,
+                  'title': 'Points Earned (Product QR)',
+                  'description': 'Product QR scan: PRD-QR-50',
+                  'reference_id': 'PRD-QR-50',
+                  'created_at': '2026-11-10T09:00:00Z',
+                },
+              ],
+              'total': 15,
+              'page': 2,
+              'page_size': 10,
+              'total_pages': 2,
+              'has_next': false,
+              'has_prev': true,
+            }),
+            200,
+          );
+        });
+
+        final api = PartnerApi(
+          client: client,
+          baseUrl: 'http://localhost',
+          sessionManager: session,
+        );
+
+        final res = await api.getPointsHistory(page: 2, pageSize: 10);
+        expect(res.total, 15);
+        expect(res.page, 2);
+        expect(res.pageSize, 10);
+        expect(res.totalPages, 2);
+        expect(res.hasNext, isFalse);
+        expect(res.hasPrev, isTrue);
+        expect(res.items.length, 2);
+
+        final debitItem = res.items[0];
+        expect(debitItem.id, 'tr-1');
+        expect(debitItem.isDebit, isTrue);
+        expect(debitItem.isCredit, isFalse);
+        expect(debitItem.points, -40);
+        expect(debitItem.amount, 40);
+        expect(debitItem.recipientName, 'Vikram Staff');
+        expect(debitItem.recipientStaffId, 'STF-001');
+
+        final creditItem = res.items[1];
+        expect(creditItem.id, 'pt-2');
+        expect(creditItem.isCredit, isTrue);
+        expect(creditItem.isDebit, isFalse);
+        expect(creditItem.points, 50);
+        expect(creditItem.amount, 50);
+        expect(creditItem.referenceId, 'PRD-QR-50');
+      });
+
+      test('handles server error response cleanly', () async {
+        final session = PartnerSessionManager();
+        await session.saveSession(
+          token: 'partner-jwt-token',
+          user: const PartnerUser(
+            id: 10,
+            name: 'Apex Partner',
+            mobile: '9800000010',
+            role: 'partner',
+          ),
+        );
+
+        final client = MockClient((request) async {
+          return http.Response(
+            jsonEncode({'detail': 'Database connection error'}),
+            500,
+          );
+        });
+
+        final api = PartnerApi(
+          client: client,
+          baseUrl: 'http://localhost',
+          sessionManager: session,
+        );
+
+        expect(
+          () => api.getPointsHistory(),
+          throwsA(
+            isA<PartnerApiException>()
+                .having((e) => e.statusCode, 'statusCode', 500)
+                .having((e) => e.message, 'message', 'Database connection error'),
+          ),
+        );
+      });
+    });
   });
 }
