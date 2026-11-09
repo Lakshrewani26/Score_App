@@ -502,3 +502,92 @@ def test_partner_alias_history_route(client: TestClient, seed_data):
     res = client.get("/api/v1/partner/history", headers=auth_headers(partner_1))
     assert res.status_code == 200
     assert res.json()["total"] == 0
+
+
+def test_partner_balance_endpoint_and_consistency(client: TestClient, db: Session, seed_data):
+    partner = seed_data["partner_1"]
+    staff = seed_data["staff"]
+    customer = seed_data["customer"]
+    batch = seed_data["batch"]
+    rule = seed_data["rule"]
+
+    # 1. Unauthenticated -> 401
+    assert client.get("/api/v1/partner/balance").status_code == 401
+    assert client.get("/api/v1/partner/points/balance").status_code == 401
+
+    # 2. Staff and Customer -> 403
+    assert client.get("/api/v1/partner/balance", headers=auth_headers(staff)).status_code == 403
+    assert client.get("/api/v1/partner/balance", headers=auth_headers(customer)).status_code == 403
+
+    # 3. Setup transactions: 200 earned via QR, 60 transferred to Staff
+    now = datetime(2026, 11, 10, 10, 0, 0, tzinfo=timezone.utc)
+    qr = QrCode(
+        batch_id=batch.id,
+        token="QR-BAL-1",
+        code_data="https://score.app/qr?token=QR-BAL-1",
+        qr_type="product",
+        status="redeemed",
+        points_awarded=200,
+        redeemed_by=partner.id,
+        redeemed_at=now,
+    )
+    db.add(qr)
+    db.flush()
+    db.add(
+        PointTransaction(
+            user_id=partner.id,
+            qr_code_id=qr.id,
+            qr_token=qr.token,
+            points_rule_id=rule.id,
+            points_awarded=200,
+            qr_type="product",
+            transaction_type="qr_scan",
+            created_at=now,
+        )
+    )
+    db.add(
+        PointTransfer(
+            sender_id=partner.id,
+            recipient_id=staff.id,
+            amount=60,
+            idempotency_key="bal-transfer-60",
+            created_at=now + timedelta(minutes=15),
+        )
+    )
+    db.commit()
+
+    headers = auth_headers(partner)
+
+    # 4. Check /partner/balance
+    bal_res = client.get("/api/v1/partner/balance", headers=headers)
+    assert bal_res.status_code == 200
+    bal = bal_res.json()
+    assert bal["points_earned"] == 200
+    assert bal["points_spent"] == 60
+    assert bal["current_balance"] == 140
+    assert bal["total_earned_points"] == 200
+    assert bal["total_spent_points"] == 60
+    assert bal["remaining_balance"] == 140
+
+    # 5. Check /orders/dashboard/stats
+    stats_res = client.get("/api/v1/orders/dashboard/stats", headers=headers)
+    assert stats_res.status_code == 200
+    stats = stats_res.json()
+    assert stats["total_points"] == 200
+    assert stats["points_used"] == 60
+    assert stats["remaining_balance"] == 140
+
+    # 6. Check /partner/points-history
+    hist_res = client.get("/api/v1/partner/points-history", headers=headers)
+    assert hist_res.status_code == 200
+    hist = hist_res.json()
+    assert hist["total"] == 2
+
+    credits = sum(it["amount"] for it in hist["items"] if it["direction"] == "credit")
+    debits = sum(it["amount"] for it in hist["items"] if it["direction"] == "debit")
+    net = sum(it["points"] for it in hist["items"])
+
+    assert credits == bal["points_earned"] == stats["total_points"] == 200
+    assert debits == bal["points_spent"] == stats["points_used"] == 60
+    assert net == bal["current_balance"] == stats["remaining_balance"] == 140
+

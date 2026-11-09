@@ -1,6 +1,64 @@
 import 'package:flutter/foundation.dart';
 
 @immutable
+class PartnerBalance {
+  const PartnerBalance({
+    required this.pointsEarned,
+    required this.pointsSpent,
+    required this.currentBalance,
+  });
+
+  final int pointsEarned;
+  final int pointsSpent;
+  final int currentBalance;
+
+  factory PartnerBalance.fromJson(Map<String, dynamic> json) {
+    return PartnerBalance(
+      pointsEarned: ((json['points_earned'] ??
+              json['total_earned_points'] ??
+              json['total_points'] ??
+              0) as num)
+          .toInt(),
+      pointsSpent: ((json['points_spent'] ??
+              json['total_spent_points'] ??
+              json['points_used'] ??
+              0) as num)
+          .toInt(),
+      currentBalance: ((json['current_balance'] ??
+              json['remaining_balance'] ??
+              0) as num)
+          .toInt(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'points_earned': pointsEarned,
+        'points_spent': pointsSpent,
+        'current_balance': currentBalance,
+        'total_earned_points': pointsEarned,
+        'total_spent_points': pointsSpent,
+        'remaining_balance': currentBalance,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PartnerBalance &&
+          runtimeType == other.runtimeType &&
+          pointsEarned == other.pointsEarned &&
+          pointsSpent == other.pointsSpent &&
+          currentBalance == other.currentBalance;
+
+  @override
+  int get hashCode =>
+      pointsEarned.hashCode ^ pointsSpent.hashCode ^ currentBalance.hashCode;
+
+  @override
+  String toString() =>
+      'PartnerBalance(earned: $pointsEarned, spent: $pointsSpent, current: $currentBalance)';
+}
+
+@immutable
 class StaffQrRecipient {
   const StaffQrRecipient({
     required this.staffUserId,

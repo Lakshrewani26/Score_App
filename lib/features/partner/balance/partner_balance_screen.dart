@@ -2,9 +2,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../core/models/partner_order_models.dart';
+import '../../../core/models/partner_transfer_models.dart';
+import '../../../core/services/partner_api.dart';
 import '../../../core/services/partner_order_api.dart';
 import '../../../core/services/partner_session_manager.dart';
-import '../../customer/qr_scanner/customer_qr_scanner.dart';
 import '../home/partner_home_screen.dart';
 import '../profile/partner_profile_screen.dart';
 
@@ -13,6 +14,7 @@ class PartnerBalanceScreen extends StatefulWidget {
     super.key,
     this.sessionManager,
     this.orderApi,
+    this.partnerApi,
     this.pointsEarned,
     this.pointsSpent,
     this.remainingBalance,
@@ -20,6 +22,7 @@ class PartnerBalanceScreen extends StatefulWidget {
 
   final PartnerSessionManager? sessionManager;
   final PartnerOrderApi? orderApi;
+  final PartnerApi? partnerApi;
   final String? pointsEarned;
   final String? pointsSpent;
   final String? remainingBalance;
@@ -34,7 +37,12 @@ class _PartnerBalanceScreenState extends State<PartnerBalanceScreen> {
 
   late final PartnerSessionManager _sessionManager;
   late final PartnerOrderApi _orderApi;
+  late final PartnerApi _partnerApi;
+
+  bool _isLoading = false;
+  String? _errorMessage;
   PartnerDashboardStats? _stats;
+  PartnerBalance? _balance;
 
   @override
   void initState() {
@@ -42,40 +50,82 @@ class _PartnerBalanceScreenState extends State<PartnerBalanceScreen> {
     _sessionManager = widget.sessionManager ?? PartnerSessionManager.instance;
     _orderApi =
         widget.orderApi ?? PartnerOrderApi(sessionManager: _sessionManager);
-    if (widget.pointsEarned == null ||
-        widget.pointsSpent == null ||
-        widget.remainingBalance == null) {
-      _loadStats();
+    _partnerApi =
+        widget.partnerApi ?? PartnerApi(sessionManager: _sessionManager);
+
+    // Initial loading indicator if no valid pre-configured values are supplied
+    if (widget.pointsEarned == null || widget.pointsEarned == '—') {
+      _isLoading = true;
     }
+
+    _loadBalance();
   }
 
-  Future<void> _loadStats() async {
-    try {
-      final stats = await _orderApi.getDashboardStats();
+  Future<void> _loadBalance() async {
+    final token = await _sessionManager.getToken();
+    if (token == null || token.isEmpty) {
       if (!mounted) return;
       setState(() {
-        _stats = stats;
+        _isLoading = false;
+        _errorMessage = null;
       });
-    } catch (_) {
-      // Preserve fallback placeholder
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      if (widget.partnerApi != null) {
+        final bal = await _partnerApi.getBalance(authToken: token);
+        if (!mounted) return;
+        setState(() {
+          _balance = bal;
+          _isLoading = false;
+          _errorMessage = null;
+        });
+      } else {
+        final stats = await _orderApi.getDashboardStats();
+        if (!mounted) return;
+        setState(() {
+          _stats = stats;
+          _isLoading = false;
+          _errorMessage = null;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e is PartnerOrderApiException
+            ? e.message
+            : (e is PartnerApiException
+                ? e.message
+                : 'Unable to load balance. Please check your network.');
+      });
     }
   }
 
   String get _displayEarned {
-    if (widget.pointsEarned != null) return widget.pointsEarned!;
+    if (_balance != null) return _balance!.pointsEarned.toString();
     if (_stats != null) return _stats!.totalPoints.toString();
+    if (widget.pointsEarned != null) return widget.pointsEarned!;
     return '—';
   }
 
   String get _displaySpent {
-    if (widget.pointsSpent != null) return widget.pointsSpent!;
+    if (_balance != null) return _balance!.pointsSpent.toString();
     if (_stats != null) return _stats!.pointsUsed.toString();
+    if (widget.pointsSpent != null) return widget.pointsSpent!;
     return '—';
   }
 
   String get _displayBalance {
-    if (widget.remainingBalance != null) return widget.remainingBalance!;
+    if (_balance != null) return _balance!.currentBalance.toString();
     if (_stats != null) return _stats!.remainingBalance.toString();
+    if (widget.remainingBalance != null) return widget.remainingBalance!;
     final earned = num.tryParse(_displayEarned);
     final spent = num.tryParse(_displaySpent);
     if (earned != null && spent != null) {
@@ -118,54 +168,74 @@ class _PartnerBalanceScreenState extends State<PartnerBalanceScreen> {
               fit: StackFit.expand,
               children: [
                 const SizedBox.expand(),
-                SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: height - 70),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Center(
-                        child: SizedBox(
-                          width: contentWidth,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              SizedBox(height: height * 0.055),
-                              _buildHeaderRow(context, width),
-                              const SizedBox(height: 14),
-                              const Text(
-                                'Balance',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: _royalBlue,
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w800,
-                                  height: 1.1,
+                RefreshIndicator(
+                  color: _royalBlue,
+                  onRefresh: _loadBalance,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: height - 70),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Center(
+                          child: SizedBox(
+                            width: contentWidth,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                SizedBox(height: height * 0.055),
+                                _buildHeaderRow(context, width),
+                                const SizedBox(height: 14),
+                                const Text(
+                                  'Balance',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _royalBlue,
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.w800,
+                                    height: 1.1,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 6),
-                              const Text(
-                                'Points Earned, Points Spent & Balance',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: _royalBlue,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.2,
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'Points Earned, Points Spent & Balance',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _royalBlue,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.2,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 10),
-                              const _AccentBars(),
-                              const SizedBox(height: 20),
-                              _buildPointsSummaryCard(),
-                              const SizedBox(height: 14),
-                              _buildScanProductQrButton(),
-                              const SizedBox(height: 16),
-                              _buildDetailedBreakdownCard(),
-                              const SizedBox(height: 16),
-                              _buildNoticeCard(),
-                              const SizedBox(height: 24),
-                            ],
+                                const SizedBox(height: 10),
+                                const _AccentBars(),
+                                const SizedBox(height: 16),
+                                if (_isLoading)
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 8),
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                        key: Key(
+                                          'partner-balance-loading-indicator',
+                                        ),
+                                        color: _royalBlue,
+                                      ),
+                                    ),
+                                  ),
+                                if (_errorMessage != null) _buildErrorCard(),
+                                const SizedBox(height: 10),
+                                _buildPointsSummaryCard(),
+                                const SizedBox(height: 14),
+                                _buildInvoiceQrAction(),
+                                const SizedBox(height: 16),
+                                _buildDetailedBreakdownCard(),
+                                const SizedBox(height: 16),
+                                _buildNoticeCard(),
+                                const SizedBox(height: 24),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -223,62 +293,100 @@ class _PartnerBalanceScreenState extends State<PartnerBalanceScreen> {
             width: math.min(width * 0.44, 160.0),
             fit: BoxFit.contain,
             opacity: const AlwaysStoppedAnimation(0.96),
+            errorBuilder: (context, error, stackTrace) => const Text(
+              'ScorE',
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                color: _royalBlue,
+              ),
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildScanProductQrButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        key: const Key('partner_scan_product_qr_button'),
-        onPressed: _openProductQrScanner,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _royalBlue,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+  Widget _buildErrorCard() {
+    return Container(
+      key: const Key('partner-balance-error-state'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDE8E8),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF8B4B4), width: 1.2),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            color: Color(0xFFE02424),
+            size: 20,
           ),
-          elevation: 2,
-        ),
-        icon: const Icon(Icons.qr_code_scanner_rounded, size: 22),
-        label: const Text(
-          'Scan Product QR Code',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.2,
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _errorMessage ?? 'Failed to load balance',
+              style: const TextStyle(
+                color: Color(0xFF9B1C1C),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-        ),
+          TextButton(
+            onPressed: _loadBalance,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Retry',
+              style: TextStyle(
+                color: Color(0xFF9B1C1C),
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Future<void> _openProductQrScanner() async {
-    final token = await _sessionManager.getToken();
-    if (!mounted) return;
-    await CustomerQrScannerSheet.show(
-      context,
-      mode: ScannerMode.scan,
-      autoSubmit: true,
-      authToken: token,
-      onScanSuccess: (scanResult) {
-        if (mounted) {
-          _loadStats();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Awarded ${scanResult.pointsAwarded} partner loyalty points! Updated balance: ${scanResult.newBalance}',
-              ),
-              backgroundColor: const Color(0xFF16A34A),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      },
+  Widget _buildInvoiceQrAction() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        key: const Key('partner_scan_invoice_qr_button'),
+        onPressed: null, // Disabled: Partner invoice QR awarding is coming soon
+        style: ElevatedButton.styleFrom(
+          disabledBackgroundColor: const Color(0xFFF1F5F9),
+          disabledForegroundColor: const Color(0xFF94A3B8),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+          ),
+          elevation: 0,
+        ),
+        icon: const Icon(
+          Icons.receipt_long_rounded,
+          size: 22,
+          color: Color(0xFF94A3B8),
+        ),
+        label: const Text(
+          'Scan Invoice QR Code (Coming Soon)',
+          style: TextStyle(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.2,
+            color: Color(0xFF64748B),
+          ),
+        ),
+      ),
     );
   }
 
@@ -516,7 +624,7 @@ class _PartnerBalanceScreenState extends State<PartnerBalanceScreen> {
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Points balances reflect verified partner activity. Points can be redeemed for catalogue orders or transferred to staff members.',
+              'Points balances reflect verified partner activity. Earned points come from invoice QR scans and applicable credits. Points are deducted when transferred to staff members.',
               style: TextStyle(
                 color: Color(0xFF4A6B94),
                 fontSize: 12.5,
@@ -642,7 +750,7 @@ class _AccentBars extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: const [
-        _AccentBar(color: Color(0xFF0755B5)),
+        _AccentBar(color: Color(0xFF0755C7)),
         SizedBox(width: 5),
         _AccentBar(color: Color(0xFFFF1B28)),
         SizedBox(width: 5),

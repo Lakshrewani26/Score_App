@@ -277,6 +277,56 @@ class PartnerApi {
     }
   }
 
+  /// Fetches the authenticated Partner's points balance summary.
+  Future<PartnerBalance> getBalance({String? authToken}) async {
+    final token = await _resolveToken(authToken);
+    if (token == null || token.isEmpty) {
+      throw const PartnerApiException(
+        'Not authenticated: active Partner session required',
+        statusCode: 401,
+      );
+    }
+
+    http.Response response;
+    try {
+      response = await _client
+          .get(
+            Uri.parse('$_baseUrl/api/v1/partner/balance'),
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw const PartnerApiException(
+        'Connection timed out while loading balance.',
+        statusCode: 408,
+      );
+    } on http.ClientException catch (error) {
+      throw PartnerApiException('Network error: ${error.message}');
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message =
+          _parseErrorMessage(response, 'Failed to fetch balance');
+      throw PartnerApiException(message, statusCode: response.statusCode);
+    }
+
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return PartnerBalance.fromJson(body);
+    } on FormatException {
+      throw PartnerApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
   /// Fetches the authenticated Partner's remaining points balance from the dashboard stats.
   Future<int> getAvailableBalance({String? authToken}) async {
     final token = await _resolveToken(authToken);

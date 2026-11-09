@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.models import PointTransfer, PointsRule, QrCode, User
 from app.schemas.admin_settings import _normalize_dt
 from app.schemas.partner import (
+    PartnerBalanceResponse,
     PartnerPointHistoryItem,
     PartnerPointsHistoryResponse,
     PartnerTransferRequest,
@@ -453,4 +454,43 @@ def get_partner_history(
         user_id=current_partner.id,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get(
+    "/balance",
+    response_model=PartnerBalanceResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get partner points balance",
+)
+@router.get(
+    "/points/balance",
+    response_model=PartnerBalanceResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+def get_partner_balance(
+    current_partner: User = Depends(require_partner),
+    db: Session = Depends(get_db),
+) -> PartnerBalanceResponse:
+    """
+    Returns the unified points balance for the authenticated partner:
+    - points_earned: total earned points (direct QR scans + inbound credits)
+    - points_spent: total points transferred to staff members
+    - current_balance: net remaining balance (earned - spent)
+    """
+    summary = get_user_points_balance(
+        db, current_partner.id, role="partner"
+    )
+    total_earned = summary.points_earned + summary.transfers_received
+    total_spent = summary.points_spent
+    balance = summary.current_balance
+
+    return PartnerBalanceResponse(
+        points_earned=total_earned,
+        points_spent=total_spent,
+        current_balance=balance,
+        total_earned_points=total_earned,
+        total_spent_points=total_spent,
+        remaining_balance=balance,
     )

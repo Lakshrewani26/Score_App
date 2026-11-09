@@ -47,6 +47,37 @@ class PartnerTransferRequest(BaseModel):
         return data
 
 
+class PartnerBalanceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    points_earned: int = Field(
+        ...,
+        description="Total lifetime points earned by the partner (via QR scans and inbound credits)",
+    )
+    points_spent: int = Field(
+        ...,
+        description="Total points spent/transferred by the partner to staff",
+    )
+    current_balance: int = Field(
+        ...,
+        description="Current available points balance (earned - spent)",
+    )
+
+    # Aliases for compatibility
+    total_earned_points: int = Field(
+        ...,
+        description="Compatibility alias for points_earned",
+    )
+    total_spent_points: int = Field(
+        ...,
+        description="Compatibility alias for points_spent",
+    )
+    remaining_balance: int = Field(
+        ...,
+        description="Compatibility alias for current_balance",
+    )
+
+
 class PartnerTransferResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

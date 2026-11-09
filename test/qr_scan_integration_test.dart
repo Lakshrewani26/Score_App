@@ -427,7 +427,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('4. PartnerBalanceScreen renders Scan Product QR Code button and opens scanner',
+    testWidgets('4. PartnerBalanceScreen does not render misleading product QR button and displays disabled invoice QR action',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
@@ -457,22 +457,17 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Verify Scan Product QR Code button is present
-      final scanBtnFinder = find.byKey(const Key('partner_scan_product_qr_button'));
-      expect(scanBtnFinder, findsOneWidget);
-      expect(find.text('Scan Product QR Code'), findsOneWidget);
+      // Verify misleading Scan Product QR Code button is NOT present
+      expect(find.byKey(const Key('partner_scan_product_qr_button')), findsNothing);
+      expect(find.text('Scan Product QR Code'), findsNothing);
 
-      // Tap button to open scanner
-      await tester.ensureVisible(scanBtnFinder);
-      await tester.tap(scanBtnFinder);
-      await tester.pumpAndSettle();
+      // Verify disabled Invoice QR action is present
+      final invoiceBtn = find.byKey(const Key('partner_scan_invoice_qr_button'));
+      expect(invoiceBtn, findsOneWidget);
+      expect(find.text('Scan Invoice QR Code (Coming Soon)'), findsOneWidget);
 
-      // Scanner modal opens
-      expect(find.byType(CustomerQrScannerSheet), findsOneWidget);
-      expect(find.text('Scan QR Code'), findsOneWidget);
-
-      // Close scanner
-      await tester.tap(find.byIcon(Icons.close_rounded));
+      // Tapping disabled button does not open any scanner
+      await tester.tap(invoiceBtn);
       await tester.pumpAndSettle();
 
       expect(find.byType(CustomerQrScannerSheet), findsNothing);
