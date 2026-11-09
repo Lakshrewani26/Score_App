@@ -800,3 +800,49 @@ class PointTransaction(Base):
     qr_code: Mapped[QrCode] = relationship()
     points_rule: Mapped[PointsRule] = relationship()
 
+
+class PointTransfer(Base):
+    __tablename__ = "point_transfers"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="positive_transfer_amount"),
+        CheckConstraint(
+            "sender_id != recipient_id",
+            name="distinct_transfer_sender_recipient",
+        ),
+        UniqueConstraint(
+            "idempotency_key",
+            name="uq_point_transfers_idempotency_key",
+        ),
+        Index("ix_point_transfers_sender_id", "sender_id"),
+        Index("ix_point_transfers_recipient_id", "recipient_id"),
+        Index("ix_point_transfers_points_rule_id", "points_rule_id"),
+        Index("ix_point_transfers_qr_code_id", "qr_code_id"),
+        Index("ix_point_transfers_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sender_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    recipient_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    points_rule_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("points_rules.id", ondelete="RESTRICT"), nullable=True
+    )
+    qr_code_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("qr_codes.id", ondelete="SET NULL"), nullable=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    sender: Mapped[User] = relationship(foreign_keys=[sender_id])
+    recipient: Mapped[User] = relationship(foreign_keys=[recipient_id])
+    points_rule: Mapped[Optional[PointsRule]] = relationship(foreign_keys=[points_rule_id])
+    qr_code: Mapped[Optional[QrCode]] = relationship(foreign_keys=[qr_code_id])
+
+

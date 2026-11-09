@@ -15,6 +15,7 @@ from app.core.security import get_current_active_user
 from app.db.session import get_db
 from app.models import PointTransaction, PointsRule, QrCode, User
 from app.schemas.admin_settings import _normalize_dt
+from app.services.points_service import get_user_points_balance
 
 logger = logging.getLogger(__name__)
 
@@ -113,11 +114,9 @@ def scan_qr_code(
             )
         )
         if existing_tx:
-            balance = db.scalar(
-                select(func.coalesce(func.sum(PointTransaction.points_awarded), 0)).where(
-                    PointTransaction.user_id == current_user.id
-                )
-            ) or 0
+            balance = get_user_points_balance(
+                db, current_user.id, role=current_user.role
+            ).current_balance
             rule = existing_tx.points_rule
             return QrScanResponse(
                 success=True,
@@ -282,12 +281,8 @@ def scan_qr_code(
             detail="This QR code has already been scanned and redeemed.",
         )
 
-    # 7. Compute updated balance
-    balance = db.scalar(
-        select(func.coalesce(func.sum(PointTransaction.points_awarded), 0)).where(
-            PointTransaction.user_id == current_user.id
-        )
-    ) or 0
+    # 7. Compute updated balance via unified points balance service
+    balance = get_user_points_balance(db, current_user.id, role=role).current_balance
 
     return QrScanResponse(
         success=True,

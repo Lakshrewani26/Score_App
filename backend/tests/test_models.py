@@ -36,6 +36,7 @@ EXPECTED_TABLES = {
     "qr_codes",
     "zones",
     "point_transactions",
+    "point_transfers",
 }
 
 INITIAL_EXPECTED_TABLES = EXPECTED_TABLES - {
@@ -45,6 +46,7 @@ INITIAL_EXPECTED_TABLES = EXPECTED_TABLES - {
     "qr_codes",
     "zones",
     "point_transactions",
+    "point_transfers",
 }
 
 
@@ -129,11 +131,14 @@ def test_single_initial_alembic_revision_is_available() -> None:
     scripts = ScriptDirectory.from_config(config)
 
     assert len(scripts.get_heads()) == 1
-    assert len(list(scripts.walk_revisions())) == 7
-    latest_revision = scripts.get_revision("a1b2c3d4e5f6")
+    assert len(list(scripts.walk_revisions())) == 8
+    latest_revision = scripts.get_revision("b3c4d5e6f7a8")
     assert latest_revision is not None
-    assert latest_revision.down_revision == "f3b2c1d4e5a6"
-    assert scripts.get_heads() == ["a1b2c3d4e5f6"]
+    assert latest_revision.down_revision == "a1b2c3d4e5f6"
+    assert scripts.get_heads() == ["b3c4d5e6f7a8"]
+    previous_revision = scripts.get_revision("a1b2c3d4e5f6")
+    assert previous_revision is not None
+    assert previous_revision.down_revision == "f3b2c1d4e5a6"
     revision = scripts.get_revision("56ecec28acb3")
     assert revision is not None
     assert revision.down_revision is None
@@ -312,5 +317,72 @@ def test_loyalty_and_discounts_migration_upgrade_and_downgrade() -> None:
         assert "is_current" not in pr_cols_after
 
     engine.dispose()
+
+
+def test_point_transfers_migration_upgrade_and_downgrade() -> None:
+    backend_dir = Path(__file__).resolve().parents[1]
+    migration_path = (
+        backend_dir
+        / "migrations"
+        / "versions"
+        / "b3c4d5e6f7a8_create_point_transfers_table.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "point_transfers_migration", migration_path
+    )
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, name VARCHAR(150))"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE points_rules (id INTEGER PRIMARY KEY, rule_name VARCHAR(120), category VARCHAR(50))"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE qr_codes (id INTEGER PRIMARY KEY, token VARCHAR(64))"
+        )
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+
+        tables = set(inspect(connection).get_table_names())
+        assert "point_transfers" in tables
+
+        columns = {c["name"]: c for c in inspect(connection).get_columns("point_transfers")}
+        assert "id" in columns
+        assert "sender_id" in columns
+        assert "recipient_id" in columns
+        assert "amount" in columns
+        assert "points_rule_id" in columns
+        assert "qr_code_id" in columns
+        assert "idempotency_key" in columns
+        assert "remarks" in columns
+        assert "created_at" in columns
+
+        assert columns["sender_id"]["nullable"] is False
+        assert columns["recipient_id"]["nullable"] is False
+        assert columns["amount"]["nullable"] is False
+        assert columns["points_rule_id"]["nullable"] is True
+        assert columns["qr_code_id"]["nullable"] is True
+        assert columns["idempotency_key"]["nullable"] is False
+
+        indexes = {idx["name"]: idx for idx in inspect(connection).get_indexes("point_transfers")}
+        assert "ix_point_transfers_sender_id" in indexes
+        assert "ix_point_transfers_recipient_id" in indexes
+        assert "ix_point_transfers_points_rule_id" in indexes
+        assert "ix_point_transfers_qr_code_id" in indexes
+        assert "ix_point_transfers_created_at" in indexes
+
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+
+        tables_after = set(inspect(connection).get_table_names())
+        assert "point_transfers" not in tables_after
+
+    engine.dispose()
+
 
 

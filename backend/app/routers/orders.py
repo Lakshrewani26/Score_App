@@ -35,6 +35,7 @@ from app.schemas.orders import (
     WhatsAppDeliveryResult,
 )
 from app.services.pdf_service import generate_order_pdf
+from app.services.points_service import get_user_points_balance
 from app.services.whatsapp_service import whatsapp_service
 
 logger = logging.getLogger(__name__)
@@ -638,17 +639,11 @@ def get_partner_dashboard_stats(
     delivered_orders = counts_by_status.get("delivered", 0)
     cancelled_orders = counts_by_status.get("cancelled", 0)
 
-    # 2. Points counts
-    total_points_stmt = (
-        select(func.coalesce(func.sum(QrCode.points_awarded), 0))
-        .where(
-            QrCode.redeemed_by == current_partner.id,
-            QrCode.status == "redeemed",
-        )
-    )
-    total_points = int(db.scalar(total_points_stmt) or 0)
-    points_used = 0
-    remaining_balance = total_points - points_used
+    # 2. Points counts via unified points balance service
+    points_summary = get_user_points_balance(db, current_partner.id, role="partner")
+    total_points = points_summary.points_earned + points_summary.transfers_received
+    points_used = points_summary.points_spent
+    remaining_balance = points_summary.current_balance
 
     return PartnerDashboardStatsResponse(
         total_points=total_points,

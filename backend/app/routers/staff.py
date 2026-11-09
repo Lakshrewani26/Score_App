@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Optional
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.security import require_staff
+from app.core.security import require_partner, require_staff
 from app.db.session import get_db
 from app.models import (
     Order,
@@ -15,12 +17,14 @@ from app.models import (
     OrderStatusHistory,
     PartnerProfile,
     Product,
+    QrCode,
     StaffPartnerAssignment,
     StaffPaymentRecord,
     StaffProfile,
     User,
 )
 from app.routers.orders import _build_order_response, _generate_order_number
+from app.schemas.admin_settings import _normalize_dt
 from app.schemas.auth import StaffUserResponse
 from app.schemas.orders import OrderResponse
 from app.schemas.staff import (
@@ -29,11 +33,17 @@ from app.schemas.staff import (
     StaffOrderActionRequest,
     StaffOrderCreateRequest,
     StaffOrderStatusUpdateRequest,
+    StaffQrCodeResponse,
+    StaffQrResolveRequest,
+    StaffQrResolveResponse,
 )
 from app.services.order_service import (
     apply_order_status_transition,
     verify_staff_partner_assignment,
 )
+from app.services.points_service import get_user_points_balance
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/staff", tags=["staff"])
 
@@ -105,6 +115,177 @@ def get_staff_dashboard_stats(
         pending_orders_count=pending_orders_count,
         pending_payments_count=pending_payments_count,
     )
+
+
+@router.get(
+    "/qr",
+    response_model=StaffQrCodeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Retrieve assigned Staff QR code for authenticated staff user",
+)
+@router.get(
+    "/qr-code",
+    response_model=StaffQrCodeResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+def get_my_staff_qr(
+    current_staff: User = Depends(require_staff),
+    db: Session = Depends(get_db),
+) -> StaffQrCodeResponse:
+    """
+    Retrieves the assigned Staff QR code for the authenticated staff user.
+    Only returns the QR code assigned to the currently logged-in staff member.
+    Does not permit requesting another user's QR code.
+    Returns 404 if no active Staff QR code is assigned.
+    """
+    now = datetime.now(timezone.utc)
+    qr_code = db.scalar(
+        select(QrCode)
+        .where(
+            QrCode.target_user_id == current_staff.id,
+            QrCode.qr_type == "staff",
+            QrCode.status == "active",
+            (QrCode.expires_at.is_(None) | (QrCode.expires_at >= now)),
+        )
+        .order_by(QrCode.created_at.desc(), QrCode.id.desc())
+    )
+    if not qr_code:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff QR code not found.",
+        )
+    return StaffQrCodeResponse.model_validate(qr_code)
+
+
+def _extract_token(raw_data: str) -> str:
+    cleaned = raw_data.strip()
+    if "token=" in cleaned:
+        try:
+            parsed = urlparse(cleaned)
+            params = parse_qs(parsed.query)
+            if "token" in params and params["token"]:
+                return params["token"][0].strip()
+        except Exception:
+            pass
+    return cleaned
+
+
+@router.post(
+    "/qr/resolve",
+    response_model=StaffQrResolveResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resolve Staff QR token to assigned Staff recipient for point transfer",
+)
+def resolve_staff_qr(
+    payload: StaffQrResolveRequest,
+    current_partner: User = Depends(require_partner),
+    db: Session = Depends(get_db),
+) -> StaffQrResolveResponse:
+    """
+    Resolves a Staff QR token/URL to the assigned Staff recipient.
+    Only authenticated Partners can resolve Staff QR codes.
+    Validates token presence, active status, expiration, and staff role assignment.
+    Does not create any point transfer or alter any balances (read-only resolution).
+    """
+    raw_input = (payload.token or payload.code_data or "").strip()
+    if not raw_input:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A valid QR code token must be provided.",
+        )
+
+    token = _extract_token(raw_input)
+    if len(token) > 64:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff QR code token not found.",
+        )
+
+    qr_code = db.scalar(
+        select(QrCode)
+        .options(
+            selectinload(QrCode.target_user).selectinload(User.staff_profile)
+        )
+        .where(
+            (QrCode.token == token)
+            | (QrCode.token == token.upper())
+            | (QrCode.token == token.lower())
+        )
+    )
+
+    if qr_code is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff QR code token not found.",
+        )
+
+    if qr_code.qr_type != "staff":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Inappropriate QR code type: '{qr_code.qr_type}' QR codes cannot be resolved as Staff recipients.",
+        )
+
+    if qr_code.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"This QR code is not active (status: {qr_code.status}).",
+        )
+
+    now = datetime.now(timezone.utc)
+    exp = _normalize_dt(qr_code.expires_at)
+    if exp and exp < now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This Staff QR code has expired.",
+        )
+
+    if qr_code.target_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This QR code is not assigned to any staff member.",
+        )
+
+    target_user = qr_code.target_user
+    if target_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assigned staff user not found.",
+        )
+
+    if target_user.role != "staff":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Assigned user does not hold the 'staff' role (current role: '{target_user.role}').",
+        )
+
+    if not target_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assigned staff user account is inactive.",
+        )
+
+    staff_badge_id = (
+        target_user.staff_profile.staff_id
+        if target_user.staff_profile
+        else None
+    )
+
+    logger.info(
+        "Partner ID %s resolved Staff QR ID %s for Staff user ID %s",
+        current_partner.id,
+        qr_code.id,
+        target_user.id,
+    )
+
+    return StaffQrResolveResponse(
+        staff_user_id=target_user.id,
+        staff_name=target_user.name,
+        staff_id=staff_badge_id,
+        qr_code_id=qr_code.id,
+        qr_type=qr_code.qr_type,
+    )
+
 
 
 @router.get("/partners", response_model=list[StaffAssignedPartnerResponse])
