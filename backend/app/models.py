@@ -491,7 +491,7 @@ class StaffPaymentRecord(Base):
     __table_args__ = (
         CheckConstraint("amount > 0", name="positive_amount"),
         CheckConstraint(
-            "status IN ('recorded', 'voided')", name="supported_status"
+            "status IN ('recorded', 'approved', 'rejected', 'voided')", name="supported_status"
         ),
         Index("ix_staff_payment_records_partner_id", "partner_id"),
     )
@@ -521,7 +521,9 @@ class StaffPaymentRecord(Base):
     partner: Mapped[PartnerProfile] = relationship()
     actor: Mapped[User] = relationship()
     status_history: Mapped[list[PaymentStatusHistory]] = relationship(
-        back_populates="payment_record", passive_deletes="all"
+        back_populates="payment_record",
+        passive_deletes="all",
+        order_by="PaymentStatusHistory.changed_at.desc(), PaymentStatusHistory.id.desc()",
     )
 
 
@@ -529,10 +531,10 @@ class PaymentStatusHistory(Base):
     __tablename__ = "payment_status_history"
     __table_args__ = (
         CheckConstraint(
-            "new_status IN ('recorded', 'voided')", name="supported_new_status"
+            "new_status IN ('recorded', 'approved', 'rejected', 'voided')", name="supported_new_status"
         ),
         CheckConstraint(
-            "old_status IS NULL OR old_status IN ('recorded', 'voided')",
+            "old_status IS NULL OR old_status IN ('recorded', 'approved', 'rejected', 'voided')",
             name="supported_old_status",
         ),
         Index("ix_payment_status_history_payment_record_id", "payment_record_id"),
@@ -550,6 +552,7 @@ class PaymentStatusHistory(Base):
     changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
 
     payment_record: Mapped[StaffPaymentRecord] = relationship(
         back_populates="status_history"

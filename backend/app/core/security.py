@@ -270,6 +270,20 @@ def require_staff(
     return user
 
 
+def require_staff_or_admin(
+    user: User = Depends(get_current_active_user),
+) -> User:
+    """
+    Ensures that the authenticated user holds either the 'staff' or 'admin' role.
+    """
+    if user.role not in ("staff", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Staff or Admin privileges required",
+        )
+    return user
+
+
 def require_partner_or_staff_or_admin(
     user: User = Depends(get_current_active_user),
 ) -> User:

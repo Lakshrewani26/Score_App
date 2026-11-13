@@ -5,7 +5,12 @@ import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import '../models/partner_order_models.dart';
+import '../models/staff_payment_models.dart';
+import '../models/staff_points_models.dart';
 import 'staff_session_manager.dart';
+
+export '../models/staff_payment_models.dart';
+export '../models/staff_points_models.dart';
 
 class StaffApiException implements Exception {
   const StaffApiException(this.message, {this.statusCode});
@@ -107,6 +112,8 @@ class StaffApi {
   final http.Client _client;
   final String _baseUrl;
   final StaffSessionManager _sessionManager;
+
+  StaffSessionManager get sessionManager => _sessionManager;
 
   Uri _uri(String path) => Uri.parse('$_baseUrl$path');
 
@@ -459,6 +466,212 @@ class StaffApi {
         throw const FormatException('Expected JSON object');
       }
       return PartnerOrderResponse.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<StaffBalance> getBalance({String? authToken}) async {
+    final token = authToken ?? await _getToken();
+    final response = await _send(
+      () => _client.get(
+        _uri('/api/v1/staff/balance'),
+        headers: _authHeaders(token),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to load staff balance');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return StaffBalance.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<StaffPointsHistoryResponse> getPointsHistory({
+    int page = 1,
+    int pageSize = 20,
+    String? authToken,
+  }) async {
+    final token = authToken ?? await _getToken();
+    final queryParams = {
+      'page': page.toString(),
+      'page_size': pageSize.toString(),
+    };
+    final uri = Uri.parse('$_baseUrl/api/v1/staff/points-history')
+        .replace(queryParameters: queryParams);
+
+    final response = await _send(
+      () => _client.get(
+        uri,
+        headers: _authHeaders(token),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to load staff points history');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return StaffPointsHistoryResponse.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<StaffPaymentListResponse> getPayments({
+    int page = 1,
+    int pageSize = 20,
+    String? status,
+    String? search,
+    String? authToken,
+  }) async {
+    final token = authToken ?? await _getToken();
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'page_size': pageSize.toString(),
+    };
+    if (status != null && status.isNotEmpty) queryParams['status'] = status;
+    if (search != null && search.isNotEmpty) queryParams['search'] = search;
+
+    final uri = Uri.parse('$_baseUrl/api/v1/staff/payments')
+        .replace(queryParameters: queryParams);
+
+    final response = await _send(
+      () => _client.get(
+        uri,
+        headers: _authHeaders(token),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to load staff payments');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return StaffPaymentListResponse.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<StaffPaymentRecordItem> getPayment(
+    int paymentId, {
+    String? authToken,
+  }) async {
+    final token = authToken ?? await _getToken();
+    final response = await _send(
+      () => _client.get(
+        _uri('/api/v1/staff/payments/$paymentId'),
+        headers: _authHeaders(token),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to load payment detail');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return StaffPaymentRecordItem.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<StaffPaymentRecordItem> approvePayment(
+    int paymentId, {
+    String? remarks,
+    String? authToken,
+  }) async {
+    final token = authToken ?? await _getToken();
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/v1/staff/payments/$paymentId/approve'),
+        headers: {
+          ..._authHeaders(token),
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          if (remarks != null && remarks.trim().isNotEmpty)
+            'remarks': remarks.trim(),
+        }),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to approve payment');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return StaffPaymentRecordItem.fromJson(body);
+    } on FormatException {
+      throw StaffApiException(
+        'Invalid response received from server',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  Future<StaffPaymentRecordItem> rejectPayment(
+    int paymentId, {
+    required String reason,
+    String? authToken,
+  }) async {
+    final cleanReason = reason.trim();
+    if (cleanReason.isEmpty) {
+      throw const StaffApiException('Rejection reason is required');
+    }
+
+    final token = authToken ?? await _getToken();
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/v1/staff/payments/$paymentId/reject'),
+        headers: {
+          ..._authHeaders(token),
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'reason': cleanReason,
+        }),
+      ),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _httpError(response, 'Failed to reject payment');
+    }
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw const FormatException('Expected JSON object');
+      }
+      return StaffPaymentRecordItem.fromJson(body);
     } on FormatException {
       throw StaffApiException(
         'Invalid response received from server',

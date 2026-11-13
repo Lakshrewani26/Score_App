@@ -6,16 +6,17 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.security import require_partner, require_staff
+from app.core.security import require_partner, require_staff, require_staff_or_admin
 from app.db.session import get_db
 from app.models import (
     Order,
     OrderItem,
     OrderStatusHistory,
     PartnerProfile,
+    PaymentStatusHistory,
     Product,
     QrCode,
     StaffPartnerAssignment,
@@ -29,10 +30,16 @@ from app.schemas.auth import StaffUserResponse
 from app.schemas.orders import OrderResponse
 from app.schemas.staff import (
     StaffAssignedPartnerResponse,
+    StaffBalanceResponse,
     StaffDashboardStatsResponse,
     StaffOrderActionRequest,
     StaffOrderCreateRequest,
     StaffOrderStatusUpdateRequest,
+    StaffPaymentApproveRequest,
+    StaffPaymentListResponse,
+    StaffPaymentRejectRequest,
+    StaffPaymentResponse,
+    StaffPointsHistoryResponse,
     StaffQrCodeResponse,
     StaffQrResolveRequest,
     StaffQrResolveResponse,
@@ -41,7 +48,15 @@ from app.services.order_service import (
     apply_order_status_transition,
     verify_staff_partner_assignment,
 )
-from app.services.points_service import get_user_points_balance
+from app.services.payment_service import (
+    apply_payment_status_transition,
+    build_payment_response,
+    verify_staff_payment_access,
+)
+from app.services.points_service import (
+    get_staff_points_history,
+    get_user_points_balance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +130,80 @@ def get_staff_dashboard_stats(
         pending_orders_count=pending_orders_count,
         pending_payments_count=pending_payments_count,
     )
+
+
+@router.get(
+    "/balance",
+    response_model=StaffBalanceResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get staff points balance",
+)
+@router.get(
+    "/points/balance",
+    response_model=StaffBalanceResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+def get_staff_balance(
+    current_staff: User = Depends(require_staff),
+    db: Session = Depends(get_db),
+) -> StaffBalanceResponse:
+    """
+    Returns the unified points balance for the authenticated staff member:
+    - points_earned: total lifetime points received via partner transfers
+    - points_spent: total points spent/transferred (0 for staff)
+    - current_balance: net available points balance
+    """
+    summary = get_user_points_balance(db, current_staff.id, role="staff")
+    total_earned = summary.transfers_received
+    total_spent = summary.points_spent
+    balance = summary.current_balance
+
+    return StaffBalanceResponse(
+        points_earned=total_earned,
+        points_spent=total_spent,
+        current_balance=balance,
+        total_earned_points=total_earned,
+        total_spent_points=total_spent,
+        remaining_balance=balance,
+    )
+
+
+@router.get(
+    "/points-history",
+    response_model=StaffPointsHistoryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get staff paginated points history",
+)
+@router.get(
+    "/history",
+    response_model=StaffPointsHistoryResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+def get_staff_history(
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
+    current_staff: User = Depends(require_staff),
+    db: Session = Depends(get_db),
+) -> StaffPointsHistoryResponse:
+    """
+    Returns paginated points transaction history for the authenticated staff member.
+    Includes:
+    - Points received from Partner transfers (PointTransfer)
+
+    Guarantees:
+    - Strict user data isolation: Staff only sees their own received transfers.
+    - 100% mathematical consistency with net staff points balance.
+    - Deterministic newest-first sort (created_at DESC, id DESC).
+    """
+    return get_staff_points_history(
+        db,
+        user_id=current_staff.id,
+        page=page,
+        page_size=page_size,
+    )
+
 
 
 @router.get(
@@ -730,3 +819,235 @@ def create_staff_order(
     ).first()
 
     return _build_order_response(saved_order)
+
+
+# =============================================================================
+# Staff Payments Endpoints
+# =============================================================================
+
+
+@router.get(
+    "/payments",
+    response_model=StaffPaymentListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="List payment records assigned to authenticated Staff",
+)
+def list_staff_payments(
+    page: int = Query(default=1, ge=1, description="Page number (1-based)"),
+    page_size: int = Query(default=20, ge=1, le=100, description="Items per page"),
+    status_filter: Optional[str] = Query(
+        default=None,
+        alias="status",
+        description="Filter by payment status (recorded, approved, rejected, voided)",
+    ),
+    search: Optional[str] = Query(
+        default=None,
+        description="Search by dealer name, invoice/reference number, or notes",
+    ),
+    current_staff: User = Depends(require_staff),
+    db: Session = Depends(get_db),
+) -> StaffPaymentListResponse:
+    """
+    Returns paginated payment records assigned to the authenticated Staff member:
+    - Strictly scoped to records where staff_id == current_staff.id
+    - Supports filtering by status: 'recorded', 'approved', 'rejected', 'voided'
+    - Supports search across reference numbers, notes, and partner details
+    - Deterministic newest-first sort (recorded_at DESC, id DESC)
+    """
+    base_query = (
+        select(StaffPaymentRecord)
+        .options(
+            selectinload(StaffPaymentRecord.partner).selectinload(PartnerProfile.user),
+            selectinload(StaffPaymentRecord.actor),
+            selectinload(StaffPaymentRecord.status_history).selectinload(PaymentStatusHistory.actor),
+        )
+        .where(StaffPaymentRecord.staff_id == current_staff.id)
+    )
+
+    count_query = (
+        select(func.count(StaffPaymentRecord.id))
+        .where(StaffPaymentRecord.staff_id == current_staff.id)
+    )
+
+    if status_filter:
+        clean_status = status_filter.strip().lower()
+        base_query = base_query.where(StaffPaymentRecord.status == clean_status)
+        count_query = count_query.where(StaffPaymentRecord.status == clean_status)
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        search_filter = or_(
+            StaffPaymentRecord.reference_number.ilike(term),
+            StaffPaymentRecord.notes.ilike(term),
+            StaffPaymentRecord.partner_id.in_(
+                select(PartnerProfile.user_id)
+                .join(User, User.id == PartnerProfile.user_id)
+                .where(
+                    or_(
+                        PartnerProfile.business_name.ilike(term),
+                        User.name.ilike(term),
+                    )
+                )
+            ),
+        )
+        base_query = base_query.where(search_filter)
+        count_query = count_query.where(search_filter)
+
+    total = db.scalar(count_query) or 0
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+    offset = (page - 1) * page_size
+
+    records = db.scalars(
+        base_query
+        .order_by(StaffPaymentRecord.recorded_at.desc(), StaffPaymentRecord.id.desc())
+        .offset(offset)
+        .limit(page_size)
+    ).all()
+
+    items = [build_payment_response(r) for r in records]
+
+    return StaffPaymentListResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1 and total_pages > 0,
+    )
+
+
+@router.get(
+    "/payments/{payment_id}",
+    response_model=StaffPaymentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get single payment record detail",
+)
+def get_staff_payment_detail(
+    payment_id: int,
+    current_user: User = Depends(require_staff_or_admin),
+    db: Session = Depends(get_db),
+) -> StaffPaymentResponse:
+    """
+    Returns details for a single payment record:
+    - Staff members can only access payment records assigned to them (staff_id == user.id)
+    - Admins may access any payment record according to admin policy
+    """
+    payment = db.scalars(
+        select(StaffPaymentRecord)
+        .options(
+            selectinload(StaffPaymentRecord.partner).selectinload(PartnerProfile.user),
+            selectinload(StaffPaymentRecord.actor),
+            selectinload(StaffPaymentRecord.status_history).selectinload(PaymentStatusHistory.actor),
+        )
+        .where(StaffPaymentRecord.id == payment_id)
+    ).first()
+
+    if payment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payment record not found",
+        )
+
+    verify_staff_payment_access(payment, current_user)
+
+    return build_payment_response(payment)
+
+
+@router.post(
+    "/payments/{payment_id}/approve",
+    response_model=StaffPaymentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Approve a payment awaiting review",
+)
+def approve_staff_payment(
+    payment_id: int,
+    payload: Optional[StaffPaymentApproveRequest] = None,
+    current_user: User = Depends(require_staff_or_admin),
+    db: Session = Depends(get_db),
+) -> StaffPaymentResponse:
+    """
+    Approves a payment record in 'recorded' status:
+    - Concurrency-safe row locking
+    - Authorized only for assigned Staff or Admin
+    - Only valid from 'recorded' status
+    - Appends audit trail to PaymentStatusHistory
+    """
+    payment = db.scalars(
+        select(StaffPaymentRecord)
+        .options(
+            selectinload(StaffPaymentRecord.partner).selectinload(PartnerProfile.user),
+            selectinload(StaffPaymentRecord.actor),
+            selectinload(StaffPaymentRecord.status_history).selectinload(PaymentStatusHistory.actor),
+        )
+        .where(StaffPaymentRecord.id == payment_id)
+        .with_for_update()
+    ).first()
+
+    if payment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payment record not found",
+        )
+
+    verify_staff_payment_access(payment, current_user)
+
+    remarks = payload.remarks.strip() if (payload and payload.remarks and payload.remarks.strip()) else "Payment approved"
+    apply_payment_status_transition(
+        db=db,
+        payment=payment,
+        target_status="approved",
+        user=current_user,
+        remarks=remarks,
+    )
+
+    return build_payment_response(payment)
+
+
+@router.post(
+    "/payments/{payment_id}/reject",
+    response_model=StaffPaymentResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Reject a payment awaiting review",
+)
+def reject_staff_payment(
+    payment_id: int,
+    payload: StaffPaymentRejectRequest,
+    current_user: User = Depends(require_staff_or_admin),
+    db: Session = Depends(get_db),
+) -> StaffPaymentResponse:
+    """
+    Rejects a payment record in 'recorded' status:
+    - Concurrency-safe row locking
+    - Authorized only for assigned Staff or Admin
+    - Requires non-empty rejection reason
+    - Appends audit trail to PaymentStatusHistory
+    """
+    payment = db.scalars(
+        select(StaffPaymentRecord)
+        .options(
+            selectinload(StaffPaymentRecord.partner).selectinload(PartnerProfile.user),
+            selectinload(StaffPaymentRecord.actor),
+            selectinload(StaffPaymentRecord.status_history).selectinload(PaymentStatusHistory.actor),
+        )
+        .where(StaffPaymentRecord.id == payment_id)
+        .with_for_update()
+    ).first()
+
+    if payment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payment record not found",
+        )
+
+    verify_staff_payment_access(payment, current_user)
+
+    apply_payment_status_transition(
+        db=db,
+        payment=payment,
+        target_status="rejected",
+        user=current_user,
+        remarks=payload.reason,
+    )
+
+    return build_payment_response(payment)

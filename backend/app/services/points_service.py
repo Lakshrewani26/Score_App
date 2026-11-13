@@ -16,6 +16,10 @@ from app.schemas.partner import (
     PartnerPointHistoryItem,
     PartnerPointsHistoryResponse,
 )
+from app.schemas.staff import (
+    StaffPointHistoryItem,
+    StaffPointsHistoryResponse,
+)
 
 
 def _get_existing_tables(db: Session) -> set[str]:
@@ -628,6 +632,99 @@ def get_partner_points_history(
     has_prev = page > 1 and page <= total_pages + 1
 
     return PartnerPointsHistoryResponse(
+        items=page_items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        has_next=has_next,
+        has_prev=has_prev,
+    )
+
+
+def get_staff_points_history(
+    db: Session,
+    user_id: int,
+    page: int = 1,
+    page_size: int = 20,
+) -> StaffPointsHistoryResponse:
+    """
+    Retrieves the complete, paginated points history for a Staff member.
+    Includes:
+    - Points received via outbound Partner -> Staff point transfers (PointTransfer).
+
+    Guarantees:
+    - User isolation: strictly returns records where recipient_id == user_id.
+    - Consistency: points in history directly sum to Net Balance in get_user_points_balance.
+    - Positive credits: received transfers are represented as positive points deltas.
+    - Deterministic ordering: sorted newest first (created_at DESC, id DESC).
+    - Privacy: exposes Partner sender name/business name without sensitive fields.
+    - Safe table inspection for compatibility with isolated test fixtures.
+    """
+    if page < 1:
+        page = 1
+    if page_size < 1:
+        page_size = 20
+    if page_size > 100:
+        page_size = 100
+
+    existing_tables = _get_existing_tables(db)
+    has_ptr = "point_transfers" in existing_tables
+
+    all_items: list[StaffPointHistoryItem] = []
+
+    if has_ptr:
+        transfers = db.scalars(
+            select(PointTransfer)
+            .options(
+                selectinload(PointTransfer.sender).selectinload(User.partner_profile)
+            )
+            .where(PointTransfer.recipient_id == user_id)
+        ).all()
+
+        for tr in transfers:
+            sender = tr.sender
+            sender_name = "Partner"
+            if sender:
+                if sender.partner_profile and sender.partner_profile.business_name:
+                    sender_name = sender.partner_profile.business_name
+                elif sender.name:
+                    sender_name = sender.name
+
+            title = f"Points Received from {sender_name}"
+            desc = tr.remarks or f"Received {tr.amount} points from {sender_name}"
+
+            all_items.append(
+                StaffPointHistoryItem(
+                    id=f"tr-{tr.id}",
+                    transaction_type="transfer_received",
+                    direction="credit",
+                    points=tr.amount,
+                    amount=tr.amount,
+                    title=title,
+                    description=desc,
+                    reference_id=tr.idempotency_key,
+                    sender_name=sender_name,
+                    created_at=_normalize_dt(tr.created_at),
+                )
+            )
+
+    # Deterministic sorting: newest first (created_at DESC), tie-break by integer id DESC, id DESC
+    all_items.sort(
+        key=lambda it: (_normalize_dt(it.created_at), _extract_id_num(it.id), it.id),
+        reverse=True,
+    )
+
+    total = len(all_items)
+    total_pages = math.ceil(total / page_size) if total > 0 else 0
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_items = all_items[start:end]
+
+    has_next = page < total_pages
+    has_prev = page > 1 and page <= total_pages + 1
+
+    return StaffPointsHistoryResponse(
         items=page_items,
         total=total,
         page=page,

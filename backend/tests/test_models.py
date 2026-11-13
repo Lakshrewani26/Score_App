@@ -131,14 +131,14 @@ def test_single_initial_alembic_revision_is_available() -> None:
     scripts = ScriptDirectory.from_config(config)
 
     assert len(scripts.get_heads()) == 1
-    assert len(list(scripts.walk_revisions())) == 8
-    latest_revision = scripts.get_revision("b3c4d5e6f7a8")
+    assert len(list(scripts.walk_revisions())) == 9
+    latest_revision = scripts.get_revision("c4d5e6f7a8b9")
     assert latest_revision is not None
-    assert latest_revision.down_revision == "a1b2c3d4e5f6"
-    assert scripts.get_heads() == ["b3c4d5e6f7a8"]
-    previous_revision = scripts.get_revision("a1b2c3d4e5f6")
+    assert latest_revision.down_revision == "b3c4d5e6f7a8"
+    assert scripts.get_heads() == ["c4d5e6f7a8b9"]
+    previous_revision = scripts.get_revision("b3c4d5e6f7a8")
     assert previous_revision is not None
-    assert previous_revision.down_revision == "f3b2c1d4e5a6"
+    assert previous_revision.down_revision == "a1b2c3d4e5f6"
     revision = scripts.get_revision("56ecec28acb3")
     assert revision is not None
     assert revision.down_revision is None
@@ -385,4 +385,39 @@ def test_point_transfers_migration_upgrade_and_downgrade() -> None:
     engine.dispose()
 
 
+def test_payment_status_lifecycle_migration_upgrade_and_downgrade() -> None:
+    backend_dir = Path(__file__).resolve().parents[1]
+    migration_path = (
+        backend_dir
+        / "migrations"
+        / "versions"
+        / "c4d5e6f7a8b9_expand_payment_status_lifecycle.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "payment_status_lifecycle_migration", migration_path
+    )
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
 
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE staff_payment_records (id INTEGER PRIMARY KEY, status VARCHAR(20) DEFAULT 'recorded')"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE payment_status_history (id INTEGER PRIMARY KEY, old_status VARCHAR(20), new_status VARCHAR(20))"
+        )
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+
+        columns = {c["name"]: c for c in inspect(connection).get_columns("payment_status_history")}
+        assert "remarks" in columns
+
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+
+        columns_after = {c["name"]: c for c in inspect(connection).get_columns("payment_status_history")}
+        assert "remarks" not in columns_after
+
+    engine.dispose()
