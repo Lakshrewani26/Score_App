@@ -31,24 +31,24 @@ def upgrade() -> None:
 
     with op.batch_alter_table("staff_payment_records") as batch_op:
         if not is_sqlite or ("ck_staff_payment_records_supported_status" in payment_checks):
-            batch_op.drop_constraint("ck_staff_payment_records_supported_status", type_="check")
+            batch_op.drop_constraint(op.f("ck_staff_payment_records_supported_status"), type_="check")
         batch_op.create_check_constraint(
-            "ck_staff_payment_records_supported_status",
+            op.f("ck_staff_payment_records_supported_status"),
             "status IN ('recorded', 'approved', 'rejected', 'voided')",
         )
 
     with op.batch_alter_table("payment_status_history") as batch_op:
         batch_op.add_column(sa.Column("remarks", sa.Text(), nullable=True))
         if not is_sqlite or ("ck_payment_status_history_supported_new_status" in history_checks):
-            batch_op.drop_constraint("ck_payment_status_history_supported_new_status", type_="check")
+            batch_op.drop_constraint(op.f("ck_payment_status_history_supported_new_status"), type_="check")
         if not is_sqlite or ("ck_payment_status_history_supported_old_status" in history_checks):
-            batch_op.drop_constraint("ck_payment_status_history_supported_old_status", type_="check")
+            batch_op.drop_constraint(op.f("ck_payment_status_history_supported_old_status"), type_="check")
         batch_op.create_check_constraint(
-            "ck_payment_status_history_supported_new_status",
+            op.f("ck_payment_status_history_supported_new_status"),
             "new_status IN ('recorded', 'approved', 'rejected', 'voided')",
         )
         batch_op.create_check_constraint(
-            "ck_payment_status_history_supported_old_status",
+            op.f("ck_payment_status_history_supported_old_status"),
             "old_status IS NULL OR old_status IN ('recorded', 'approved', 'rejected', 'voided')",
         )
 
@@ -67,22 +67,22 @@ def downgrade() -> None:
     with op.batch_alter_table("payment_status_history") as batch_op:
         batch_op.drop_column("remarks")
         if not is_sqlite or ("ck_payment_status_history_supported_new_status" in history_checks):
-            batch_op.drop_constraint("ck_payment_status_history_supported_new_status", type_="check")
+            batch_op.drop_constraint(op.f("ck_payment_status_history_supported_new_status"), type_="check")
         if not is_sqlite or ("ck_payment_status_history_supported_old_status" in history_checks):
-            batch_op.drop_constraint("ck_payment_status_history_supported_old_status", type_="check")
+            batch_op.drop_constraint(op.f("ck_payment_status_history_supported_old_status"), type_="check")
         batch_op.create_check_constraint(
-            "ck_payment_status_history_supported_new_status",
+            op.f("ck_payment_status_history_supported_new_status"),
             "new_status IN ('recorded', 'voided')",
         )
         batch_op.create_check_constraint(
-            "ck_payment_status_history_supported_old_status",
+            op.f("ck_payment_status_history_supported_old_status"),
             "old_status IS NULL OR old_status IN ('recorded', 'voided')",
         )
 
     with op.batch_alter_table("staff_payment_records") as batch_op:
         if not is_sqlite or ("ck_staff_payment_records_supported_status" in payment_checks):
-            batch_op.drop_constraint("ck_staff_payment_records_supported_status", type_="check")
+            batch_op.drop_constraint(op.f("ck_staff_payment_records_supported_status"), type_="check")
         batch_op.create_check_constraint(
-            "ck_staff_payment_records_supported_status",
+            op.f("ck_staff_payment_records_supported_status"),
             "status IN ('recorded', 'voided')",
         )
