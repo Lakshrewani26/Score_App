@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:score_app/features/partner/catalogue/partner_three_wheeler_catalogue_screen.dart';
 import 'package:score_app/features/partner/orders/partner_three_wheeler_order_summary_screen.dart';
+import 'catalogue_test_support.dart';
 
 void main() {
   group('PartnerThreeWheelerOrderSummaryScreen Tests', () {
@@ -71,7 +72,7 @@ void main() {
           find.text('Order placement will be available soon'), findsOneWidget);
     });
 
-    testWidgets('Back button returns to PartnerThreeWheelerCatalogueScreen',
+    testWidgetsWithCatalogueResponses('Back button returns to PartnerThreeWheelerCatalogueScreen',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
@@ -89,6 +90,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(PartnerThreeWheelerCatalogueScreen), findsOneWidget);
+      expect(find.text('Unable to load catalogue data.'), findsNothing);
     });
   });
 }

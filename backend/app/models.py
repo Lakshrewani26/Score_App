@@ -465,6 +465,7 @@ class StaffPartnerAssignment(Base):
             "partner_id",
             unique=True,
             postgresql_where=text("is_active IS TRUE"),
+            sqlite_where=text("is_active = 1"),
         ),
     )
 

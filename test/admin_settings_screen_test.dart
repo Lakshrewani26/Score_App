@@ -123,7 +123,7 @@ void main() {
       expect(find.byKey(const Key('create_points_rule_button')), findsOneWidget);
       expect(find.text('Product Scan Reward'), findsOneWidget);
       expect(find.text('Product QR Scan'), findsWidgets);
-      expect(find.text('ACTIVE'), findsOneWidget);
+      expect(find.text('EFFECTIVE'), findsOneWidget);
     });
 
     testWidgets('2. Displays error card and retries when rules API fails',

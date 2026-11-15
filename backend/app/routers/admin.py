@@ -17,6 +17,8 @@ from app.models import (
     PartnerProfile,
     PaymentStatusHistory,
     PointsRule,
+    PointTransaction,
+    PointTransfer,
     QrBatch,
     QrCode,
     StaffPartnerAssignment,
@@ -41,6 +43,7 @@ from app.schemas.admin_users import (
     StaffCreateRequest,
     StaffPartnerAssignmentCreateRequest,
     StaffPartnerAssignmentResponse,
+    StaffPartnerAssignmentStatusUpdateRequest,
 )
 from app.schemas.auth import (
     AdminPasswordUpdateRequest,
@@ -332,7 +335,13 @@ def create_staff_partner_assignment(
             "constraint_name",
             None,
         )
-        if constraint_name == "uq_staff_partner_assignments_active_pair":
+        orig_msg = str(getattr(exc, "orig", exc))
+        is_postgres_unique = constraint_name == "uq_staff_partner_assignments_active_pair"
+        is_sqlite_unique = (
+            "UNIQUE constraint failed: staff_partner_assignments.staff_id, staff_partner_assignments.partner_id" in orig_msg
+            or "uq_staff_partner_assignments_active_pair" in orig_msg
+        )
+        if is_postgres_unique or is_sqlite_unique:
             raise HTTPException(
                 status_code=409,
                 detail="This Partner is already assigned to this Staff member",
@@ -341,6 +350,89 @@ def create_staff_partner_assignment(
 
     fresh_assignment = _load_assignment(db, assignment.id)
     return _assignment_response(fresh_assignment)
+
+
+def _update_assignment_status_internal(
+    assignment_id: int,
+    target_active: bool,
+    db: Session,
+) -> StaffPartnerAssignmentResponse:
+    assignment = db.scalar(
+        select(StaffPartnerAssignment).where(StaffPartnerAssignment.id == assignment_id)
+    )
+    if assignment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff-Partner assignment not found",
+        )
+
+    # Handle repeated requests safely and consistently (Idempotent)
+    if assignment.is_active == target_active:
+        fresh_assignment = _load_assignment(db, assignment.id)
+        return _assignment_response(fresh_assignment)
+
+    # If reactivating, check whether another active assignment already exists
+    # for the same Staff-Partner pair.
+    if target_active:
+        conflicting = db.scalar(
+            select(StaffPartnerAssignment.id).where(
+                StaffPartnerAssignment.staff_id == assignment.staff_id,
+                StaffPartnerAssignment.partner_id == assignment.partner_id,
+                StaffPartnerAssignment.is_active.is_(True),
+                StaffPartnerAssignment.id != assignment.id,
+            )
+        )
+        if conflicting is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An active assignment already exists for this Staff-Partner pair",
+            )
+
+    assignment.is_active = target_active
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        constraint_name = getattr(
+            getattr(exc.orig, "diag", None),
+            "constraint_name",
+            None,
+        )
+        orig_msg = str(getattr(exc, "orig", exc))
+        is_postgres_unique = constraint_name == "uq_staff_partner_assignments_active_pair"
+        is_sqlite_unique = (
+            "UNIQUE constraint failed: staff_partner_assignments.staff_id, staff_partner_assignments.partner_id" in orig_msg
+            or "uq_staff_partner_assignments_active_pair" in orig_msg
+        )
+        if is_postgres_unique or is_sqlite_unique:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An active assignment already exists for this Staff-Partner pair",
+            ) from exc
+        raise
+
+    fresh_assignment = _load_assignment(db, assignment.id)
+    return _assignment_response(fresh_assignment)
+
+
+@router.patch(
+    "/staff-partner-assignments/{assignment_id}/status",
+    response_model=StaffPartnerAssignmentResponse,
+)
+def update_staff_partner_assignment_status(
+    assignment_id: int,
+    payload: StaffPartnerAssignmentStatusUpdateRequest,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> StaffPartnerAssignmentResponse:
+    """
+    Update the active/inactive status of an existing Staff-Partner assignment.
+    """
+    return _update_assignment_status_internal(
+        assignment_id=assignment_id,
+        target_active=payload.is_active,
+        db=db,
+    )
 
 
 @router.get(
@@ -668,13 +760,21 @@ def update_user_status(
         # Documented locking mechanism:
         # In PostgreSQL, we lock active admin rows with FOR UPDATE to prevent race conditions
         # when concurrent admins attempt to deactivate one another.
+        # An explicit ORDER BY User.id ensures deterministic row-lock acquisition to prevent deadlocks.
         # SQLite does not support row-level SELECT ... FOR UPDATE; however, SQLite serializes
         # all write transactions at the database connection level.
-        is_postgres = bool(db.bind and db.bind.dialect.name == "postgresql")
+        is_postgres = False
+        try:
+            bind = getattr(db, "bind", None) or (db.get_bind() if hasattr(db, "get_bind") else None)
+            is_postgres = bool(bind and bind.dialect.name == "postgresql")
+        except Exception:
+            is_postgres = False
+
         if is_postgres:
             active_admin_ids = db.scalars(
                 select(User.id)
                 .where(User.role == "admin", User.is_active.is_(True))
+                .order_by(User.id)
                 .with_for_update()
             ).all()
             active_admin_count = len(active_admin_ids)
@@ -686,6 +786,7 @@ def update_user_status(
             ) or 0
 
         if active_admin_count <= 1:
+            db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot deactivate the last active admin account",
@@ -864,7 +965,7 @@ def delete_user(
 ) -> AdminUserDeleteResponse:
     """
     Delete or safely deactivate a user account subject to data retention rules.
-    If the account has historical transactions (orders, payments, assignments, qr codes),
+    If the account has historical transactions (orders, payments, assignments, qr codes, point transactions, point transfers, points rules),
     soft-deactivates the user to preserve historical integrity and referential constraints.
     If no historical references exist, permanently deletes the account.
     """
@@ -879,82 +980,135 @@ def delete_user(
         )
 
     if target_user.role == "admin" and target_user.is_active:
-        active_admin_count = db.scalar(
-            select(func.count()).select_from(User).where(User.role == "admin", User.is_active.is_(True))
-        ) or 0
+        # Documented locking mechanism:
+        # In PostgreSQL, we lock active admin rows with FOR UPDATE to prevent race conditions
+        # when concurrent admins attempt to delete or deactivate one another.
+        # An explicit ORDER BY User.id ensures deterministic row-lock acquisition to prevent deadlocks.
+        # SQLite does not support row-level SELECT ... FOR UPDATE; however, SQLite serializes
+        # all write transactions at the database connection level.
+        is_postgres = False
+        try:
+            bind = getattr(db, "bind", None) or (db.get_bind() if hasattr(db, "get_bind") else None)
+            is_postgres = bool(bind and bind.dialect.name == "postgresql")
+        except Exception:
+            is_postgres = False
+
+        if is_postgres:
+            active_admin_ids = db.scalars(
+                select(User.id)
+                .where(User.role == "admin", User.is_active.is_(True))
+                .order_by(User.id)
+                .with_for_update()
+            ).all()
+            active_admin_count = len(active_admin_ids)
+        else:
+            active_admin_count = db.scalar(
+                select(func.count()).select_from(User).where(User.role == "admin", User.is_active.is_(True))
+            ) or 0
+
         if active_admin_count <= 1:
+            db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot delete the last active admin account",
             )
 
-    # Check for historical references across models
-    has_orders = db.scalar(
-        select(Order.id).where((Order.partner_id == user_id) | (Order.approved_by == user_id)).limit(1)
-    ) is not None
-    has_order_history = db.scalar(
-        select(OrderStatusHistory.id).where(OrderStatusHistory.changed_by == user_id).limit(1)
-    ) is not None
-    has_stock_requests = db.scalar(
-        select(StockRequest.id).where((StockRequest.partner_id == user_id) | (StockRequest.reviewed_by == user_id)).limit(1)
-    ) is not None
-    has_stock_history = db.scalar(
-        select(StockRequestStatusHistory.id).where(StockRequestStatusHistory.changed_by == user_id).limit(1)
-    ) is not None
-    has_assignments = db.scalar(
-        select(StaffPartnerAssignment.id).where(
-            (StaffPartnerAssignment.staff_id == user_id) | (StaffPartnerAssignment.partner_id == user_id)
-        ).limit(1)
-    ) is not None
-    has_payments = db.scalar(
-        select(StaffPaymentRecord.id).where(
-            (StaffPaymentRecord.staff_id == user_id)
-            | (StaffPaymentRecord.partner_id == user_id)
-            | (StaffPaymentRecord.recorded_by == user_id)
-        ).limit(1)
-    ) is not None
-    has_payment_history = db.scalar(
-        select(PaymentStatusHistory.id).where(PaymentStatusHistory.changed_by == user_id).limit(1)
-    ) is not None
-    has_qr_batches = db.scalar(
-        select(QrBatch.id).where((QrBatch.target_user_id == user_id) | (QrBatch.created_by == user_id)).limit(1)
-    ) is not None
-    has_qr_codes = db.scalar(
-        select(QrCode.id).where((QrCode.target_user_id == user_id) | (QrCode.redeemed_by == user_id)).limit(1)
-    ) is not None
+    try:
+        # Check for historical references across models
+        has_orders = db.scalar(
+            select(Order.id).where((Order.partner_id == user_id) | (Order.approved_by == user_id)).limit(1)
+        ) is not None
+        has_order_history = db.scalar(
+            select(OrderStatusHistory.id).where(OrderStatusHistory.changed_by == user_id).limit(1)
+        ) is not None
+        has_stock_requests = db.scalar(
+            select(StockRequest.id).where((StockRequest.partner_id == user_id) | (StockRequest.reviewed_by == user_id)).limit(1)
+        ) is not None
+        has_stock_history = db.scalar(
+            select(StockRequestStatusHistory.id).where(StockRequestStatusHistory.changed_by == user_id).limit(1)
+        ) is not None
+        has_assignments = db.scalar(
+            select(StaffPartnerAssignment.id).where(
+                (StaffPartnerAssignment.staff_id == user_id) | (StaffPartnerAssignment.partner_id == user_id)
+            ).limit(1)
+        ) is not None
+        has_payments = db.scalar(
+            select(StaffPaymentRecord.id).where(
+                (StaffPaymentRecord.staff_id == user_id)
+                | (StaffPaymentRecord.partner_id == user_id)
+                | (StaffPaymentRecord.recorded_by == user_id)
+            ).limit(1)
+        ) is not None
+        has_payment_history = db.scalar(
+            select(PaymentStatusHistory.id).where(PaymentStatusHistory.changed_by == user_id).limit(1)
+        ) is not None
+        has_qr_batches = db.scalar(
+            select(QrBatch.id).where((QrBatch.target_user_id == user_id) | (QrBatch.created_by == user_id)).limit(1)
+        ) is not None
+        has_qr_codes = db.scalar(
+            select(QrCode.id).where((QrCode.target_user_id == user_id) | (QrCode.redeemed_by == user_id)).limit(1)
+        ) is not None
+        has_point_transactions = db.scalar(
+            select(PointTransaction.id).where(PointTransaction.user_id == user_id).limit(1)
+        ) is not None
+        has_point_transfers = db.scalar(
+            select(PointTransfer.id).where(
+                (PointTransfer.sender_id == user_id) | (PointTransfer.recipient_id == user_id)
+            ).limit(1)
+        ) is not None
+        has_points_rules = db.scalar(
+            select(PointsRule.id).where(
+                (PointsRule.created_by == user_id) | (PointsRule.updated_by == user_id)
+            ).limit(1)
+        ) is not None
 
-    has_history = any([
-        has_orders,
-        has_order_history,
-        has_stock_requests,
-        has_stock_history,
-        has_assignments,
-        has_payments,
-        has_payment_history,
-        has_qr_batches,
-        has_qr_codes,
-    ])
+        has_history = any([
+            has_orders,
+            has_order_history,
+            has_stock_requests,
+            has_stock_history,
+            has_assignments,
+            has_payments,
+            has_payment_history,
+            has_qr_batches,
+            has_qr_codes,
+            has_point_transactions,
+            has_point_transfers,
+            has_points_rules,
+        ])
 
-    if has_history:
-        target_user.is_active = False
-        db.commit()
-        return AdminUserDeleteResponse(
-            message="Account has associated transaction history and has been deactivated to preserve records.",
-            user_id=user_id,
-            action="deactivated",
-        )
-    else:
-        if target_user.customer_profile:
-            db.delete(target_user.customer_profile)
-        if target_user.partner_profile:
-            db.delete(target_user.partner_profile)
-        if target_user.staff_profile:
-            db.delete(target_user.staff_profile)
-        db.delete(target_user)
-        db.commit()
-        return AdminUserDeleteResponse(
-            message="Account deleted successfully.",
-            user_id=user_id,
-            action="deleted",
-        )
+        if has_history:
+            target_user.is_active = False
+            db.commit()
+            return AdminUserDeleteResponse(
+                message="Account has associated transaction history and has been deactivated to preserve records.",
+                user_id=user_id,
+                action="deactivated",
+            )
+        else:
+            if target_user.customer_profile:
+                db.delete(target_user.customer_profile)
+            if target_user.partner_profile:
+                db.delete(target_user.partner_profile)
+            if target_user.staff_profile:
+                db.delete(target_user.staff_profile)
+            db.delete(target_user)
+            db.commit()
+            return AdminUserDeleteResponse(
+                message="Account deleted successfully.",
+                user_id=user_id,
+                action="deleted",
+            )
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete user due to database constraint violation",
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
 

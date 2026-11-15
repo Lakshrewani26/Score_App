@@ -293,6 +293,12 @@ class StaffPartnerAssignmentCreateRequest(BaseModel):
     partner_id: int = Field(..., gt=0)
 
 
+class StaffPartnerAssignmentStatusUpdateRequest(BaseModel):
+    is_active: bool = Field(..., strict=True, description="Target active status")
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class AssignmentUserResponse(BaseModel):
     id: int
     name: str

@@ -9,6 +9,7 @@ import 'package:score_app/core/services/partner_order_api.dart';
 import 'package:score_app/core/services/partner_session_manager.dart';
 import 'package:score_app/features/partner/catalogue/partner_two_wheeler_catalogue_screen.dart';
 import 'package:score_app/features/partner/orders/partner_order_summary_screen.dart';
+import 'catalogue_test_support.dart';
 
 void main() {
   group('PartnerOrderSummaryScreen Tests', () {
@@ -76,7 +77,7 @@ void main() {
       );
     });
 
-    testWidgets('Back button returns to PartnerTwoWheelerCatalogueScreen',
+    testWidgetsWithCatalogueResponses('Back button returns to PartnerTwoWheelerCatalogueScreen',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
@@ -94,6 +95,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(PartnerTwoWheelerCatalogueScreen), findsOneWidget);
+      expect(find.text('Unable to load catalogue data.'), findsNothing);
     });
 
     testWidgets('renders existing order in View mode with items and totals',

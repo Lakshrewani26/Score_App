@@ -10,6 +10,7 @@ import 'package:score_app/features/customer/login/customer_login_screen.dart';
 import 'package:score_app/features/customer/profile/customer_profile_screen.dart';
 import 'package:score_app/features/customer/qr_scanner/customer_qr_scanner.dart';
 import 'package:score_app/features/customer/transfer_history/customer_transfer_history_screen.dart';
+import 'catalogue_test_support.dart';
 
 void main() {
   group('CustomerHomeScreen Redesign UI Tests', () {
@@ -157,7 +158,9 @@ void main() {
       expect(find.text('Product Details'), findsNothing);
     });
 
-    testWidgets('6. Tapping 2 Wheeler opens TwoWheelerPartsScreen', (WidgetTester tester) async {
+    testWidgetsWithCatalogueResponses(
+        '6. Tapping 2 Wheeler opens TwoWheelerPartsScreen',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -179,9 +182,12 @@ void main() {
 
       expect(find.byType(TwoWheelerPartsScreen), findsOneWidget);
       expect(find.text('Genuine Parts for a Smoother Ride'), findsOneWidget);
+      expect(find.text('Unable to load catalogue data.'), findsNothing);
     });
 
-    testWidgets('7. Tapping 3 Wheeler opens ThreeWheelerPartsScreen', (WidgetTester tester) async {
+    testWidgetsWithCatalogueResponses(
+        '7. Tapping 3 Wheeler opens ThreeWheelerPartsScreen',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -203,6 +209,7 @@ void main() {
 
       expect(find.byType(ThreeWheelerPartsScreen), findsOneWidget);
       expect(find.text('Genuine Parts for a Smoother Ride'), findsOneWidget);
+      expect(find.text('Unable to load catalogue data.'), findsNothing);
     });
 
     testWidgets('8. Tapping Scan QR opens CustomerQrScannerSheet in scan mode', (WidgetTester tester) async {

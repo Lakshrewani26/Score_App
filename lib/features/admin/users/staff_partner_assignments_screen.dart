@@ -28,7 +28,11 @@ class _StaffPartnerAssignmentsScreenState
   int? _selectedPartnerId;
   bool _isLoading = true;
   bool _isSubmitting = false;
+  int? _updatingAssignmentId;
   String? _errorMessage;
+  String? _actionErrorMessage;
+  String _statusFilter = 'all';
+  int _assignmentRequestId = 0;
 
   @override
   void initState() {
@@ -54,18 +58,60 @@ class _StaffPartnerAssignmentsScreenState
     return users;
   }
 
+  Future<void> _loadAssignments({bool isFilterChange = false}) async {
+    final requestId = ++_assignmentRequestId;
+    if (isFilterChange) {
+      setState(() {
+        _assignments = [];
+        _actionErrorMessage = null;
+      });
+    }
+    try {
+      final assignments = await widget.adminApi.getStaffPartnerAssignments(
+        isActive: _statusFilter == 'all'
+            ? null
+            : (_statusFilter == 'active'),
+      );
+      if (!mounted || requestId != _assignmentRequestId) return;
+      setState(() {
+        _assignments = assignments;
+        _actionErrorMessage = null;
+      });
+    } on AdminApiException catch (error) {
+      if (!mounted || requestId != _assignmentRequestId) return;
+      if (isFilterChange) {
+        setState(() {
+          _assignments = [];
+          _actionErrorMessage = error.message;
+        });
+      }
+    } catch (_) {
+      if (!mounted || requestId != _assignmentRequestId) return;
+      if (isFilterChange) {
+        setState(() {
+          _assignments = [];
+          _actionErrorMessage = 'Failed to load assignments';
+        });
+      }
+    }
+  }
+
   Future<void> _loadData() async {
+    final requestId = ++_assignmentRequestId;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _actionErrorMessage = null;
     });
     try {
       final staff = await _loadUsers('staff');
       final partners = await _loadUsers('partner');
       final assignments = await widget.adminApi.getStaffPartnerAssignments(
-        isActive: true,
+        isActive: _statusFilter == 'all'
+            ? null
+            : (_statusFilter == 'active'),
       );
-      if (!mounted) return;
+      if (!mounted || requestId != _assignmentRequestId) return;
       setState(() {
         _staff = staff;
         _partners = partners;
@@ -79,7 +125,7 @@ class _StaffPartnerAssignmentsScreenState
         }
       });
     } on AdminApiException catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestId != _assignmentRequestId) return;
       setState(() {
         _errorMessage = error.message;
         _isLoading = false;
@@ -95,6 +141,7 @@ class _StaffPartnerAssignmentsScreenState
     setState(() {
       _isSubmitting = true;
       _errorMessage = null;
+      _actionErrorMessage = null;
     });
     try {
       final assignment = await widget.adminApi.createStaffPartnerAssignment(
@@ -103,7 +150,10 @@ class _StaffPartnerAssignmentsScreenState
       );
       if (!mounted) return;
       setState(() {
-        _assignments = [assignment, ..._assignments];
+        if (_statusFilter == 'all' ||
+            (_statusFilter == 'active' && assignment.isActive)) {
+          _assignments = [assignment, ..._assignments];
+        }
         _selectedStaffId = null;
         _selectedPartnerId = null;
       });
@@ -115,6 +165,106 @@ class _StaffPartnerAssignmentsScreenState
       setState(() => _errorMessage = error.message);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _confirmToggleStatus(
+      AdminStaffPartnerAssignment assignment) async {
+    final target = !assignment.isActive;
+    final actionText = target ? 'reactivate' : 'deactivate';
+    final partnerName =
+        assignment.partner.businessName ?? assignment.partner.name;
+    final staffName = assignment.staff.name;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(target ? 'Reactivate Assignment' : 'Deactivate Assignment'),
+        content: Text(
+          'Are you sure you want to $actionText the assignment between $staffName and $partnerName?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor:
+                  target ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(target ? 'Reactivate' : 'Deactivate'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    await _toggleAssignmentStatus(assignment, target);
+  }
+
+  Future<void> _toggleAssignmentStatus(
+    AdminStaffPartnerAssignment assignment,
+    bool targetActive,
+  ) async {
+    if (_updatingAssignmentId != null) return;
+    setState(() {
+      _updatingAssignmentId = assignment.id;
+      _actionErrorMessage = null;
+    });
+
+    try {
+      final updated =
+          await widget.adminApi.updateStaffPartnerAssignmentStatus(
+        assignmentId: assignment.id,
+        isActive: targetActive,
+      );
+      if (!mounted) return;
+      setState(() {
+        final index = _assignments.indexWhere((a) => a.id == assignment.id);
+        if (index != -1) {
+          _assignments[index] = updated;
+        }
+        _updatingAssignmentId = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            targetActive
+                ? 'Assignment reactivated successfully'
+                : 'Assignment deactivated successfully',
+          ),
+          backgroundColor:
+              targetActive ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
+        ),
+      );
+      await _loadAssignments();
+    } on AdminApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _updatingAssignmentId = null;
+        _actionErrorMessage = error.message;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _updatingAssignmentId = null;
+        _actionErrorMessage = 'An unexpected error occurred';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('An unexpected error occurred'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
     }
   }
 
@@ -145,14 +295,11 @@ class _StaffPartnerAssignmentsScreenState
                       children: [
                         _buildAssignmentForm(),
                         const SizedBox(height: 20),
-                        const Text(
-                          'Active assignments',
-                          style: TextStyle(
-                            color: _deepBlue,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+                        if (_actionErrorMessage != null) ...[
+                          _buildActionErrorBanner(),
+                          const SizedBox(height: 12),
+                        ],
+                        _buildListHeader(),
                         const SizedBox(height: 10),
                         if (_assignments.isEmpty)
                           _buildEmptyAssignments()
@@ -162,6 +309,122 @@ class _StaffPartnerAssignmentsScreenState
                     ),
                   ),
       ),
+    );
+  }
+
+  Widget _buildActionErrorBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEBEE),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE57373)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Color(0xFFC62828), size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _actionErrorMessage!,
+              style: const TextStyle(color: Color(0xFFC62828), fontSize: 13),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16, color: Color(0xFFC62828)),
+            onPressed: () => setState(() => _actionErrorMessage = null),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildListHeader() {
+    final title = _statusFilter == 'active'
+        ? 'Active assignments'
+        : (_statusFilter == 'inactive'
+            ? 'Inactive assignments'
+            : 'Assignments');
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Flexible(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: _deepBlue,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F1FA),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_assignments.length}',
+                  style: const TextStyle(
+                    color: _royalBlue,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFCFD8DC)),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              key: const Key('assignment_status_filter'),
+              value: _statusFilter,
+              isDense: true,
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: _royalBlue,
+                size: 18,
+              ),
+              style: const TextStyle(
+                color: _deepBlue,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+              onChanged: _isSubmitting || _updatingAssignmentId != null
+                  ? null
+                  : (val) {
+                      if (val != null && val != _statusFilter) {
+                        setState(() => _statusFilter = val);
+                        _loadAssignments(isFilterChange: true);
+                      }
+                    },
+              items: const [
+                DropdownMenuItem(value: 'all', child: Text('All')),
+                DropdownMenuItem(value: 'active', child: Text('Active')),
+                DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -312,15 +575,54 @@ class _StaffPartnerAssignmentsScreenState
   }
 
   Widget _buildEmptyAssignments() {
-    return const Card(
+    final message = _statusFilter == 'active'
+        ? 'There are no active Staff-Partner assignments.'
+        : (_statusFilter == 'inactive'
+            ? 'There are no inactive Staff-Partner assignments.'
+            : 'There are no Staff-Partner assignments.');
+    return Card(
       color: Colors.white,
       child: Padding(
-        padding: EdgeInsets.all(20),
+        padding: const EdgeInsets.all(20),
         child: Text(
-          'There are no active Staff-Partner assignments.',
+          message,
           textAlign: TextAlign.center,
-          style: TextStyle(color: Color(0xFF6782A0)),
+          style: const TextStyle(color: Color(0xFF6782A0)),
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(bool isActive) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFFE8F8EE) : const Color(0xFFFFEBEE),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isActive ? const Color(0xFF4CAF50) : const Color(0xFFE57373),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isActive ? Icons.check_circle_rounded : Icons.cancel_rounded,
+            size: 12,
+            color: isActive ? const Color(0xFF2E7D32) : const Color(0xFFC62828),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            isActive ? 'Active' : 'Inactive',
+            style: TextStyle(
+              color:
+                  isActive ? const Color(0xFF2E7D32) : const Color(0xFFC62828),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -328,26 +630,134 @@ class _StaffPartnerAssignmentsScreenState
   Widget _buildAssignmentCard(AdminStaffPartnerAssignment assignment) {
     return Card(
       color: Colors.white,
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: ListTile(
-        leading: const CircleAvatar(
-          backgroundColor: Color(0xFFD4F0FF),
-          child: Icon(Icons.handshake_rounded, color: _royalBlue),
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CircleAvatar(
+                  backgroundColor: assignment.isActive
+                      ? const Color(0xFFD4F0FF)
+                      : const Color(0xFFECEFF1),
+                  child: Icon(
+                    Icons.handshake_rounded,
+                    color: assignment.isActive ? _royalBlue : Colors.grey,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        assignment.partner.businessName ??
+                            assignment.partner.name,
+                        style: const TextStyle(
+                          color: _deepBlue,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Partner: ${assignment.partner.name}',
+                        style: const TextStyle(
+                          color: Color(0xFF557A95),
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Staff: ${assignment.staff.name}',
+                        style: const TextStyle(
+                          color: Color(0xFF333333),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _buildStatusBadge(assignment.isActive),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (_updatingAssignmentId == assignment.id)
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _royalBlue,
+                    ),
+                  )
+                else if (assignment.isActive)
+                  OutlinedButton.icon(
+                    key: Key('deactivate_assignment_${assignment.id}'),
+                    onPressed: _isSubmitting || _updatingAssignmentId != null
+                        ? null
+                        : () => _confirmToggleStatus(assignment),
+                    icon: const Icon(
+                      Icons.block_rounded,
+                      size: 16,
+                      color: Color(0xFFD32F2F),
+                    ),
+                    label: const Text(
+                      'Deactivate',
+                      style: TextStyle(
+                        color: Color(0xFFD32F2F),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFE57373)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                    ),
+                  )
+                else
+                  OutlinedButton.icon(
+                    key: Key('reactivate_assignment_${assignment.id}'),
+                    onPressed: _isSubmitting || _updatingAssignmentId != null
+                        ? null
+                        : () => _confirmToggleStatus(assignment),
+                    icon: const Icon(
+                      Icons.check_circle_outline_rounded,
+                      size: 16,
+                      color: Color(0xFF2E7D32),
+                    ),
+                    label: const Text(
+                      'Reactivate',
+                      style: TextStyle(
+                        color: Color(0xFF2E7D32),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF81C784)),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ),
-        title: Text(
-          assignment.partner.businessName ?? assignment.partner.name,
-          style: const TextStyle(
-            color: _deepBlue,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        subtitle: Text(
-          '${assignment.partner.name}  •  Staff: ${assignment.staff.name}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        trailing: const Icon(Icons.check_circle, color: Colors.green),
       ),
     );
   }

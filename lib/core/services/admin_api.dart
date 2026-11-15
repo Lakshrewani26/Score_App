@@ -497,6 +497,75 @@ class AdminApi {
     throw _parseError(response, 'Failed to assign Partner to Staff');
   }
 
+  /// Update the active status of a Staff-Partner assignment.
+  Future<AdminStaffPartnerAssignment> updateStaffPartnerAssignmentStatus({
+    required int assignmentId,
+    required bool isActive,
+    String? token,
+  }) async {
+    final activeToken = token ?? await _sessionManager.getToken();
+    if (activeToken == null || activeToken.isEmpty) {
+      throw AdminApiException(
+        'No authentication token provided',
+        statusCode: 401,
+      );
+    }
+
+    final response = await _sendWithTimeout(
+      () => _client.patch(
+        _uri('/api/v1/admin/staff-partner-assignments/$assignmentId/status'),
+        headers: {
+          'Authorization': 'Bearer $activeToken',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({'is_active': isActive}),
+      ),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('Expected JSON object');
+        }
+        return AdminStaffPartnerAssignment.fromJson(decoded);
+      } on FormatException {
+        throw AdminApiException(
+          'Invalid response received from server',
+          statusCode: response.statusCode,
+        );
+      }
+    }
+    throw _parseError(
+      response,
+      isActive
+          ? 'Failed to reactivate assignment'
+          : 'Failed to deactivate assignment',
+    );
+  }
+
+  /// Deactivate an existing Staff-Partner assignment.
+  Future<AdminStaffPartnerAssignment> deactivateStaffPartnerAssignment(
+    int assignmentId, {
+    String? token,
+  }) =>
+      updateStaffPartnerAssignmentStatus(
+        assignmentId: assignmentId,
+        isActive: false,
+        token: token,
+      );
+
+  /// Reactivate an existing Staff-Partner assignment.
+  Future<AdminStaffPartnerAssignment> reactivateStaffPartnerAssignment(
+    int assignmentId, {
+    String? token,
+  }) =>
+      updateStaffPartnerAssignmentStatus(
+        assignmentId: assignmentId,
+        isActive: true,
+        token: token,
+      );
+
   /// Retrieve full user details including role-specific profile data.
   Future<AdminUserDetail> getUserDetail({
     required int userId,

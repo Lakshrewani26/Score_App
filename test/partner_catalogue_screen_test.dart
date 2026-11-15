@@ -5,6 +5,7 @@ import 'package:score_app/features/partner/catalogue/partner_two_wheeler_catalog
 import 'package:score_app/features/partner/catalogue/partner_three_wheeler_catalogue_screen.dart';
 import 'package:score_app/features/partner/home/partner_home_screen.dart';
 import 'package:score_app/features/partner/profile/partner_profile_screen.dart';
+import 'catalogue_test_support.dart';
 
 void main() {
   group('PartnerProductCatalogueScreen Tests', () {
@@ -45,7 +46,9 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('8. Tapping Back returns to PartnerHomeScreen', (WidgetTester tester) async {
+    testWidgetsWithCatalogueResponses(
+        '8. Tapping Back returns to PartnerHomeScreen',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -60,6 +63,7 @@ void main() {
 
       await tester.tap(find.text('2 Wheeler'));
       await tester.pumpAndSettle();
+      expect(find.text('Unable to load catalogue data.'), findsNothing);
 
       await tester.ensureVisible(find.byIcon(Icons.arrow_back_rounded));
       await tester.tap(find.byIcon(Icons.arrow_back_rounded));
@@ -106,7 +110,9 @@ void main() {
       expect(find.byType(PartnerProfileScreen), findsOneWidget);
     });
 
-    testWidgets('11. Tapping 2-Wheeler Parts opens existing 2-Wheeler Parts screen', (WidgetTester tester) async {
+    testWidgetsWithCatalogueResponses(
+        '11. Tapping 2-Wheeler Parts opens existing 2-Wheeler Parts screen',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -124,9 +130,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(PartnerTwoWheelerCatalogueScreen), findsOneWidget);
+      expect(find.text('Unable to load catalogue data.'), findsNothing);
     });
 
-    testWidgets('12. Tapping 3-Wheeler Parts opens PartnerThreeWheelerCatalogueScreen', (WidgetTester tester) async {
+    testWidgetsWithCatalogueResponses(
+        '12. Tapping 3-Wheeler Parts opens PartnerThreeWheelerCatalogueScreen',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -144,9 +153,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(PartnerThreeWheelerCatalogueScreen), findsOneWidget);
+      expect(find.text('Unable to load catalogue data.'), findsNothing);
     });
 
-    testWidgets('13. Partner Home 2 Wheeler card opens PartnerTwoWheelerCatalogueScreen', (WidgetTester tester) async {
+    testWidgetsWithCatalogueResponses(
+        '13. Partner Home 2 Wheeler card opens PartnerTwoWheelerCatalogueScreen',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -164,6 +176,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(PartnerTwoWheelerCatalogueScreen), findsOneWidget);
+      expect(find.text('Unable to load catalogue data.'), findsNothing);
     });
   });
 }

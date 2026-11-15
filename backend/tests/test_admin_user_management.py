@@ -1,15 +1,115 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import timedelta
 from typing import Any
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
 from app.core.security import create_access_token, hash_password, verify_password
-from app.models import CustomerProfile, PartnerProfile, StaffProfile, User
+from app.db.base import Base
+from app.db.session import get_db
+from app.main import app
+from app.models import (
+    CustomerProfile,
+    Order,
+    OrderItem,
+    OrderStatusHistory,
+    PartnerProfile,
+    PaymentStatusHistory,
+    PointsRule,
+    PointTransaction,
+    PointTransfer,
+    Product,
+    ProductCategory,
+    QrBatch,
+    QrCode,
+    StaffPartnerAssignment,
+    StaffPaymentRecord,
+    StaffProfile,
+    StockRequest,
+    StockRequestItem,
+    StockRequestStatusHistory,
+    User,
+    Zone,
+)
+
+# ---------------------------------------------------------------------------
+# Dedicated Deletion Test Engine & Fixtures (Isolated with full deletion tables)
+# ---------------------------------------------------------------------------
+
+DELETION_TABLES = [
+    User.__table__,
+    CustomerProfile.__table__,
+    Zone.__table__,
+    PartnerProfile.__table__,
+    StaffProfile.__table__,
+    ProductCategory.__table__,
+    Product.__table__,
+    Order.__table__,
+    OrderItem.__table__,
+    OrderStatusHistory.__table__,
+    StockRequest.__table__,
+    StockRequestItem.__table__,
+    StockRequestStatusHistory.__table__,
+    StaffPartnerAssignment.__table__,
+    StaffPaymentRecord.__table__,
+    PaymentStatusHistory.__table__,
+    PointsRule.__table__,
+    QrBatch.__table__,
+    QrCode.__table__,
+    PointTransaction.__table__,
+    PointTransfer.__table__,
+]
+
+
+@pytest.fixture
+def deletion_engine():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(
+        bind=engine,
+        tables=DELETION_TABLES,
+    )
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def deletion_db(deletion_engine) -> Generator[Session, None, None]:
+    with Session(deletion_engine) as session:
+        yield session
+
+
+@pytest.fixture
+def deletion_client(deletion_engine) -> Generator[TestClient, None, None]:
+    def override_get_db() -> Generator[Session, None, None]:
+        with Session(deletion_engine) as session:
+            yield session
+
+    previous_overrides = app.dependency_overrides.copy()
+    app.dependency_overrides[get_db] = override_get_db
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(previous_overrides)
 
 
 # ---------------------------------------------------------------------------
@@ -649,14 +749,454 @@ def test_last_active_admin_protection(client: TestClient, db_session: Session) -
     # Deactivating admin 3 while active admin count is 1 -> 400.
 
 
-def test_user_deletion_implemented_with_safeguards(client: TestClient, db_session: Session) -> None:
-    admin = _create_user(db_session, role="admin", mobile="9890000001")
+def test_user_deletion_implemented_with_safeguards(deletion_client: TestClient, deletion_db: Session) -> None:
+    admin = _create_user(deletion_db, role="admin", mobile="9890000001")
     headers = _auth_header(admin)
 
     # Self-deletion by admin is rejected with 400 Bad Request
-    res = client.delete(f"/api/v1/admin/users/{admin.id}", headers=headers)
+    res = deletion_client.delete(f"/api/v1/admin/users/{admin.id}", headers=headers)
     assert res.status_code == 400
     assert "Cannot delete your own admin account" in res.json()["detail"]
+
+
+def _seed_points_rule_and_qr_code(db: Session) -> tuple[PointsRule, QrCode]:
+    rule = PointsRule(
+        rule_name=f"Rule-{uuid.uuid4().hex[:6]}",
+        category="customer_qr_scan",
+        points_awarded=100,
+        is_active=True,
+        is_current=True,
+        version=1,
+    )
+    db.add(rule)
+    db.flush()
+
+    batch = QrBatch(
+        batch_number=f"BATCH-{uuid.uuid4().hex[:8]}",
+        qr_type="product",
+        points_rule_id=rule.id,
+        quantity=1,
+        status="active",
+    )
+    db.add(batch)
+    db.flush()
+
+    token = f"TOKEN-{uuid.uuid4().hex[:12]}"
+    code = QrCode(
+        batch_id=batch.id,
+        token=token,
+        code_data=f"https://score.app/qr?token={token}",
+        qr_type="product",
+        points_awarded=100,
+        status="active",
+    )
+    db.add(code)
+    db.commit()
+    return rule, code
+
+
+def test_user_deletion_no_records_hard_delete(deletion_client: TestClient, deletion_db: Session) -> None:
+    admin = _create_user(deletion_db, role="admin", mobile="9890000001")
+    headers = _auth_header(admin)
+
+    user = _create_user(deletion_db, role="customer", mobile="9890000002")
+    profile = CustomerProfile(user_id=user.id, state="MH", city="Mumbai", segment="Retail")
+    deletion_db.add(profile)
+    deletion_db.commit()
+
+    user_id = user.id
+
+    res = deletion_client.delete(f"/api/v1/admin/users/{user_id}", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["action"] == "deleted"
+    assert data["user_id"] == user_id
+    assert data["message"] == "Account deleted successfully."
+
+    # Verify permanently deleted from database
+    deletion_db.expire_all()
+    assert deletion_db.get(User, user_id) is None
+    assert deletion_db.get(CustomerProfile, user_id) is None
+
+    # Detail endpoint returns 404
+    get_res = deletion_client.get(f"/api/v1/admin/users/{user_id}", headers=headers)
+    assert get_res.status_code == 404
+
+
+def test_user_deletion_with_point_transactions_soft_deactivates(deletion_client: TestClient, deletion_db: Session) -> None:
+    admin = _create_user(deletion_db, role="admin", mobile="9890000001")
+    headers = _auth_header(admin)
+
+    user = _create_user(deletion_db, role="customer", mobile="9890000003")
+    rule, code = _seed_points_rule_and_qr_code(deletion_db)
+
+    tx = PointTransaction(
+        user_id=user.id,
+        qr_code_id=code.id,
+        qr_token=code.token,
+        points_rule_id=rule.id,
+        points_awarded=100,
+        qr_type="product",
+        transaction_type="qr_scan",
+        idempotency_key="idemp-tx-cust-001",
+    )
+    deletion_db.add(tx)
+    deletion_db.commit()
+    tx_id = tx.id
+
+    res = deletion_client.delete(f"/api/v1/admin/users/{user.id}", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["action"] == "deactivated"
+    assert data["user_id"] == user.id
+    assert data["message"] == "Account has associated transaction history and has been deactivated to preserve records."
+
+    # Verify user still exists in database and is deactivated
+    deletion_db.expire_all()
+    reloaded_user = deletion_db.get(User, user.id)
+    assert reloaded_user is not None
+    assert reloaded_user.is_active is False
+
+    # Finding 3.1: Reload the transaction and confirm row still exists and values remain unchanged
+    reloaded_tx = deletion_db.get(PointTransaction, tx_id)
+    assert reloaded_tx is not None
+    assert reloaded_tx.id == tx_id
+    assert reloaded_tx.user_id == user.id
+    assert reloaded_tx.qr_code_id == code.id
+    assert reloaded_tx.qr_token == code.token
+    assert reloaded_tx.points_rule_id == rule.id
+    assert reloaded_tx.points_awarded == 100
+    assert reloaded_tx.qr_type == "product"
+    assert reloaded_tx.transaction_type == "qr_scan"
+    assert reloaded_tx.idempotency_key == "idemp-tx-cust-001"
+
+
+def test_user_deletion_as_point_transfer_sender_soft_deactivates(deletion_client: TestClient, deletion_db: Session) -> None:
+    admin = _create_user(deletion_db, role="admin", mobile="9890000001")
+    headers = _auth_header(admin)
+
+    sender = _create_user(deletion_db, role="partner", mobile="9890000004")
+    recipient = _create_user(deletion_db, role="staff", mobile="9890000005")
+
+    transfer = PointTransfer(
+        sender_id=sender.id,
+        recipient_id=recipient.id,
+        amount=50,
+        idempotency_key="transfer-sender-key-001",
+        remarks="Test partner transfer",
+    )
+    deletion_db.add(transfer)
+    deletion_db.commit()
+    transfer_id = transfer.id
+
+    # Attempt to delete sender
+    res = deletion_client.delete(f"/api/v1/admin/users/{sender.id}", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["action"] == "deactivated"
+    assert data["user_id"] == sender.id
+    assert data["message"] == "Account has associated transaction history and has been deactivated to preserve records."
+
+    # Verify sender remains in DB and is deactivated
+    deletion_db.expire_all()
+    reloaded_sender = deletion_db.get(User, sender.id)
+    assert reloaded_sender is not None
+    assert reloaded_sender.is_active is False
+
+    # Finding 3.2: Reload the transfer and confirm row exists and values remain unchanged
+    reloaded_tf = deletion_db.get(PointTransfer, transfer_id)
+    assert reloaded_tf is not None
+    assert reloaded_tf.id == transfer_id
+    assert reloaded_tf.sender_id == sender.id
+    assert reloaded_tf.recipient_id == recipient.id
+    assert reloaded_tf.amount == 50
+    assert reloaded_tf.idempotency_key == "transfer-sender-key-001"
+    assert reloaded_tf.remarks == "Test partner transfer"
+
+
+def test_user_deletion_as_point_transfer_recipient_soft_deactivates(deletion_client: TestClient, deletion_db: Session) -> None:
+    admin = _create_user(deletion_db, role="admin", mobile="9890000001")
+    headers = _auth_header(admin)
+
+    sender = _create_user(deletion_db, role="partner", mobile="9890000006")
+    recipient = _create_user(deletion_db, role="staff", mobile="9890000007")
+
+    transfer = PointTransfer(
+        sender_id=sender.id,
+        recipient_id=recipient.id,
+        amount=75,
+        idempotency_key="transfer-recipient-key-001",
+        remarks="Test staff transfer receipt",
+    )
+    deletion_db.add(transfer)
+    deletion_db.commit()
+    transfer_id = transfer.id
+
+    # Attempt to delete recipient
+    res = deletion_client.delete(f"/api/v1/admin/users/{recipient.id}", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["action"] == "deactivated"
+    assert data["user_id"] == recipient.id
+    assert data["message"] == "Account has associated transaction history and has been deactivated to preserve records."
+
+    # Verify recipient remains in DB and is deactivated
+    deletion_db.expire_all()
+    reloaded_recipient = deletion_db.get(User, recipient.id)
+    assert reloaded_recipient is not None
+    assert reloaded_recipient.is_active is False
+
+    # Finding 3.3: Reload the transfer and confirm row exists and values remain unchanged
+    reloaded_tf = deletion_db.get(PointTransfer, transfer_id)
+    assert reloaded_tf is not None
+    assert reloaded_tf.id == transfer_id
+    assert reloaded_tf.sender_id == sender.id
+    assert reloaded_tf.recipient_id == recipient.id
+    assert reloaded_tf.amount == 75
+    assert reloaded_tf.idempotency_key == "transfer-recipient-key-001"
+    assert reloaded_tf.remarks == "Test staff transfer receipt"
+
+
+def test_user_deletion_points_rule_creator_soft_deactivates(deletion_client: TestClient, deletion_db: Session) -> None:
+    """Finding 1 & 3.4: Admin who created a PointsRule is soft-deactivated and attribution remains intact."""
+    admin1 = _create_user(deletion_db, role="admin", mobile="9890000021", is_active=True)
+    admin2 = _create_user(deletion_db, role="admin", mobile="9890000022", is_active=True)
+
+    rule = PointsRule(
+        rule_name="Creator Protected Rule",
+        category="customer_qr_scan",
+        points_awarded=50,
+        is_active=True,
+        is_current=True,
+        version=1,
+        created_by=admin2.id,
+    )
+    deletion_db.add(rule)
+    deletion_db.commit()
+    rule_id = rule.id
+
+    headers = _auth_header(admin1)
+    res = deletion_client.delete(f"/api/v1/admin/users/{admin2.id}", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["action"] == "deactivated"
+    assert data["user_id"] == admin2.id
+    assert data["message"] == "Account has associated transaction history and has been deactivated to preserve records."
+
+    # Verify admin2 is deactivated
+    deletion_db.expire_all()
+    reloaded_admin2 = deletion_db.get(User, admin2.id)
+    assert reloaded_admin2 is not None
+    assert reloaded_admin2.is_active is False
+
+    # Verify rule attribution remains intact
+    reloaded_rule = deletion_db.get(PointsRule, rule_id)
+    assert reloaded_rule is not None
+    assert reloaded_rule.created_by == admin2.id
+    assert reloaded_rule.updated_by is None
+
+
+def test_user_deletion_points_rule_updater_soft_deactivates(deletion_client: TestClient, deletion_db: Session) -> None:
+    """Finding 1 & 3.4: Admin who updated a PointsRule is soft-deactivated and attribution remains intact."""
+    admin1 = _create_user(deletion_db, role="admin", mobile="9890000023", is_active=True)
+    admin2 = _create_user(deletion_db, role="admin", mobile="9890000024", is_active=True)
+
+    rule = PointsRule(
+        rule_name="Updater Protected Rule",
+        category="customer_qr_scan",
+        points_awarded=75,
+        is_active=True,
+        is_current=True,
+        version=1,
+        created_by=admin1.id,
+        updated_by=admin2.id,
+    )
+    deletion_db.add(rule)
+    deletion_db.commit()
+    rule_id = rule.id
+
+    headers = _auth_header(admin1)
+    res = deletion_client.delete(f"/api/v1/admin/users/{admin2.id}", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["action"] == "deactivated"
+    assert data["user_id"] == admin2.id
+    assert data["message"] == "Account has associated transaction history and has been deactivated to preserve records."
+
+    # Verify admin2 is deactivated
+    deletion_db.expire_all()
+    reloaded_admin2 = deletion_db.get(User, admin2.id)
+    assert reloaded_admin2 is not None
+    assert reloaded_admin2.is_active is False
+
+    # Verify rule attribution remains intact
+    reloaded_rule = deletion_db.get(PointsRule, rule_id)
+    assert reloaded_rule is not None
+    assert reloaded_rule.created_by == admin1.id
+    assert reloaded_rule.updated_by == admin2.id
+
+
+def test_user_deletion_unauthenticated_rejected(deletion_client: TestClient, deletion_db: Session) -> None:
+    """Finding 3.5: DELETE without authentication must be rejected with 401."""
+    user = _create_user(deletion_db, role="customer", mobile="9890000025")
+    res = deletion_client.delete(f"/api/v1/admin/users/{user.id}")
+    assert res.status_code == 401
+    assert "Authentication credentials were not provided" in res.json()["detail"]
+
+
+def test_user_deletion_non_admin_forbidden(deletion_client: TestClient, deletion_db: Session) -> None:
+    """Finding 3.5: DELETE using a non-Admin authenticated account must be rejected with 403."""
+    partner = _create_user(deletion_db, role="partner", mobile="9890000026")
+    user = _create_user(deletion_db, role="customer", mobile="9890000027")
+    headers = _auth_header(partner)
+
+    res = deletion_client.delete(f"/api/v1/admin/users/{user.id}", headers=headers)
+    assert res.status_code == 403
+    assert "Admin privileges required" in res.json()["detail"]
+
+
+def test_user_deletion_not_found(deletion_client: TestClient, deletion_db: Session) -> None:
+    admin = _create_user(deletion_db, role="admin", mobile="9890000001")
+    headers = _auth_header(admin)
+
+    res = deletion_client.delete("/api/v1/admin/users/999999", headers=headers)
+    assert res.status_code == 404
+    assert "User not found" in res.json()["detail"]
+
+
+def test_user_deletion_last_active_admin_safeguard(deletion_db: Session) -> None:
+    from fastapi import HTTPException
+    from app.routers.admin import delete_user
+
+    # Setup: admin1 is inactive, admin2 is active. Total active admin count = 1.
+    admin1 = _create_user(deletion_db, role="admin", mobile="9890000008", is_active=False)
+    admin2 = _create_user(deletion_db, role="admin", mobile="9890000009", is_active=True)
+
+    with pytest.raises(HTTPException) as exc_info:
+        delete_user(user_id=admin2.id, current_admin=admin1, db=deletion_db)
+
+    assert exc_info.value.status_code == 400
+    assert "Cannot delete the last active admin account" in exc_info.value.detail
+
+
+def test_user_deletion_last_active_admin_safeguard_http(
+    deletion_client: TestClient, deletion_db: Session
+) -> None:
+    """
+    HTTP-level regression test:
+    Verify that an authenticated Admin calling the actual DELETE endpoint
+    cannot delete the last active Admin.
+    Checks response status (400), response body, and verifies the Admin remains active.
+    """
+    from app.routers.admin import require_admin
+
+    caller = _create_user(deletion_db, role="admin", mobile="9890000088", is_active=False)
+    target = _create_user(deletion_db, role="admin", mobile="9890000089", is_active=True)
+
+    previous_override = app.dependency_overrides.get(require_admin)
+    app.dependency_overrides[require_admin] = lambda: caller
+    try:
+        headers = _auth_header(caller)
+        res = deletion_client.delete(f"/api/v1/admin/users/{target.id}", headers=headers)
+        assert res.status_code == 400
+        assert res.json() == {"detail": "Cannot delete the last active admin account"}
+
+        deletion_db.expire_all()
+        reloaded = deletion_db.get(User, target.id)
+        assert reloaded is not None
+        assert reloaded.is_active is True
+    finally:
+        if previous_override is not None:
+            app.dependency_overrides[require_admin] = previous_override
+        else:
+            app.dependency_overrides.pop(require_admin, None)
+
+
+def test_user_deletion_postgresql_locking_safeguard(deletion_db: Session) -> None:
+    """
+    Verify the PostgreSQL-specific locking query branch.
+    Simulates dialect.name == 'postgresql' and verifies that SELECT ... FOR UPDATE
+    query execution path executes cleanly, protects the count check, and prevents
+    deleting the last active admin.
+
+    Note on SQLite limitations:
+    SQLite in-memory test databases do not implement row-level locking or FOR UPDATE.
+    This test verifies that the PostgreSQL code path compiles and executes without
+    SQLAlchemy errors; true multi-client MVCC row-locking semantics require integration
+    testing against a real PostgreSQL instance.
+    """
+    from fastapi import HTTPException
+    from app.routers.admin import delete_user
+
+    admin1 = _create_user(deletion_db, role="admin", mobile="9890000091", is_active=False)
+    admin2 = _create_user(deletion_db, role="admin", mobile="9890000092", is_active=True)
+
+    original_dialect_name = deletion_db.get_bind().dialect.name
+    type(deletion_db.get_bind().dialect).name = "postgresql"
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            delete_user(user_id=admin2.id, current_admin=admin1, db=deletion_db)
+        assert exc_info.value.status_code == 400
+        assert "Cannot delete the last active admin account" in exc_info.value.detail
+        deletion_db.expire_all()
+        assert deletion_db.get(User, admin2.id).is_active is True
+    finally:
+        type(deletion_db.get_bind().dialect).name = original_dialect_name
+
+
+def test_user_deletion_concurrent_race_prevention(
+    deletion_client: TestClient, deletion_db: Session
+) -> None:
+    """
+    Concurrency regression test:
+    Simulates the sequence of two concurrent admin deletions where the first deletion
+    leaves only one active admin remaining. Verifies that the second deletion is rejected
+    with HTTP 400 and cannot delete the last remaining active admin.
+    """
+    admin1 = _create_user(deletion_db, role="admin", mobile="9890000095", is_active=True)
+    admin2 = _create_user(deletion_db, role="admin", mobile="9890000096", is_active=True)
+    admin1_id = admin1.id
+    admin2_id = admin2.id
+
+    headers1 = _auth_header(admin1)
+    headers2 = _auth_header(admin2)
+
+    # Admin 1 deletes Admin 2 (allowed since 2 active admins exist)
+    res1 = deletion_client.delete(f"/api/v1/admin/users/{admin2_id}", headers=headers1)
+    assert res1.status_code == 200
+
+    # Now Admin 1 is the last active admin. Admin 2's request attempting to delete Admin 1
+    # is blocked by the last active admin safeguard.
+    from app.routers.admin import require_admin
+    previous_override = app.dependency_overrides.get(require_admin)
+    app.dependency_overrides[require_admin] = lambda: admin2
+    try:
+        res2 = deletion_client.delete(f"/api/v1/admin/users/{admin1_id}", headers=headers2)
+        assert res2.status_code == 400
+        assert res2.json() == {"detail": "Cannot delete the last active admin account"}
+
+        deletion_db.expire_all()
+        remaining = deletion_db.get(User, admin1_id)
+        assert remaining is not None
+        assert remaining.is_active is True
+    finally:
+        if previous_override is not None:
+            app.dependency_overrides[require_admin] = previous_override
+        else:
+            app.dependency_overrides.pop(require_admin, None)
+
+
+def test_user_deletion_allows_deleting_admin_when_multiple_active(deletion_client: TestClient, deletion_db: Session) -> None:
+    admin1 = _create_user(deletion_db, role="admin", mobile="9890000010", is_active=True)
+    admin2 = _create_user(deletion_db, role="admin", mobile="9890000011", is_active=True)
+    admin2_id = admin2.id
+    headers = _auth_header(admin1)
+
+    res = deletion_client.delete(f"/api/v1/admin/users/{admin2_id}", headers=headers)
+    assert res.status_code == 200
+    assert res.json()["action"] == "deleted"
+    deletion_db.expire_all()
+    assert deletion_db.get(User, admin2_id) is None
 
 
 def test_cannot_alter_user_role_via_status_endpoint(client: TestClient, db_session: Session) -> None:

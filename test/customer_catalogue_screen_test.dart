@@ -5,6 +5,7 @@ import 'package:score_app/features/customer/catalogue/two_wheeler_parts_screen.d
 import 'package:score_app/features/customer/catalogue/three_wheeler_parts_screen.dart';
 import 'package:score_app/features/customer/home/customer_home_screen.dart';
 import 'package:score_app/features/customer/profile/customer_profile_screen.dart';
+import 'catalogue_test_support.dart';
 
 void main() {
   testWidgets('displays CustomerCatalogueScreen with all required UI elements', (WidgetTester tester) async {
@@ -37,7 +38,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('navigates from CustomerHomeScreen to TwoWheelerPartsScreen when 2 Wheeler is tapped', (WidgetTester tester) async {
+  testWidgetsWithCatalogueResponses(
+      'navigates from CustomerHomeScreen to TwoWheelerPartsScreen when 2 Wheeler is tapped',
+      (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -58,6 +61,7 @@ void main() {
 
     expect(find.byType(TwoWheelerPartsScreen), findsOneWidget);
     expect(find.text('Genuine Parts for a Smoother Ride'), findsOneWidget);
+    expect(find.text('Unable to load catalogue data.'), findsNothing);
   });
 
   testWidgets('navigates from CustomerCatalogueScreen to CustomerHomeScreen via top back button', (WidgetTester tester) async {
@@ -119,7 +123,9 @@ void main() {
     expect(find.byType(CustomerProfileScreen), findsOneWidget);
   });
 
-  testWidgets('tapping 2-Wheeler and 3-Wheeler cards navigates to respective parts screens', (WidgetTester tester) async {
+  testWidgetsWithCatalogueResponses(
+      'tapping 2-Wheeler and 3-Wheeler cards navigates to respective parts screens',
+      (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -135,6 +141,7 @@ void main() {
     await tester.tap(find.text('2-Wheeler\nParts'));
     await tester.pumpAndSettle();
     expect(find.byType(TwoWheelerPartsScreen), findsOneWidget);
+    expect(find.text('Unable to load catalogue data.'), findsNothing);
 
     // Pop back to catalogue screen
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
@@ -144,5 +151,6 @@ void main() {
     await tester.tap(find.text('3-Wheeler\nParts'));
     await tester.pumpAndSettle();
     expect(find.byType(ThreeWheelerPartsScreen), findsOneWidget);
+    expect(find.text('Unable to load catalogue data.'), findsNothing);
   });
 }

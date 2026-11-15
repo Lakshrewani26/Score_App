@@ -15,6 +15,7 @@ import 'package:score_app/features/staff/login/staff_login_screen.dart';
 import 'package:score_app/features/staff/orders/staff_order_status_screen.dart';
 import 'package:score_app/features/staff/payment_status/staff_payment_status_screen.dart';
 import 'package:score_app/features/staff/points_history/staff_points_history_screen.dart';
+import 'catalogue_test_support.dart';
 
 void main() {
   group('StaffHomeScreen Tests', () {
@@ -103,7 +104,8 @@ void main() {
       expect(find.text('Code: SAMPLE-STAFF-NA-01'), findsNothing);
     });
 
-    testWidgets('tapping 2W action button opens StaffTwoWheelerCatalogueScreen',
+    testWidgetsWithCatalogueResponses(
+        'tapping 2W action button opens StaffTwoWheelerCatalogueScreen',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
@@ -124,9 +126,11 @@ void main() {
 
       expect(find.byType(StaffTwoWheelerCatalogueScreen), findsOneWidget);
       expect(find.text('2-Wheeler'), findsWidgets);
+      expect(find.text('Unable to load catalogue data.'), findsNothing);
     });
 
-    testWidgets('tapping 3W action button opens StaffThreeWheelerCatalogueScreen',
+    testWidgetsWithCatalogueResponses(
+        'tapping 3W action button opens StaffThreeWheelerCatalogueScreen',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
@@ -147,6 +151,7 @@ void main() {
 
       expect(find.byType(StaffThreeWheelerCatalogueScreen), findsOneWidget);
       expect(find.text('3-Wheeler'), findsWidgets);
+      expect(find.text('Unable to load catalogue data.'), findsNothing);
     });
 
     testWidgets('tapping Dealers Associated action card opens StaffDealersAssociatedScreen',
