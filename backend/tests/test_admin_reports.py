@@ -22,13 +22,17 @@ from app.models import (
     OrderItem,
     OrderStatusHistory,
     PartnerProfile,
+    PaymentStatusHistory,
     Product,
     ProductCategory,
+    StaffPartnerAssignment,
+    StaffPaymentRecord,
     StaffProfile,
     StockRequest,
     StockRequestItem,
     StockRequestStatusHistory,
     User,
+    Zone,
 )
 
 TEST_SECRET_KEY = "test-secret-key-score-app-admin-panel-minimum-32-chars-long"
@@ -48,23 +52,7 @@ def test_db_engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(
-        bind=engine,
-        tables=[
-            User.__table__,
-            CustomerProfile.__table__,
-            PartnerProfile.__table__,
-            StaffProfile.__table__,
-            ProductCategory.__table__,
-            Product.__table__,
-            Order.__table__,
-            OrderItem.__table__,
-            OrderStatusHistory.__table__,
-            StockRequest.__table__,
-            StockRequestItem.__table__,
-            StockRequestStatusHistory.__table__,
-        ],
-    )
+    Base.metadata.create_all(bind=engine)
     yield engine
     engine.dispose()
 
@@ -683,3 +671,502 @@ def test_unsupported_metrics_are_explicitly_declared(client: TestClient, seed_da
     assert "qr_scans_and_batches" in unsupported
     assert "payment_gateway_transactions" in unsupported
     assert "inventory_stock_quantities" in unsupported
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: Financial and Operational Accuracy Tests
+# ---------------------------------------------------------------------------
+
+def test_payment_lifecycle_approved_vs_unapproved(client: TestClient, test_db_engine) -> None:
+    """Verify that only approved payments contribute to collected amounts across Zone, Staff, and Partner reports."""
+    with Session(test_db_engine) as session:
+        # 1. Admin
+        admin = User(
+            name="FinAdmin",
+            mobile="9800000001",
+            password_hash=hash_password("adminSecret123"),
+            role="admin",
+            is_active=True,
+        )
+        session.add(admin)
+
+        # 2. Zone
+        zone = Zone(name="North Zone", description="North region")
+        session.add(zone)
+        session.flush()
+
+        # 3. Staff
+        staff_u = User(
+            name="Finance Staff",
+            mobile="9800000002",
+            password_hash=hash_password("staffSecret123"),
+            role="staff",
+            is_active=True,
+        )
+        session.add(staff_u)
+        session.flush()
+        staff_prof = StaffProfile(user_id=staff_u.id, staff_id="STF-FIN-01")
+        session.add(staff_prof)
+
+        # 4. Partner with Zone
+        partner_u = User(
+            name="Finance Partner",
+            mobile="9800000003",
+            password_hash=hash_password("partnerSecret123"),
+            role="partner",
+            is_active=True,
+        )
+        session.add(partner_u)
+        session.flush()
+        partner_prof = PartnerProfile(
+            user_id=partner_u.id,
+            business_name="North Auto",
+            business_address="12 GT Road",
+            partner_code="FIN-01",
+            zone_id=zone.id,
+        )
+        session.add(partner_prof)
+
+        # 5. Active Staff-Partner Assignment
+        assignment = StaffPartnerAssignment(
+            staff_id=staff_u.id,
+            partner_id=partner_u.id,
+            is_active=True,
+        )
+        session.add(assignment)
+
+        # 6. Four Payments for assigned partner & staff: approved, recorded, rejected, voided
+        now = datetime.now(timezone.utc)
+        p_approved = StaffPaymentRecord(
+            staff_id=staff_u.id,
+            partner_id=partner_u.id,
+            amount=Decimal("1500.00"),
+            payment_method="cash",
+            status="approved",
+            recorded_by=staff_u.id,
+            recorded_at=now,
+        )
+        p_recorded = StaffPaymentRecord(
+            staff_id=staff_u.id,
+            partner_id=partner_u.id,
+            amount=Decimal("700.00"),
+            payment_method="bank_transfer",
+            status="recorded",
+            recorded_by=staff_u.id,
+            recorded_at=now,
+        )
+        p_rejected = StaffPaymentRecord(
+            staff_id=staff_u.id,
+            partner_id=partner_u.id,
+            amount=Decimal("400.00"),
+            payment_method="cheque",
+            status="rejected",
+            recorded_by=staff_u.id,
+            recorded_at=now,
+        )
+        p_voided = StaffPaymentRecord(
+            staff_id=staff_u.id,
+            partner_id=partner_u.id,
+            amount=Decimal("300.00"),
+            payment_method="cash",
+            status="voided",
+            recorded_by=staff_u.id,
+            recorded_at=now,
+        )
+        session.add_all([p_approved, p_recorded, p_rejected, p_voided])
+
+        # 7. Unassigned Partner with approved and non-approved payments
+        unassigned_u = User(
+            name="Unassigned Partner",
+            mobile="9800000004",
+            password_hash=hash_password("partnerSecret123"),
+            role="partner",
+            is_active=True,
+        )
+        session.add(unassigned_u)
+        session.flush()
+        unassigned_prof = PartnerProfile(
+            user_id=unassigned_u.id,
+            business_name="Unassigned Shop",
+            business_address="No Zone Lane",
+            partner_code="FIN-02",
+            zone_id=None,
+        )
+        session.add(unassigned_prof)
+
+        up_approved = StaffPaymentRecord(
+            staff_id=staff_u.id,
+            partner_id=unassigned_u.id,
+            amount=Decimal("800.00"),
+            payment_method="cash",
+            status="approved",
+            recorded_by=staff_u.id,
+            recorded_at=now,
+        )
+        up_recorded = StaffPaymentRecord(
+            staff_id=staff_u.id,
+            partner_id=unassigned_u.id,
+            amount=Decimal("500.00"),
+            payment_method="cash",
+            status="recorded",
+            recorded_by=staff_u.id,
+            recorded_at=now,
+        )
+        up_rejected = StaffPaymentRecord(
+            staff_id=staff_u.id,
+            partner_id=unassigned_u.id,
+            amount=Decimal("200.00"),
+            payment_method="cash",
+            status="rejected",
+            recorded_by=staff_u.id,
+            recorded_at=now,
+        )
+        up_voided = StaffPaymentRecord(
+            staff_id=staff_u.id,
+            partner_id=unassigned_u.id,
+            amount=Decimal("100.00"),
+            payment_method="cash",
+            status="voided",
+            recorded_by=staff_u.id,
+            recorded_at=now,
+        )
+        session.add_all([up_approved, up_recorded, up_rejected, up_voided])
+        session.commit()
+
+        token = create_access_token(subject=str(admin.id), role="admin", mobile=admin.mobile)
+        zid = zone.id
+        sid = staff_u.id
+        pid = partner_u.id
+
+    headers = _auth_header(token)
+
+    # 1. Zone-Wise: only approved payments count
+    resp_zone = client.get("/api/v1/admin/reports/zone-wise", headers=headers)
+    assert resp_zone.status_code == 200
+    z_items = resp_zone.json()["items"]
+    target_zone = next((z for z in z_items if z["zone_id"] == zid), None)
+    assert target_zone is not None
+    assert target_zone["payment_count"] == 1
+    assert Decimal(str(target_zone["total_payments_collected"])) == Decimal("1500.00")
+
+    # Unassigned Zone check
+    unassigned_zone = next((z for z in z_items if z["zone_id"] is None), None)
+    assert unassigned_zone is not None
+    assert unassigned_zone["payment_count"] == 1
+    assert Decimal(str(unassigned_zone["total_payments_collected"])) == Decimal("800.00")
+
+    # 2. Staff-Wise: only approved payments count
+    resp_staff = client.get(f"/api/v1/admin/reports/staff-wise?staff_id={sid}", headers=headers)
+    assert resp_staff.status_code == 200
+    s_items = resp_staff.json()["items"]
+    assert len(s_items) == 1
+    # Staff collected 1500 (from assigned partner) + 800 (from unassigned partner) = 2300 approved
+    # Wait, let's verify staff_wise query filters by StaffPaymentRecord.staff_id == sid:
+    # both p_approved and up_approved were recorded by staff_u, so 2 approved payments = 2300.00
+    assert s_items[0]["payment_count"] == 2
+    assert Decimal(str(s_items[0]["total_payments_collected"])) == Decimal("2300.00")
+
+    # 3. Partner-Wise: only approved payments count
+    resp_partner = client.get(f"/api/v1/admin/reports/partner-wise?partner_id={pid}", headers=headers)
+    assert resp_partner.status_code == 200
+    p_items = resp_partner.json()["items"]
+    assert len(p_items) == 1
+    assert p_items[0]["payment_count"] == 1
+    assert Decimal(str(p_items[0]["total_payments_made"])) == Decimal("1500.00")
+
+
+@pytest.mark.parametrize(
+    "test_status,should_include_value",
+    [
+        ("pending_approval", False),
+        ("approved_processing", True),
+        ("dispatched", True),
+        ("delivered", True),
+        ("rejected", False),
+        ("cancelled", False),
+    ],
+)
+def test_individual_order_statuses_value_semantics(
+    client: TestClient, test_db_engine, test_status: str, should_include_value: bool
+) -> None:
+    """Verify each supported order status individually across all 5 endpoints:
+    approved_processing, dispatched, delivered -> included in total_order_value (approved orders).
+    pending_approval, rejected, cancelled -> excluded from total_order_value.
+    """
+    with Session(test_db_engine) as session:
+        admin = User(
+            name=f"StatusAdmin_{test_status}",
+            mobile="9710000099",
+            password_hash=hash_password("adminSecret123"),
+            role="admin",
+            is_active=True,
+        )
+        session.add(admin)
+
+        zone = Zone(name=f"Zone_{test_status}", description="Test zone")
+        session.add(zone)
+        session.flush()
+
+        staff = User(
+            name=f"Staff_{test_status}",
+            mobile="9720000099",
+            password_hash=hash_password("staffSecret123"),
+            role="staff",
+            is_active=True,
+        )
+        session.add(staff)
+        session.flush()
+        session.add(StaffProfile(user_id=staff.id, staff_id=f"STF-{test_status[:4]}"))
+
+        partner = User(
+            name=f"Partner_{test_status}",
+            mobile="9730000099",
+            password_hash=hash_password("partnerSecret123"),
+            role="partner",
+            is_active=True,
+        )
+        session.add(partner)
+        session.flush()
+        session.add(PartnerProfile(
+            user_id=partner.id,
+            business_name=f"Biz_{test_status}",
+            business_address=f"Area_{test_status}",
+            partner_code=f"P-{test_status[:4]}",
+            zone_id=zone.id,
+        ))
+
+        session.add(StaffPartnerAssignment(
+            staff_id=staff.id,
+            partner_id=partner.id,
+            is_active=True,
+        ))
+
+        cat = ProductCategory(name=f"Cat_{test_status}")
+        session.add(cat)
+        session.flush()
+        prod = Product(
+            category_id=cat.id,
+            product_code=f"PRD-{test_status[:4]}",
+            name=f"Product {test_status}",
+            vehicle_type="2-Wheeler",
+            price=Decimal("250.00"),
+            is_active=True,
+        )
+        session.add(prod)
+        session.flush()
+
+        order = Order(
+            order_number=f"ORD-{test_status}-001",
+            partner_id=partner.id,
+            status=test_status,
+            created_at=datetime.now(timezone.utc),
+        )
+        session.add(order)
+        session.flush()
+        session.add(OrderItem(order_id=order.id, product_id=prod.id, quantity=2, unit_price=Decimal("250.00")))
+        session.commit()
+
+        admin_token = create_access_token(subject=str(admin.id), role="admin", mobile=admin.mobile)
+        zid = zone.id
+        sid = staff.id
+        pid = partner.id
+
+    headers = _auth_header(admin_token)
+    expected_value = Decimal("500.00") if should_include_value else Decimal("0.00")
+
+    # 1. Overview
+    r_over = client.get("/api/v1/admin/reports/overview?preset=all_time", headers=headers)
+    assert r_over.status_code == 200
+    over_data = r_over.json()
+    assert over_data["overview"]["total_orders"] == 1
+    assert Decimal(str(over_data["overview"]["total_order_value"])) == expected_value
+
+    # 2. Zone-Wise
+    r_zone = client.get(f"/api/v1/admin/reports/zone-wise?zone_id={zid}", headers=headers)
+    assert r_zone.status_code == 200
+    z_data = r_zone.json()
+    assert z_data["total_orders"] == 1
+    assert Decimal(str(z_data["total_order_value"])) == expected_value
+    assert Decimal(str(z_data["items"][0]["total_order_value"])) == expected_value
+
+    # 3. Area-Wise
+    r_area = client.get(f"/api/v1/admin/reports/area-wise?zone_id={zid}", headers=headers)
+    assert r_area.status_code == 200
+    a_data = r_area.json()
+    assert a_data["total_areas"] == 1
+    assert a_data["items"][0]["order_count"] == 1
+    assert Decimal(str(a_data["items"][0]["total_order_value"])) == expected_value
+
+    # 4. Staff-Wise
+    r_staff = client.get(f"/api/v1/admin/reports/staff-wise?staff_id={sid}", headers=headers)
+    assert r_staff.status_code == 200
+    s_data = r_staff.json()
+    assert s_data["items"][0]["order_count"] == 1
+    assert Decimal(str(s_data["items"][0]["total_order_value"])) == expected_value
+
+    # 5. Partner-Wise
+    r_partner = client.get(f"/api/v1/admin/reports/partner-wise?partner_id={pid}", headers=headers)
+    assert r_partner.status_code == 200
+    p_data = r_partner.json()
+    assert p_data["items"][0]["order_count"] == 1
+    assert Decimal(str(p_data["items"][0]["total_order_value"])) == expected_value
+
+
+def test_order_status_distribution_reconciles_with_total_orders(client: TestClient, test_db_engine) -> None:
+    """Verify all 6 supported order statuses together, checking:
+    1. Overview distribution includes cancelled orders.
+    2. Sum of distribution counts equals total_orders.
+    3. orders_cancelled is reported on overview.
+    4. Valid order value excludes rejected and cancelled across all 5 endpoints.
+    """
+    with Session(test_db_engine) as session:
+        admin = User(
+            name="DistAdmin",
+            mobile="9600000001",
+            password_hash=hash_password("adminSecret123"),
+            role="admin",
+            is_active=True,
+        )
+        session.add(admin)
+
+        zone = Zone(name="Composite Zone", description="Zone with all statuses")
+        session.add(zone)
+        session.flush()
+
+        staff = User(
+            name="Composite Staff",
+            mobile="9600000002",
+            password_hash=hash_password("staffSecret123"),
+            role="staff",
+            is_active=True,
+        )
+        session.add(staff)
+        session.flush()
+        session.add(StaffProfile(user_id=staff.id, staff_id="STF-COMP-01"))
+
+        partner = User(
+            name="Composite Partner",
+            mobile="9600000003",
+            password_hash=hash_password("partnerSecret123"),
+            role="partner",
+            is_active=True,
+        )
+        session.add(partner)
+        session.flush()
+        session.add(PartnerProfile(
+            user_id=partner.id,
+            business_name="Composite Motors",
+            business_address="Area 51, Central",
+            partner_code="COMP-01",
+            zone_id=zone.id,
+        ))
+
+        session.add(StaffPartnerAssignment(
+            staff_id=staff.id,
+            partner_id=partner.id,
+            is_active=True,
+        ))
+
+        cat = ProductCategory(name="Universal Parts")
+        session.add(cat)
+        session.flush()
+        prod = Product(
+            category_id=cat.id,
+            product_code="UNI-01",
+            name="Universal Bearing",
+            vehicle_type="Both",
+            price=Decimal("100.00"),
+            is_active=True,
+        )
+        session.add(prod)
+        session.flush()
+
+        now = datetime.now(timezone.utc)
+        statuses_with_amounts = [
+            ("pending_approval", 1, Decimal("100.00")),
+            ("approved_processing", 2, Decimal("200.00")),
+            ("dispatched", 3, Decimal("300.00")),
+            ("delivered", 4, Decimal("400.00")),
+            ("rejected", 5, Decimal("500.00")),
+            ("cancelled", 6, Decimal("600.00")),
+        ]
+
+        for st, qty, _ in statuses_with_amounts:
+            o = Order(
+                order_number=f"ORD-COMP-{st[:4].upper()}",
+                partner_id=partner.id,
+                status=st,
+                created_at=now,
+            )
+            session.add(o)
+            session.flush()
+            session.add(OrderItem(order_id=o.id, product_id=prod.id, quantity=qty, unit_price=Decimal("100.00")))
+
+        session.commit()
+
+        admin_token = create_access_token(subject=str(admin.id), role="admin", mobile=admin.mobile)
+        zid = zone.id
+        sid = staff.id
+        pid = partner.id
+
+    headers = _auth_header(admin_token)
+
+    # Approved total value: 200 (processing) + 300 (dispatched) + 400 (delivered) = 900.00
+    # Pending approval (100), Rejected (500), and Cancelled (600) excluded!
+    expected_approved_value = Decimal("900.00")
+
+    # 1. Overview
+    resp_over = client.get("/api/v1/admin/reports/overview?preset=all_time", headers=headers)
+    assert resp_over.status_code == 200
+    over_body = resp_over.json()
+    ov = over_body["overview"]
+    assert ov["total_orders"] == 6
+    assert ov["orders_pending_approval"] == 1
+    assert ov["orders_processing"] == 1
+    assert ov["orders_dispatched"] == 1
+    assert ov["orders_delivered"] == 1
+    assert ov["orders_rejected"] == 1
+    assert ov["orders_cancelled"] == 1
+    assert Decimal(str(ov["total_order_value"])) == expected_approved_value
+
+    # Check status distribution
+    dist = over_body["order_status_distribution"]
+    assert len(dist) == 6
+    dist_map = {item["status"]: item["count"] for item in dist}
+    assert dist_map["pending_approval"] == 1
+    assert dist_map["approved_processing"] == 1
+    assert dist_map["dispatched"] == 1
+    assert dist_map["delivered"] == 1
+    assert dist_map["rejected"] == 1
+    assert dist_map["cancelled"] == 1
+    assert sum(dist_map.values()) == ov["total_orders"] == 6
+
+    # 2. Zone-Wise
+    resp_zone = client.get(f"/api/v1/admin/reports/zone-wise?zone_id={zid}", headers=headers)
+    assert resp_zone.status_code == 200
+    z_body = resp_zone.json()
+    assert z_body["total_orders"] == 6
+    assert Decimal(str(z_body["total_order_value"])) == expected_approved_value
+    assert z_body["items"][0]["order_count"] == 6
+    assert Decimal(str(z_body["items"][0]["total_order_value"])) == expected_approved_value
+
+    # 3. Area-Wise
+    resp_area = client.get(f"/api/v1/admin/reports/area-wise?zone_id={zid}", headers=headers)
+    assert resp_area.status_code == 200
+    a_body = resp_area.json()
+    assert a_body["items"][0]["order_count"] == 6
+    assert Decimal(str(a_body["items"][0]["total_order_value"])) == expected_approved_value
+
+    # 4. Staff-Wise
+    resp_staff = client.get(f"/api/v1/admin/reports/staff-wise?staff_id={sid}", headers=headers)
+    assert resp_staff.status_code == 200
+    s_body = resp_staff.json()
+    assert s_body["items"][0]["order_count"] == 6
+    assert Decimal(str(s_body["items"][0]["total_order_value"])) == expected_approved_value
+
+    # 5. Partner-Wise
+    resp_partner = client.get(f"/api/v1/admin/reports/partner-wise?partner_id={pid}", headers=headers)
+    assert resp_partner.status_code == 200
+    p_body = resp_partner.json()
+    assert p_body["items"][0]["order_count"] == 6
+    assert Decimal(str(p_body["items"][0]["total_order_value"])) == expected_approved_value

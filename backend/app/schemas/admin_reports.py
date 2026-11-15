@@ -23,6 +23,7 @@ class ReportOverview(BaseModel):
     orders_dispatched: int = 0
     orders_delivered: int = 0
     orders_rejected: int = 0
+    orders_cancelled: int = 0
     total_stock_requests: int = 0
     stock_requests_pending_approval: int = 0
     stock_requests_approved: int = 0

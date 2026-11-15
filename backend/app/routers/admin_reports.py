@@ -51,6 +51,7 @@ ORDER_STATUS_LABELS = [
     ("dispatched", "Dispatched"),
     ("delivered", "Delivered"),
     ("rejected", "Rejected"),
+    ("cancelled", "Cancelled"),
 ]
 
 STOCK_REQUEST_STATUS_LABELS = [
@@ -185,17 +186,20 @@ def get_report_overview(
     orders_dispatched = order_counts_by_status.get("dispatched", 0)
     orders_delivered = order_counts_by_status.get("delivered", 0)
     orders_rejected = order_counts_by_status.get("rejected", 0)
+    orders_cancelled = order_counts_by_status.get("cancelled", 0)
 
     order_status_distribution = [
         StatusCount(status=status_key, label=label, count=order_counts_by_status.get(status_key, 0))
         for status_key, label in ORDER_STATUS_LABELS
     ]
 
-    # Total order value (sum of OrderItem quantity * unit_price for orders in range)
+    # Total order value (sum of OrderItem quantity * unit_price for approved orders in range)
+    # Includes: approved_processing, dispatched, delivered. Excludes: pending_approval, rejected, cancelled.
     order_value_query = (
         select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
         .select_from(OrderItem)
         .join(Order, OrderItem.order_id == Order.id)
+        .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]))
     )
     if order_filter:
         order_value_query = order_value_query.where(*order_filter)
@@ -261,7 +265,7 @@ def get_report_overview(
     daily_count_query = daily_count_query.group_by(func.date(Order.created_at))
     daily_counts = {str(row[0]): row[1] for row in db.execute(daily_count_query).all()}
 
-    # Query daily order values
+    # Query daily order values (for approved orders)
     daily_val_query = (
         select(
             func.date(Order.created_at).label("d"),
@@ -269,6 +273,7 @@ def get_report_overview(
         )
         .select_from(OrderItem)
         .join(Order, OrderItem.order_id == Order.id)
+        .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]))
     )
     if order_filter:
         daily_val_query = daily_val_query.where(*order_filter)
@@ -402,6 +407,7 @@ def get_report_overview(
         orders_dispatched=orders_dispatched,
         orders_delivered=orders_delivered,
         orders_rejected=orders_rejected,
+        orders_cancelled=orders_cancelled,
         total_stock_requests=total_stock_requests,
         stock_requests_pending_approval=stock_requests_pending_approval,
         stock_requests_approved=stock_requests_approved,
@@ -482,7 +488,7 @@ def get_zone_wise_report(
                 select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
                 .select_from(OrderItem)
                 .join(Order, OrderItem.order_id == Order.id)
-                .where(*order_filters)
+                .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]), *order_filters)
             )
             total_order_value = Decimal(str(val or 0))
 
@@ -492,7 +498,7 @@ def get_zone_wise_report(
         if partner_user_ids:
             payment_filters = [
                 StaffPaymentRecord.partner_id.in_(partner_user_ids),
-                StaffPaymentRecord.status == "recorded",
+                StaffPaymentRecord.status == "approved",
             ]
             if parsed_date_from:
                 payment_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)
@@ -540,13 +546,13 @@ def get_zone_wise_report(
                 select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
                 .select_from(OrderItem)
                 .join(Order, OrderItem.order_id == Order.id)
-                .where(*order_filters)
+                .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]), *order_filters)
             )
             u_total_order_value = Decimal(str(u_val or 0))
 
             payment_filters = [
                 StaffPaymentRecord.partner_id.in_(unassigned_partner_ids),
-                StaffPaymentRecord.status == "recorded",
+                StaffPaymentRecord.status == "approved",
             ]
             if parsed_date_from:
                 payment_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)
@@ -634,7 +640,7 @@ def get_area_wise_report(
             select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
             .select_from(OrderItem)
             .join(Order, OrderItem.order_id == Order.id)
-            .where(*order_filters)
+            .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]), *order_filters)
         )
         total_order_value = Decimal(str(val or 0))
 
@@ -711,14 +717,14 @@ def get_staff_wise_report(
                 select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
                 .select_from(OrderItem)
                 .join(Order, OrderItem.order_id == Order.id)
-                .where(*order_filters)
+                .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]), *order_filters)
             )
             total_order_value = Decimal(str(val or 0))
 
         # Payments recorded by this staff
         payment_filters = [
             StaffPaymentRecord.staff_id == sp.user_id,
-            StaffPaymentRecord.status == "recorded",
+            StaffPaymentRecord.status == "approved",
         ]
         if parsed_date_from:
             payment_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)
@@ -810,13 +816,13 @@ def get_partner_wise_report(
             select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
             .select_from(OrderItem)
             .join(Order, OrderItem.order_id == Order.id)
-            .where(*order_filters)
+            .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]), *order_filters)
         )
         total_order_value = Decimal(str(val or 0))
 
         payment_filters = [
             StaffPaymentRecord.partner_id == pp.user_id,
-            StaffPaymentRecord.status == "recorded",
+            StaffPaymentRecord.status == "approved",
         ]
         if parsed_date_from:
             payment_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)

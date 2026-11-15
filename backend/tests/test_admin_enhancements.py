@@ -517,7 +517,7 @@ def test_detailed_reports(enhancement_db_engine, client):
             partner_id=p_user.id,
             amount=Decimal("3600.00"),
             payment_method="cash",
-            status="recorded",
+            status="approved",
             recorded_by=s_user.id,
             recorded_at=datetime.now(timezone.utc),
         )
