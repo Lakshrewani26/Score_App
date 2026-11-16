@@ -287,12 +287,13 @@ def test_admin_assignment_rejects_duplicates_wrong_roles_and_inactive_users(
     assert inactive.status_code == 422
 
 
-def test_admin_can_deactivate_and_reactivate_assignment(
+def test_admin_deactivation_and_new_assignment_period(
     client: TestClient, db_session: Session
 ) -> None:
     # 1. Admin can deactivate an active assignment.
-    # 2. Admin can reactivate an inactive assignment.
-    # 9. Deactivated assignments remain in the database.
+    # 2. Reactivating an inactive assignment is rejected (Phase 4.C).
+    # 3. Reassignment creates a new assignment period (Phase 4.A).
+    # 9. Deactivated assignments remain in the database with deactivation metadata.
     # 10. Assignment IDs and historical relationships remain unchanged.
     admin = _create_user(db_session, name="Admin", mobile="9000000041", role="admin")
     staff = _create_staff(db_session, name="Staff", mobile="9000000042", staff_id="STF-042")
@@ -323,35 +324,49 @@ def test_admin_can_deactivate_and_reactivate_assignment(
     assert deactivated_data["assigned_at"] == assigned_at
     assert deactivated_data["staff_id"] == staff.id
     assert deactivated_data["partner_id"] == partner.id
+    assert deactivated_data["deactivated_at"] is not None
+    assert deactivated_data["deactivated_by"] == admin.id
 
-    # 9. Verify deactivated assignment remains in database
+    # 9. Verify deactivated assignment remains in database with deactivation metadata
     db_session.expire_all()
     record = db_session.get(StaffPartnerAssignment, assignment_id)
     assert record is not None
     assert record.is_active is False
     assert record.staff_id == staff.id
     assert record.partner_id == partner.id
+    assert record.deactivated_at is not None
+    assert record.deactivated_by == admin.id
 
-    # 2. Reactivate assignment
+    # 2. Reactivating old inactive assignment is rejected (Phase 4.C)
     res_reactivate = client.patch(
         f"/api/v1/admin/staff-partner-assignments/{assignment_id}/status",
         headers=admin_headers,
         json={"is_active": True},
     )
-    assert res_reactivate.status_code == 200
-    reactivated_data = res_reactivate.json()
-    assert reactivated_data["id"] == assignment_id
-    assert reactivated_data["is_active"] is True
-    assert reactivated_data["assigned_at"] == assigned_at
+    assert res_reactivate.status_code == 400
+    assert "cannot be reactivated" in res_reactivate.json()["detail"].lower()
 
-    # 10. Verify ID and relationships remain unchanged
+    # 3. Reassignment creates a new assignment period via POST
+    res_new_period = client.post(
+        "/api/v1/admin/staff-partner-assignments",
+        headers=admin_headers,
+        json={"staff_id": staff.id, "partner_id": partner.id},
+    )
+    assert res_new_period.status_code == 201
+    new_data = res_new_period.json()
+    assert new_data["id"] != assignment_id
+    assert new_data["is_active"] is True
+    assert new_data["staff_id"] == staff.id
+    assert new_data["partner_id"] == partner.id
+
+    # 10. Verify old assignment remains unchanged and new assignment exists
     db_session.expire_all()
-    record_reactivated = db_session.get(StaffPartnerAssignment, assignment_id)
-    assert record_reactivated is not None
-    assert record_reactivated.id == assignment_id
-    assert record_reactivated.is_active is True
-    assert record_reactivated.staff_id == staff.id
-    assert record_reactivated.partner_id == partner.id
+    old_record = db_session.get(StaffPartnerAssignment, assignment_id)
+    assert old_record is not None
+    assert old_record.id == assignment_id
+    assert old_record.is_active is False
+    assert old_record.deactivated_at is not None
+    assert old_record.deactivated_by == admin.id
 
 
 def test_assignment_status_authorization_and_nonexistent(
@@ -399,11 +414,11 @@ def test_assignment_status_authorization_and_nonexistent(
     assert not_found.json()["detail"] == "Staff-Partner assignment not found"
 
 
-def test_repeated_deactivation_and_reactivation_safe(
+def test_repeated_deactivation_is_idempotent_and_reactivation_rejected(
     client: TestClient, db_session: Session
 ) -> None:
-    # 6. Repeated deactivation is handled safely.
-    # 7. Repeated reactivation is handled safely.
+    # 6. Repeated deactivation is idempotent and preserves original metadata.
+    # 7. Reactivation of an inactive assignment is rejected (Phase 4.C).
     admin = _create_user(db_session, name="Admin", mobile="9000000061", role="admin")
     staff = _create_staff(db_session, name="Staff", mobile="9000000062", staff_id="STF-062")
     partner = _create_partner(db_session, name="Partner", mobile="9000000063")
@@ -412,7 +427,7 @@ def test_repeated_deactivation_and_reactivation_safe(
     db_session.commit()
     admin_headers = _authorization(admin)
 
-    # 7. Repeated reactivation on already active assignment
+    # 7. Repeated active call on already active assignment is safe and idempotent
     res_re_activate = client.patch(
         f"/api/v1/admin/staff-partner-assignments/{assignment.id}/status",
         headers=admin_headers,
@@ -421,23 +436,30 @@ def test_repeated_deactivation_and_reactivation_safe(
     assert res_re_activate.status_code == 200
     assert res_re_activate.json()["is_active"] is True
 
-    # Deactivate once
+    # Deactivate once: sets deactivated_at and deactivated_by
     res_deactivate_1 = client.patch(
         f"/api/v1/admin/staff-partner-assignments/{assignment.id}/status",
         headers=admin_headers,
         json={"is_active": False},
     )
     assert res_deactivate_1.status_code == 200
-    assert res_deactivate_1.json()["is_active"] is False
+    data_1 = res_deactivate_1.json()
+    assert data_1["is_active"] is False
+    assert data_1["deactivated_at"] is not None
+    assert data_1["deactivated_by"] == admin.id
+    first_deactivated_at = data_1["deactivated_at"]
 
-    # 6. Repeated deactivation on already inactive assignment
+    # 6. Repeated deactivation on already inactive assignment does NOT overwrite metadata
     res_deactivate_2 = client.patch(
         f"/api/v1/admin/staff-partner-assignments/{assignment.id}/status",
         headers=admin_headers,
         json={"is_active": False},
     )
     assert res_deactivate_2.status_code == 200
-    assert res_deactivate_2.json()["is_active"] is False
+    data_2 = res_deactivate_2.json()
+    assert data_2["is_active"] is False
+    assert data_2["deactivated_at"] == first_deactivated_at
+    assert data_2["deactivated_by"] == admin.id
 
     # Repeated deactivation remains safe and idempotent
     res_deactivate_3 = client.patch(
@@ -448,29 +470,20 @@ def test_repeated_deactivation_and_reactivation_safe(
     assert res_deactivate_3.status_code == 200
     assert res_deactivate_3.json()["is_active"] is False
 
-    # Reactivate again safely and idempotently
-    res_react_1 = client.patch(
+    # Reactivating an inactive assignment is rejected (Phase 4.C)
+    res_react_rejected = client.patch(
         f"/api/v1/admin/staff-partner-assignments/{assignment.id}/status",
         headers=admin_headers,
         json={"is_active": True},
     )
-    assert res_react_1.status_code == 200
-    assert res_react_1.json()["is_active"] is True
-
-    # Repeated reactivation on already active assignment remains safe
-    res_react_2 = client.patch(
-        f"/api/v1/admin/staff-partner-assignments/{assignment.id}/status",
-        headers=admin_headers,
-        json={"is_active": True},
-    )
-    assert res_react_2.status_code == 200
-    assert res_react_2.json()["is_active"] is True
+    assert res_react_rejected.status_code == 400
+    assert "cannot be reactivated" in res_react_rejected.json()["detail"].lower()
 
 
-def test_reactivation_rejected_when_conflicting_active_assignment_exists(
+def test_inactive_assignment_reactivation_always_rejected(
     client: TestClient, db_session: Session
 ) -> None:
-    # 8. Reactivation is rejected when another active assignment exists for the same Staff–Partner pair.
+    # 8. Reactivation of an inactive assignment is always rejected (Phase 4.C), regardless of whether another assignment exists.
     admin = _create_user(db_session, name="Admin", mobile="9000000071", role="admin")
     staff = _create_staff(db_session, name="Staff", mobile="9000000072", staff_id="STF-072")
     partner = _create_partner(db_session, name="Partner", mobile="9000000073")
@@ -482,14 +495,14 @@ def test_reactivation_rejected_when_conflicting_active_assignment_exists(
 
     admin_headers = _authorization(admin)
 
-    # Attempt to reactivate assignment1 while assignment2 is active
+    # Attempt to reactivate assignment1: rejected with 400
     conflict_res = client.patch(
         f"/api/v1/admin/staff-partner-assignments/{assignment1.id}/status",
         headers=admin_headers,
         json={"is_active": True},
     )
-    assert conflict_res.status_code == 409
-    assert "already exists" in conflict_res.json()["detail"].lower()
+    assert conflict_res.status_code == 400
+    assert "cannot be reactivated" in conflict_res.json()["detail"].lower()
 
     # Verify assignment1 is still inactive and assignment2 is still active
     db_session.expire_all()
@@ -499,11 +512,11 @@ def test_reactivation_rejected_when_conflicting_active_assignment_exists(
     assert reloaded2 is not None and reloaded2.is_active is True
 
 
-def test_staff_partner_list_visibility_with_deactivation_and_reactivation(
+def test_staff_partner_list_visibility_after_new_assignment_period(
     client: TestClient, db_session: Session
 ) -> None:
     # 11. Staff cannot see deactivated assignments.
-    # 12. Staff can see reactivated assignments when both accounts are active.
+    # 12. Staff can see partner again after creating a new assignment period.
     admin = _create_user(db_session, name="Admin", mobile="9000000081", role="admin")
     staff = _create_staff(db_session, name="Staff", mobile="9000000082", staff_id="STF-082")
     partner = _create_partner(db_session, name="Partner", mobile="9000000083", business_name="Alpha Store")
@@ -531,12 +544,13 @@ def test_staff_partner_list_visibility_with_deactivation_and_reactivation(
     assert p_deact.status_code == 200
     assert len(p_deact.json()) == 0
 
-    # 12. Reactivate assignment: partner appears again when both accounts are active
-    client.patch(
-        f"/api/v1/admin/staff-partner-assignments/{assignment.id}/status",
+    # 12. Reassignment via POST: creates new period, partner appears again
+    res_reassign = client.post(
+        "/api/v1/admin/staff-partner-assignments",
         headers=admin_headers,
-        json={"is_active": True},
+        json={"staff_id": staff.id, "partner_id": partner.id},
     )
+    assert res_reassign.status_code == 201
     p_react = client.get("/api/v1/staff/partners", headers=staff_headers)
     assert p_react.status_code == 200
     assert len(p_react.json()) == 1
@@ -597,15 +611,20 @@ def test_assignment_status_update_schema_strictness(
         num_res = client.patch(url, headers=admin_headers, json={"is_active": invalid_num})
         assert num_res.status_code == 422, f"Failed to reject number {invalid_num}"
 
-    # 6. Valid boolean false
+    # 6. Valid boolean true on active assignment is safe and idempotent
+    valid_true_res = client.patch(url, headers=admin_headers, json={"is_active": True})
+    assert valid_true_res.status_code == 200
+    assert valid_true_res.json()["is_active"] is True
+
+    # 7. Valid boolean false deactivates
     valid_false_res = client.patch(url, headers=admin_headers, json={"is_active": False})
     assert valid_false_res.status_code == 200
     assert valid_false_res.json()["is_active"] is False
 
-    # 7. Valid boolean true
-    valid_true_res = client.patch(url, headers=admin_headers, json={"is_active": True})
-    assert valid_true_res.status_code == 200
-    assert valid_true_res.json()["is_active"] is True
+    # 8. Reactivating inactive assignment is rejected with 400
+    reactivate_rejected = client.patch(url, headers=admin_headers, json={"is_active": True})
+    assert reactivate_rejected.status_code == 400
+    assert "cannot be reactivated" in reactivate_rejected.json()["detail"].lower()
 
 
 def test_removed_mutation_endpoints_not_available(
@@ -657,34 +676,30 @@ def test_sqlite_uniqueness_conflict_handling_translates_to_409(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verify SQLite partial unique index IntegrityError translates to HTTP 409 Conflict."""
+    """Verify SQLite partial unique index IntegrityError translates to HTTP 409 Conflict on create."""
     admin = _create_user(db_session, name="Admin", mobile="9000000111", role="admin")
     staff = _create_staff(db_session, name="Staff", mobile="9000000112", staff_id="STF-112")
     partner = _create_partner(db_session, name="Partner", mobile="9000000113")
-
-    assignment = StaffPartnerAssignment(staff_id=staff.id, partner_id=partner.id, is_active=False)
-    db_session.add(assignment)
-    db_session.commit()
 
     admin_headers = _authorization(admin)
 
     # Simulate SQLite partial unique constraint collision raised on commit
     def mock_commit_sqlite_unique():
         raise IntegrityError(
-            "UPDATE staff_partner_assignments SET is_active = 1",
+            "INSERT INTO staff_partner_assignments",
             {},
-            Exception("UNIQUE constraint failed: staff_partner_assignments.staff_id, staff_partner_assignments.partner_id"),
+            Exception("UNIQUE constraint failed: staff_partner_assignments.partner_id"),
         )
 
     monkeypatch.setattr(Session, "commit", lambda self: mock_commit_sqlite_unique())
 
-    res = client.patch(
-        f"/api/v1/admin/staff-partner-assignments/{assignment.id}/status",
+    res = client.post(
+        "/api/v1/admin/staff-partner-assignments",
         headers=admin_headers,
-        json={"is_active": True},
+        json={"staff_id": staff.id, "partner_id": partner.id},
     )
     assert res.status_code == 409
-    assert res.json()["detail"] == "An active assignment already exists for this Staff-Partner pair"
+    assert "already has an active staff assignment" in res.json()["detail"].lower() or "already assigned" in res.json()["detail"].lower()
 
 
 def test_sqlite_uniqueness_conflict_real_partial_index(
@@ -694,40 +709,37 @@ def test_sqlite_uniqueness_conflict_real_partial_index(
 ) -> None:
     """Verify real SQLite partial unique index fires and is translated to HTTP 409 when race condition bypasses pre-check."""
     admin = _create_user(db_session, name="Admin", mobile="9000000121", role="admin")
-    staff = _create_staff(db_session, name="Staff", mobile="9000000122", staff_id="STF-122")
+    staff1 = _create_staff(db_session, name="Staff 1", mobile="9000000122", staff_id="STF-122")
+    staff2 = _create_staff(db_session, name="Staff 2", mobile="9000000124", staff_id="STF-124")
     partner = _create_partner(db_session, name="Partner", mobile="9000000123")
 
-    assignment1 = StaffPartnerAssignment(staff_id=staff.id, partner_id=partner.id, is_active=True)
-    assignment2 = StaffPartnerAssignment(staff_id=staff.id, partner_id=partner.id, is_active=False)
-    db_session.add_all([assignment1, assignment2])
+    assignment1 = StaffPartnerAssignment(staff_id=staff1.id, partner_id=partner.id, is_active=True)
+    db_session.add(assignment1)
     db_session.commit()
 
     admin_headers = _authorization(admin)
 
-    # Bypass the pre-check query by making it return None (simulating concurrent race before commit)
-    original_scalar = Session.scalar
+    # Bypass the auto-deactivation query in create_staff_partner_assignment (simulating race condition before commit)
+    original_scalars = Session.scalars
 
-    def mocked_scalar(self, statement, *args, **kwargs):
+    def mocked_scalars(self, statement, *args, **kwargs):
         stmt_str = str(statement)
-        if "staff_partner_assignments.id !=" in stmt_str:
-            return None
-        return original_scalar(self, statement, *args, **kwargs)
+        if "staff_partner_assignments.partner_id" in stmt_str and "is_active" in stmt_str:
+            class EmptyScalars:
+                def all(self):
+                    return []
+            return EmptyScalars()
+        return original_scalars(self, statement, *args, **kwargs)
 
-    monkeypatch.setattr(Session, "scalar", mocked_scalar)
+    monkeypatch.setattr(Session, "scalars", mocked_scalars)
 
-    res = client.patch(
-        f"/api/v1/admin/staff-partner-assignments/{assignment2.id}/status",
+    res = client.post(
+        "/api/v1/admin/staff-partner-assignments",
         headers=admin_headers,
-        json={"is_active": True},
+        json={"staff_id": staff2.id, "partner_id": partner.id},
     )
     assert res.status_code == 409
-    assert res.json()["detail"] == "An active assignment already exists for this Staff-Partner pair"
-
-    # Confirm transaction was rolled back and assignment2 is still inactive in DB
-    db_session.expire_all()
-    reloaded = db_session.get(StaffPartnerAssignment, assignment2.id)
-    assert reloaded is not None
-    assert reloaded.is_active is False
+    assert "already" in res.json()["detail"].lower()
 
 
 def test_unrelated_database_integrity_error_is_not_translated_to_409(
@@ -762,3 +774,285 @@ def test_unrelated_database_integrity_error_is_not_translated_to_409(
             headers=admin_headers,
             json={"is_active": False},
         )
+
+
+def test_assignment_creation_rejected_when_staff_is_inactive(
+    client: TestClient, db_session: Session
+) -> None:
+    """Verify that assignment creation is strictly rejected with HTTP 422 if staff is inactive."""
+    admin = _create_user(db_session, name="Admin", mobile="9000000201", role="admin")
+    staff = _create_staff(
+        db_session,
+        name="Inactive Staff",
+        mobile="9000000202",
+        staff_id="STF-INACT-01",
+        active=False,
+    )
+    partner = _create_partner(db_session, name="Partner One", mobile="9000000203")
+
+    admin_headers = _authorization(admin)
+    res = client.post(
+        "/api/v1/admin/staff-partner-assignments",
+        headers=admin_headers,
+        json={"staff_id": staff.id, "partner_id": partner.id},
+    )
+    assert res.status_code == 422
+    assert "inactive" in res.json()["detail"].lower()
+    assert "staff" in res.json()["detail"].lower()
+
+
+def test_assignment_creation_rejected_when_partner_is_inactive(
+    client: TestClient, db_session: Session
+) -> None:
+    """Verify that assignment creation is strictly rejected with HTTP 422 if partner is inactive."""
+    admin = _create_user(db_session, name="Admin", mobile="9000000211", role="admin")
+    staff = _create_staff(
+        db_session,
+        name="Active Staff",
+        mobile="9000000212",
+        staff_id="STF-ACT-01",
+        active=True,
+    )
+    partner = _create_partner(
+        db_session,
+        name="Inactive Partner",
+        mobile="9000000213",
+        active=False,
+    )
+
+    admin_headers = _authorization(admin)
+    res = client.post(
+        "/api/v1/admin/staff-partner-assignments",
+        headers=admin_headers,
+        json={"staff_id": staff.id, "partner_id": partner.id},
+    )
+    assert res.status_code == 422
+    assert "inactive" in res.json()["detail"].lower()
+    assert "partner" in res.json()["detail"].lower()
+
+
+def test_staff_deactivation_closes_active_assignments_and_reactivation_safe(
+    client: TestClient, db_session: Session
+) -> None:
+    """
+    Verify that deactivating a Staff account automatically closes all active assignments
+    with deactivation timestamp and deactivator admin ID, and reactivating staff does NOT reopen assignments.
+    """
+    admin = _create_user(db_session, name="Admin User", mobile="9000000221", role="admin")
+    staff = _create_staff(db_session, name="Staff Lifecycle", mobile="9000000222", staff_id="STF-LC-01")
+    partner = _create_partner(db_session, name="Partner Lifecycle", mobile="9000000223")
+
+    admin_headers = _authorization(admin)
+
+    # 1. Create active assignment
+    res_assign = client.post(
+        "/api/v1/admin/staff-partner-assignments",
+        headers=admin_headers,
+        json={"staff_id": staff.id, "partner_id": partner.id},
+    )
+    assert res_assign.status_code == 201
+    asgn_id = res_assign.json()["id"]
+
+    # 2. Deactivate Staff account via status endpoint
+    res_deact = client.post(
+        f"/api/v1/admin/users/{staff.id}/status",
+        headers=admin_headers,
+        json={"is_active": False},
+    )
+    assert res_deact.status_code == 200
+    assert res_deact.json()["is_active"] is False
+
+    # 3. Confirm assignment is closed in DB with audit metadata
+    db_session.expire_all()
+    asgn = db_session.get(StaffPartnerAssignment, asgn_id)
+    assert asgn is not None
+    assert asgn.is_active is False
+    assert asgn.deactivated_at is not None
+    assert asgn.deactivated_by == admin.id
+
+    # 4. Reactivate Staff account
+    res_react = client.post(
+        f"/api/v1/admin/users/{staff.id}/status",
+        headers=admin_headers,
+        json={"is_active": True},
+    )
+    assert res_react.status_code == 200
+    assert res_react.json()["is_active"] is True
+
+    # 5. Confirm assignment remains closed
+    db_session.expire_all()
+    asgn_after = db_session.get(StaffPartnerAssignment, asgn_id)
+    assert asgn_after is not None
+    assert asgn_after.is_active is False
+    assert asgn_after.deactivated_at is not None
+    assert asgn_after.deactivated_by == admin.id
+
+
+def test_lock_ordering_staff_user_before_partner_profile_on_postgres(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Mocked lock-order test: Verifies strict lock ordering when dialect is PostgreSQL:
+    1. Staff User row (SELECT ... FOR UPDATE)
+    2. Partner PartnerProfile row (SELECT ... FOR UPDATE)
+    Never the reverse.
+    """
+    admin = _create_user(db_session, name="Admin Order", mobile="9000000241", role="admin")
+    staff = _create_staff(db_session, name="Staff Order", mobile="9000000242", staff_id="STF-ORD-01")
+    partner = _create_partner(db_session, name="Partner Order", mobile="9000000243")
+
+    admin_headers = _authorization(admin)
+
+    # Force _is_postgres to return True to trigger PostgreSQL row locking branch
+    from app.routers import admin as admin_router
+    monkeypatch.setattr(admin_router, "_is_postgres", lambda db: True)
+
+    locked_statements: list[str] = []
+    original_scalar = Session.scalar
+
+    def tracking_scalar(self, statement, *args, **kwargs):
+        # Inspect statement for FOR UPDATE
+        for_update = getattr(statement, "_for_update_arg", None)
+        if for_update is not None:
+            # Determine target entity
+            col_descs = getattr(statement, "column_descriptions", [])
+            entity_names = [str(d.get("entity", "")) for d in col_descs if "entity" in d]
+            locked_statements.append(",".join(entity_names))
+        return original_scalar(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "scalar", tracking_scalar)
+
+    res = client.post(
+        "/api/v1/admin/staff-partner-assignments",
+        headers=admin_headers,
+        json={"staff_id": staff.id, "partner_id": partner.id},
+    )
+    assert res.status_code == 201
+
+    # Verify locked statements were captured in exact order: Staff User first, Partner PartnerProfile second
+    assert len(locked_statements) == 2
+    assert "User" in locked_statements[0]
+    assert "PartnerProfile" in locked_statements[1]
+
+
+def test_locking_not_invoked_on_sqlite(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that FOR UPDATE locking is safely omitted when dialect is SQLite."""
+    admin = _create_user(db_session, name="Admin SQLite", mobile="9000000251", role="admin")
+    staff = _create_staff(db_session, name="Staff SQLite", mobile="9000000252", staff_id="STF-SQLITE-01")
+    partner = _create_partner(db_session, name="Partner SQLite", mobile="9000000253")
+
+    admin_headers = _authorization(admin)
+
+    locked_statements: list[str] = []
+    original_scalar = Session.scalar
+
+    def tracking_scalar(self, statement, *args, **kwargs):
+        for_update = getattr(statement, "_for_update_arg", None)
+        if for_update is not None:
+            locked_statements.append(str(statement))
+        return original_scalar(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "scalar", tracking_scalar)
+
+    res = client.post(
+        "/api/v1/admin/staff-partner-assignments",
+        headers=admin_headers,
+        json={"staff_id": staff.id, "partner_id": partner.id},
+    )
+    assert res.status_code == 201
+    # On SQLite, no FOR UPDATE clause should be used
+    assert len(locked_statements) == 0
+
+
+def test_concurrent_staff_deactivation_race_condition_rejected(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Simulate the concurrency race condition:
+    Admin A starts assignment creation for Staff X.
+    Before the assignment is committed, Staff X is deactivated (e.g. by Admin B).
+    Revalidation under the lock detects Staff X is inactive and rejects assignment creation with 422.
+    """
+    admin = _create_user(db_session, name="Admin Race", mobile="9000000261", role="admin")
+    staff = _create_staff(db_session, name="Staff Race", mobile="9000000262", staff_id="STF-RACE-01")
+    partner = _create_partner(db_session, name="Partner Race", mobile="9000000263")
+
+    admin_headers = _authorization(admin)
+
+    # Simulate race condition: when Staff row is selected under lock, it is found to be inactive
+    original_scalar = Session.scalar
+
+    def mock_scalar(self, statement, *args, **kwargs):
+        result = original_scalar(self, statement, *args, **kwargs)
+        # If querying User for staff_id, simulate that staff was deactivated concurrently
+        if isinstance(result, User) and result.id == staff.id and result.role == "staff":
+            result.is_active = False
+        return result
+
+    monkeypatch.setattr(Session, "scalar", mock_scalar)
+
+    res = client.post(
+        "/api/v1/admin/staff-partner-assignments",
+        headers=admin_headers,
+        json={"staff_id": staff.id, "partner_id": partner.id},
+    )
+    assert res.status_code == 422
+    assert "inactive" in res.json()["detail"].lower()
+
+    # Verify no assignment was created in database
+    db_session.expire_all()
+    count = db_session.query(StaffPartnerAssignment).filter(
+        StaffPartnerAssignment.staff_id == staff.id,
+        StaffPartnerAssignment.partner_id == partner.id,
+    ).count()
+    assert count == 0
+
+
+def test_missing_staff_user_does_not_proceed_to_partner_locking(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Mocked lock-order test: Verifies that when a Staff user is missing (404),
+    assignment creation aborts immediately and does NOT query or lock PartnerProfile.
+    """
+    admin = _create_user(db_session, name="Admin MissingStaff", mobile="9000000271", role="admin")
+    partner = _create_partner(db_session, name="Partner ForMissingStaff", mobile="9000000272")
+    admin_headers = _authorization(admin)
+
+    # Force _is_postgres to return True
+    from app.routers import admin as admin_router
+    monkeypatch.setattr(admin_router, "_is_postgres", lambda db: True)
+
+    queried_entities: list[str] = []
+    original_scalar = Session.scalar
+
+    def tracking_scalar(self, statement, *args, **kwargs):
+        col_descs = getattr(statement, "column_descriptions", [])
+        for d in col_descs:
+            if "entity" in d:
+                queried_entities.append(str(d["entity"]))
+        return original_scalar(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "scalar", tracking_scalar)
+
+    res = client.post(
+        "/api/v1/admin/staff-partner-assignments",
+        headers=admin_headers,
+        json={"staff_id": 999999, "partner_id": partner.id},
+    )
+    assert res.status_code == 404
+    assert "Staff member not found" in res.json()["detail"]
+
+    # Assert that PartnerProfile was NEVER queried or locked
+    assert any("User" in e for e in queried_entities)
+    assert not any("PartnerProfile" in e for e in queried_entities)

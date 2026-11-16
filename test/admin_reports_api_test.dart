@@ -299,5 +299,100 @@ void main() {
       await api.getReportOverview();
       expect(capturedAuth, equals('Bearer persisted-admin-session-token'));
     });
+
+    test('8. StaffWiseReport parses assigned staff, unassigned, and historically unattributed items', () async {
+      final mockPayload = {
+        'items': [
+          {
+            'staff_user_id': 101,
+            'staff_id': 'STF-101',
+            'name': 'Agent Staff',
+            'mobile': '9876543210',
+            'assigned_partner_count': 4,
+            'order_count': 12,
+            'total_order_value': '60000.00',
+            'payment_count': 3,
+            'total_payments_collected': '30000.00',
+            'attribution_category': 'assigned',
+          },
+          {
+            'staff_user_id': null,
+            'staff_id': null,
+            'name': 'Unassigned',
+            'mobile': null,
+            'assigned_partner_count': 0,
+            'order_count': 3,
+            'total_order_value': '15000.00',
+            'payment_count': 0,
+            'total_payments_collected': '0.00',
+            'attribution_category': 'unassigned',
+          },
+          {
+            'staff_user_id': null,
+            'staff_id': null,
+            'name': 'Historically Unattributed',
+            'mobile': null,
+            'assigned_partner_count': 0,
+            'order_count': 5,
+            'total_order_value': '25000.00',
+            'payment_count': 0,
+            'total_payments_collected': '0.00',
+            'attribution_category': 'historically_unattributed',
+          },
+        ],
+        'total_staff': 1,
+      };
+
+      final client = MockClient((request) async {
+        expect(request.url.path, equals('/api/v1/admin/reports/staff-wise'));
+        return http.Response(jsonEncode(mockPayload), 200);
+      });
+
+      final api = AdminReportsApi(
+        client: client,
+        baseUrl: 'http://test-server',
+      );
+
+      final response = await api.getStaffWiseReport(token: 'token');
+      expect(response.totalStaff, equals(1));
+      expect(response.items.length, equals(3));
+
+      // 1. Assigned staff
+      final assigned = response.items[0];
+      expect(assigned.staffUserId, equals(101));
+      expect(assigned.staffId, equals('STF-101'));
+      expect(assigned.name, equals('Agent Staff'));
+      expect(assigned.mobile, equals('9876543210'));
+      expect(assigned.assignedPartnerCount, equals(4));
+      expect(assigned.orderCount, equals(12));
+      expect(assigned.totalOrderValue, equals(60000.0));
+      expect(assigned.attributionCategory, equals('assigned'));
+
+      // 2. Unassigned
+      final unassigned = response.items[1];
+      expect(unassigned.staffUserId, isNull);
+      expect(unassigned.staffId, isNull);
+      expect(unassigned.name, equals('Unassigned'));
+      expect(unassigned.mobile, isNull);
+      expect(unassigned.assignedPartnerCount, equals(0));
+      expect(unassigned.orderCount, equals(3));
+      expect(unassigned.totalOrderValue, equals(15000.0));
+      expect(unassigned.attributionCategory, equals('unassigned'));
+
+      // 3. Historically Unattributed
+      final historical = response.items[2];
+      expect(historical.staffUserId, isNull);
+      expect(historical.staffId, isNull);
+      expect(historical.name, equals('Historically Unattributed'));
+      expect(historical.mobile, isNull);
+      expect(historical.assignedPartnerCount, equals(0));
+      expect(historical.orderCount, equals(5));
+      expect(historical.totalOrderValue, equals(25000.0));
+      expect(historical.attributionCategory, equals('historically_unattributed'));
+
+      // Total orders reconcile (12 + 3 + 5 = 20)
+      final totalOrders = response.items.fold<int>(0, (sum, i) => sum + i.orderCount);
+      expect(totalOrders, equals(20));
+    });
   });
 }

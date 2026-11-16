@@ -234,13 +234,32 @@ class Order(Base):
             "final_total IS NULL OR final_total >= 0",
             name="nonnegative_final_total",
         ),
+        CheckConstraint(
+            "staff_attribution_status IN ('assigned', 'unassigned', 'historically_unattributed')",
+            name="supported_staff_attribution_status",
+        ),
         Index("ix_orders_partner_id", "partner_id"),
+        Index("ix_orders_created_by_user_id", "created_by_user_id"),
+        Index("ix_orders_assigned_staff_id", "assigned_staff_id"),
+        Index("ix_orders_staff_attribution_status", "staff_attribution_status"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     order_number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     partner_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    assigned_staff_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("staff_profiles.user_id", ondelete="RESTRICT"), nullable=True
+    )
+    staff_attribution_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="historically_unattributed",
+        server_default="historically_unattributed",
     )
     status: Mapped[str] = mapped_column(
         String(30), nullable=False, default="pending_approval",
@@ -268,6 +287,10 @@ class Order(Base):
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     partner: Mapped[User] = relationship(foreign_keys=[partner_id])
+    created_by: Mapped[Optional[User]] = relationship(foreign_keys=[created_by_user_id])
+    assigned_staff: Mapped[Optional[StaffProfile]] = relationship(
+        foreign_keys=[assigned_staff_id]
+    )
     approver: Mapped[Optional[User]] = relationship(foreign_keys=[approved_by])
     items: Mapped[list[OrderItem]] = relationship(
         back_populates="order", passive_deletes="all"
@@ -460,8 +483,7 @@ class StaffPartnerAssignment(Base):
     __tablename__ = "staff_partner_assignments"
     __table_args__ = (
         Index(
-            "uq_staff_partner_assignments_active_pair",
-            "staff_id",
+            "uq_staff_partner_assignments_active_partner",
             "partner_id",
             unique=True,
             postgresql_where=text("is_active IS TRUE"),
@@ -482,9 +504,16 @@ class StaffPartnerAssignment(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
+    deactivated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    deactivated_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
 
     staff: Mapped[StaffProfile] = relationship()
     partner: Mapped[PartnerProfile] = relationship()
+    deactivator: Mapped[Optional[User]] = relationship(foreign_keys=[deactivated_by])
 
 
 class StaffPaymentRecord(Base):

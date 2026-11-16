@@ -168,10 +168,149 @@ class _StaffPartnerAssignmentsScreenState
     }
   }
 
+  Future<void> _showReassignDialog(
+      AdminStaffPartnerAssignment assignment) async {
+    int? selectedStaffId = _staff.any((u) => u.id == assignment.staffId)
+        ? assignment.staffId
+        : null;
+    final partnerName =
+        assignment.partner.businessName ?? assignment.partner.name;
+
+    final targetStaffId = await showDialog<int>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Reassign Partner'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Assign $partnerName to a Staff member. Reassignment creates a new assignment period rather than reopening this inactive record.',
+                style: const TextStyle(fontSize: 13, color: Color(0xFF557A95)),
+              ),
+              const SizedBox(height: 16),
+              if (_staff.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3CD),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFFFEEBA)),
+                  ),
+                  child: const Text(
+                    'No active Staff accounts are available.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF856404),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              else
+                DropdownButtonFormField<int>(
+                  key: const Key('reassign_staff_dropdown'),
+                  initialValue: selectedStaffId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Select Staff Member',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _staff
+                      .map(
+                        (user) => DropdownMenuItem<int>(
+                          value: user.id,
+                          child: Text(
+                            user.staffId == null
+                                ? '${user.name} (${user.mobile})'
+                                : '${user.name} (${user.staffId})',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (val) => setDialogState(() => selectedStaffId = val),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              key: const Key('confirm_reassign_button'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _royalBlue,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: selectedStaffId == null || _staff.isEmpty
+                  ? null
+                  : () => Navigator.of(ctx).pop(selectedStaffId),
+              child: const Text('Confirm Reassign'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (targetStaffId == null) return;
+
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+      _actionErrorMessage = null;
+    });
+
+    try {
+      final newAssignment = await widget.adminApi.createStaffPartnerAssignment(
+        staffId: targetStaffId,
+        partnerId: assignment.partnerId,
+      );
+      if (!mounted) return;
+      setState(() {
+        if (_statusFilter == 'all' ||
+            (_statusFilter == 'active' && newAssignment.isActive)) {
+          _assignments = [newAssignment, ..._assignments];
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Partner reassigned successfully. New assignment period created.',
+          ),
+          backgroundColor: Color(0xFF2E7D32),
+        ),
+      );
+      await _loadAssignments();
+    } on AdminApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _actionErrorMessage = error.message);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
   Future<void> _confirmToggleStatus(
       AdminStaffPartnerAssignment assignment) async {
-    final target = !assignment.isActive;
-    final actionText = target ? 'reactivate' : 'deactivate';
+    if (!assignment.isActive) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Inactive assignments cannot be reactivated. Reassignment creates a new assignment period.',
+          ),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     final partnerName =
         assignment.partner.businessName ?? assignment.partner.name;
     final staffName = assignment.staff.name;
@@ -179,9 +318,9 @@ class _StaffPartnerAssignmentsScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(target ? 'Reactivate Assignment' : 'Deactivate Assignment'),
+        title: const Text('Deactivate Assignment'),
         content: Text(
-          'Are you sure you want to $actionText the assignment between $staffName and $partnerName?',
+          'Are you sure you want to deactivate the assignment between $staffName and $partnerName?',
         ),
         actions: [
           TextButton(
@@ -190,19 +329,18 @@ class _StaffPartnerAssignmentsScreenState
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor:
-                  target ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
+              backgroundColor: const Color(0xFFD32F2F),
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(target ? 'Reactivate' : 'Deactivate'),
+            child: const Text('Deactivate'),
           ),
         ],
       ),
     );
 
     if (confirmed != true) return;
-    await _toggleAssignmentStatus(assignment, target);
+    await _toggleAssignmentStatus(assignment, false);
   }
 
   Future<void> _toggleAssignmentStatus(
@@ -294,7 +432,7 @@ class _StaffPartnerAssignmentsScreenState
                       padding: const EdgeInsets.all(16),
                       children: [
                         _buildAssignmentForm(),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 12),
                         if (_actionErrorMessage != null) ...[
                           _buildActionErrorBanner(),
                           const SizedBox(height: 12),
@@ -458,7 +596,7 @@ class _StaffPartnerAssignmentsScreenState
       elevation: 1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -466,17 +604,29 @@ class _StaffPartnerAssignmentsScreenState
               'Assign a Partner',
               style: TextStyle(
                 color: _deepBlue,
-                fontSize: 17,
+                fontSize: 16,
                 fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
+            const Text(
+              'A Partner can have at most one active Staff assignment. Assigning a different Staff member automatically closes the previous assignment period and creates a new one.',
+              style: TextStyle(
+                color: Color(0xFF557A95),
+                fontSize: 12,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 10),
             DropdownButtonFormField<int>(
               initialValue: _selectedStaffId,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Staff member',
                 border: OutlineInputBorder(),
+                isDense: true,
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               items: _staff
                   .map(
@@ -496,19 +646,22 @@ class _StaffPartnerAssignmentsScreenState
                   : (value) => setState(() => _selectedStaffId = value),
             ),
             if (_staff.isEmpty) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               const Text(
                 'No active Staff accounts are available.',
-                style: TextStyle(color: Color(0xFF6782A0)),
+                style: TextStyle(color: Color(0xFF6782A0), fontSize: 12),
               ),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             DropdownButtonFormField<int>(
               initialValue: _selectedPartnerId,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Partner',
                 border: OutlineInputBorder(),
+                isDense: true,
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               items: _partners
                   .map(
@@ -627,14 +780,30 @@ class _StaffPartnerAssignmentsScreenState
     );
   }
 
+  String _formatDeactivationDate(DateTime? dt) {
+    if (dt == null) return 'Unavailable';
+    final local = dt.toLocal();
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final day = local.day.toString().padLeft(2, '0');
+    final month = months[local.month - 1];
+    final year = local.year;
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final ampm = local.hour >= 12 ? 'PM' : 'AM';
+    return '$day $month $year, $hour:$minute $ampm';
+  }
+
   Widget _buildAssignmentCard(AdminStaffPartnerAssignment assignment) {
     return Card(
       color: Colors.white,
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       elevation: 1,
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -661,7 +830,7 @@ class _StaffPartnerAssignmentsScreenState
                         style: const TextStyle(
                           color: _deepBlue,
                           fontWeight: FontWeight.w700,
-                          fontSize: 16,
+                          fontSize: 15,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -669,7 +838,7 @@ class _StaffPartnerAssignmentsScreenState
                         'Partner: ${assignment.partner.name}',
                         style: const TextStyle(
                           color: Color(0xFF557A95),
-                          fontSize: 13,
+                          fontSize: 12,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -677,19 +846,46 @@ class _StaffPartnerAssignmentsScreenState
                         'Staff: ${assignment.staff.name}',
                         style: const TextStyle(
                           color: Color(0xFF333333),
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      if (!assignment.isActive) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Deactivated: ${_formatDeactivationDate(assignment.deactivatedAt)}',
+                          style: const TextStyle(
+                            color: Color(0xFF757575),
+                            fontSize: 11,
+                          ),
+                        ),
+                        if (assignment.deactivatedByName != null &&
+                            assignment.deactivatedByName!.isNotEmpty)
+                          Text(
+                            'Deactivated by: ${assignment.deactivatedByName}',
+                            style: const TextStyle(
+                              color: Color(0xFF757575),
+                              fontSize: 11,
+                            ),
+                          )
+                        else if (assignment.deactivatedBy != null)
+                          Text(
+                            'Deactivated by: Admin #${assignment.deactivatedBy}',
+                            style: const TextStyle(
+                              color: Color(0xFF757575),
+                              fontSize: 11,
+                            ),
+                          ),
+                      ],
                     ],
                   ),
                 ),
                 _buildStatusBadge(assignment.isActive),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             const Divider(height: 1),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -730,24 +926,24 @@ class _StaffPartnerAssignmentsScreenState
                   )
                 else
                   OutlinedButton.icon(
-                    key: Key('reactivate_assignment_${assignment.id}'),
+                    key: Key('reassign_assignment_${assignment.id}'),
                     onPressed: _isSubmitting || _updatingAssignmentId != null
                         ? null
-                        : () => _confirmToggleStatus(assignment),
+                        : () => _showReassignDialog(assignment),
                     icon: const Icon(
-                      Icons.check_circle_outline_rounded,
+                      Icons.swap_horiz_rounded,
                       size: 16,
-                      color: Color(0xFF2E7D32),
+                      color: _royalBlue,
                     ),
                     label: const Text(
-                      'Reactivate',
+                      'Reassign',
                       style: TextStyle(
-                        color: Color(0xFF2E7D32),
+                        color: _royalBlue,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF81C784)),
+                      side: const BorderSide(color: _royalBlue),
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
                         vertical: 6,

@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import case, distinct, func, select
+from sqlalchemy import case, distinct, func, select, union
 from sqlalchemy.orm import Session
 
 from app.core.security import require_admin
@@ -690,36 +690,37 @@ def get_staff_wise_report(
             StaffPartnerAssignment.staff_id == sp.user_id,
             StaffPartnerAssignment.is_active.is_(True),
         )
+        if zone_id is not None:
+            assignment_query = assignment_query.where(
+                StaffPartnerAssignment.partner_id.in_(
+                    select(PartnerProfile.user_id).where(PartnerProfile.zone_id == zone_id)
+                )
+            )
         assigned_partner_ids = db.scalars(assignment_query).all()
 
-        if zone_id is not None and assigned_partner_ids:
-            # Further filter assigned partners by zone
-            assigned_partner_ids = db.scalars(
-                select(PartnerProfile.user_id).where(
-                    PartnerProfile.user_id.in_(assigned_partner_ids),
-                    PartnerProfile.zone_id == zone_id,
+        # Phase 5.A: Staff-wise order queries aggregate using Order.assigned_staff_id == staff_user_id
+        order_filters = [Order.assigned_staff_id == sp.user_id]
+        if parsed_date_from:
+            order_filters.append(Order.created_at >= parsed_date_from)
+        if parsed_date_to:
+            order_filters.append(Order.created_at <= parsed_date_to)
+        if zone_id is not None:
+            order_filters.append(
+                Order.partner_id.in_(
+                    select(PartnerProfile.user_id).where(PartnerProfile.zone_id == zone_id)
                 )
-            ).all()
-
-        order_count = 0
-        total_order_value = Decimal("0.00")
-        if assigned_partner_ids:
-            order_filters = [Order.partner_id.in_(assigned_partner_ids)]
-            if parsed_date_from:
-                order_filters.append(Order.created_at >= parsed_date_from)
-            if parsed_date_to:
-                order_filters.append(Order.created_at <= parsed_date_to)
-
-            order_count = db.scalar(
-                select(func.count(Order.id)).where(*order_filters)
-            ) or 0
-            val = db.scalar(
-                select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
-                .select_from(OrderItem)
-                .join(Order, OrderItem.order_id == Order.id)
-                .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]), *order_filters)
             )
-            total_order_value = Decimal(str(val or 0))
+
+        order_count = db.scalar(
+            select(func.count(Order.id)).where(*order_filters)
+        ) or 0
+        val = db.scalar(
+            select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
+            .select_from(OrderItem)
+            .join(Order, OrderItem.order_id == Order.id)
+            .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]), *order_filters)
+        )
+        total_order_value = Decimal(str(val or 0))
 
         # Payments recorded by this staff
         payment_filters = [
@@ -730,6 +731,12 @@ def get_staff_wise_report(
             payment_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)
         if parsed_date_to:
             payment_filters.append(StaffPaymentRecord.recorded_at <= parsed_date_to)
+        if zone_id is not None:
+            payment_filters.append(
+                StaffPaymentRecord.partner_id.in_(
+                    select(PartnerProfile.user_id).where(PartnerProfile.zone_id == zone_id)
+                )
+            )
 
         payment_count = db.scalar(
             select(func.count(StaffPaymentRecord.id)).where(*payment_filters)
@@ -750,10 +757,87 @@ def get_staff_wise_report(
                 total_order_value=total_order_value,
                 payment_count=payment_count,
                 total_payments_collected=total_payments_collected,
+                attribution_category="assigned",
             )
         )
 
-    return StaffWiseReportResponse(items=items, total_staff=len(items))
+    # Phase 5.B: Separate unattributed categories (when not filtering by a single staff member)
+    if staff_id is None:
+        # 1. Unassigned
+        u_filters = [Order.staff_attribution_status == "unassigned"]
+        if parsed_date_from:
+            u_filters.append(Order.created_at >= parsed_date_from)
+        if parsed_date_to:
+            u_filters.append(Order.created_at <= parsed_date_to)
+        if zone_id is not None:
+            u_filters.append(
+                Order.partner_id.in_(
+                    select(PartnerProfile.user_id).where(PartnerProfile.zone_id == zone_id)
+                )
+            )
+
+        u_order_count = db.scalar(
+            select(func.count(Order.id)).where(*u_filters)
+        ) or 0
+        u_val = db.scalar(
+            select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
+            .select_from(OrderItem)
+            .join(Order, OrderItem.order_id == Order.id)
+            .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]), *u_filters)
+        )
+        items.append(
+            StaffWiseReportItem(
+                staff_user_id=None,
+                staff_id=None,
+                name="Unassigned",
+                mobile=None,
+                assigned_partner_count=0,
+                order_count=u_order_count,
+                total_order_value=Decimal(str(u_val or 0)),
+                payment_count=0,
+                total_payments_collected=Decimal("0.00"),
+                attribution_category="unassigned",
+            )
+        )
+
+        # 2. Historically Unattributed
+        hu_filters = [Order.staff_attribution_status == "historically_unattributed"]
+        if parsed_date_from:
+            hu_filters.append(Order.created_at >= parsed_date_from)
+        if parsed_date_to:
+            hu_filters.append(Order.created_at <= parsed_date_to)
+        if zone_id is not None:
+            hu_filters.append(
+                Order.partner_id.in_(
+                    select(PartnerProfile.user_id).where(PartnerProfile.zone_id == zone_id)
+                )
+            )
+
+        hu_order_count = db.scalar(
+            select(func.count(Order.id)).where(*hu_filters)
+        ) or 0
+        hu_val = db.scalar(
+            select(func.coalesce(func.sum(OrderItem.quantity * OrderItem.unit_price), 0))
+            .select_from(OrderItem)
+            .join(Order, OrderItem.order_id == Order.id)
+            .where(Order.status.in_(["approved_processing", "dispatched", "delivered"]), *hu_filters)
+        )
+        items.append(
+            StaffWiseReportItem(
+                staff_user_id=None,
+                staff_id=None,
+                name="Historically Unattributed",
+                mobile=None,
+                assigned_partner_count=0,
+                order_count=hu_order_count,
+                total_order_value=Decimal(str(hu_val or 0)),
+                payment_count=0,
+                total_payments_collected=Decimal("0.00"),
+                attribution_category="historically_unattributed",
+            )
+        )
+
+    return StaffWiseReportResponse(items=items, total_staff=len(staff_rows))
 
 
 # ---------------------------------------------------------------------------
@@ -791,19 +875,44 @@ def get_partner_wise_report(
     if zone_id is not None:
         partner_query = partner_query.where(PartnerProfile.zone_id == zone_id)
     if staff_id is not None:
-        assigned_pids = db.scalars(
-            select(StaffPartnerAssignment.partner_id).where(
-                StaffPartnerAssignment.staff_id == staff_id,
-                StaffPartnerAssignment.is_active.is_(True),
-            )
-        ).all()
-        partner_query = partner_query.where(PartnerProfile.user_id.in_(assigned_pids))
+        historical_order_filters = [Order.assigned_staff_id == staff_id]
+        if parsed_date_from:
+            historical_order_filters.append(Order.created_at >= parsed_date_from)
+        if parsed_date_to:
+            historical_order_filters.append(Order.created_at <= parsed_date_to)
+
+        order_partner_subquery = (
+            select(Order.partner_id)
+            .where(*historical_order_filters)
+        )
+
+        payment_partner_filters = [
+            StaffPaymentRecord.staff_id == staff_id,
+            StaffPaymentRecord.status == "approved",
+        ]
+        if parsed_date_from:
+            payment_partner_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)
+        if parsed_date_to:
+            payment_partner_filters.append(StaffPaymentRecord.recorded_at <= parsed_date_to)
+
+        payment_partner_subquery = (
+            select(StaffPaymentRecord.partner_id)
+            .where(*payment_partner_filters)
+        )
+
+        matching_partners_subquery = union(
+            order_partner_subquery,
+            payment_partner_subquery,
+        )
+        partner_query = partner_query.where(PartnerProfile.user_id.in_(matching_partners_subquery))
 
     partner_rows = db.execute(partner_query).all()
 
     items: list[PartnerWiseReportItem] = []
     for pp, u, zname in partner_rows:
         order_filters = [Order.partner_id == pp.user_id]
+        if staff_id is not None:
+            order_filters.append(Order.assigned_staff_id == staff_id)
         if parsed_date_from:
             order_filters.append(Order.created_at >= parsed_date_from)
         if parsed_date_to:
@@ -824,6 +933,8 @@ def get_partner_wise_report(
             StaffPaymentRecord.partner_id == pp.user_id,
             StaffPaymentRecord.status == "approved",
         ]
+        if staff_id is not None:
+            payment_filters.append(StaffPaymentRecord.staff_id == staff_id)
         if parsed_date_from:
             payment_filters.append(StaffPaymentRecord.recorded_at >= parsed_date_from)
         if parsed_date_to:

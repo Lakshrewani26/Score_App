@@ -23,6 +23,7 @@ from app.models import (
     PartnerProfile,
     Product,
     ProductCategory,
+    StaffPartnerAssignment,
     StaffProfile,
     User,
 )
@@ -47,6 +48,7 @@ def test_engine():
             Order.__table__,
             OrderItem.__table__,
             OrderStatusHistory.__table__,
+            StaffPartnerAssignment.__table__,
         ],
     )
     yield engine
@@ -418,3 +420,27 @@ def test_partner_login_and_me(client: TestClient, db_session: Session) -> None:
     assert me_resp.status_code == 200
     assert me_resp.json()["id"] == partner.id
     assert me_resp.json()["name"] == "Direct Partner"
+
+
+def test_partner_order_creation_fails_when_partner_profile_missing(
+    client: TestClient, db_session: Session
+) -> None:
+    user = User(
+        name="No Profile Partner",
+        mobile="9899001122",
+        password_hash=hash_password("Pass123"),
+        role="partner",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    token = create_access_token(subject=str(user.id), role="partner", mobile=user.mobile)
+    p1, _, _ = _create_products(db_session)
+
+    resp = client.post(
+        "/api/v1/orders",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"items": [{"product_id": p1.id, "quantity": 1}]},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Partner profile not found."

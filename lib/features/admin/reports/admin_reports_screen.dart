@@ -737,7 +737,15 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                               color: const Color(0xFFE65100).withAlpha(24),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Icon(Icons.badge_rounded, color: Color(0xFFE65100), size: 20),
+                            child: Icon(
+                              item.staffUserId == null
+                                  ? (item.attributionCategory == 'historically_unattributed'
+                                      ? Icons.history_rounded
+                                      : Icons.help_outline_rounded)
+                                  : Icons.badge_rounded,
+                              color: const Color(0xFFE65100),
+                              size: 20,
+                            ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -749,7 +757,13 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                                   style: const TextStyle(color: _deepBlue, fontSize: 15, fontWeight: FontWeight.w800),
                                 ),
                                 Text(
-                                  'ID: ${item.staffId} | Mobile: ${item.mobile}',
+                                  item.staffId != null && item.staffId!.isNotEmpty
+                                      ? 'ID: ${item.staffId} | Mobile: ${item.mobile ?? "-"}'
+                                      : (item.attributionCategory == 'unassigned'
+                                          ? 'Orders created without active staff assignment'
+                                          : (item.attributionCategory == 'historically_unattributed'
+                                              ? 'Historical orders without verified staff attribution'
+                                              : 'Unattributed Orders')),
                                   style: const TextStyle(color: Color(0xFF78909C), fontSize: 12),
                                 ),
                               ],
@@ -762,7 +776,11 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              '${item.assignedPartnerCount} Partners',
+                              item.staffUserId != null
+                                  ? '${item.assignedPartnerCount} Partners'
+                                  : (item.attributionCategory == 'unassigned'
+                                      ? 'Unassigned'
+                                      : 'Historical'),
                               style: const TextStyle(color: Color(0xFFE65100), fontSize: 11, fontWeight: FontWeight.w700),
                             ),
                           ),

@@ -316,6 +316,9 @@ class StaffPartnerAssignmentResponse(BaseModel):
     partner_id: int
     assigned_at: datetime
     is_active: bool
+    deactivated_at: Optional[datetime] = None
+    deactivated_by: Optional[int] = None
+    deactivated_by_name: Optional[str] = None
     staff: AssignmentUserResponse
     partner: AssignmentUserResponse
 

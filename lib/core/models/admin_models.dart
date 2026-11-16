@@ -262,6 +262,9 @@ class AdminStaffPartnerAssignment {
     required this.isActive,
     required this.staff,
     required this.partner,
+    this.deactivatedAt,
+    this.deactivatedBy,
+    this.deactivatedByName,
   });
 
   final int id;
@@ -271,6 +274,9 @@ class AdminStaffPartnerAssignment {
   final bool isActive;
   final AdminUserSummary staff;
   final AdminUserSummary partner;
+  final DateTime? deactivatedAt;
+  final int? deactivatedBy;
+  final String? deactivatedByName;
 
   factory AdminStaffPartnerAssignment.fromJson(Map<String, dynamic> json) {
     final staffJson = json['staff'];
@@ -290,6 +296,17 @@ class AdminStaffPartnerAssignment {
     if (parsedAssignedAt == null) {
       throw const FormatException('Assignment timestamp is invalid');
     }
+    final deactivatedAtRaw = json['deactivated_at'];
+    final DateTime? parsedDeactivatedAt;
+    if (deactivatedAtRaw == null) {
+      parsedDeactivatedAt = null;
+    } else if (deactivatedAtRaw is String) {
+      parsedDeactivatedAt = DateTime.parse(deactivatedAtRaw);
+    } else {
+      throw const FormatException('Deactivation timestamp is invalid');
+    }
+    final deactivatedByName = json['deactivated_by_name'] as String?;
+
     return AdminStaffPartnerAssignment(
       id: json['id'] as int,
       staffId: json['staff_id'] as int,
@@ -298,6 +315,9 @@ class AdminStaffPartnerAssignment {
       isActive: json['is_active'] as bool,
       staff: AdminUserSummary.fromJson(staffJson),
       partner: AdminUserSummary.fromJson(partnerJson),
+      deactivatedAt: parsedDeactivatedAt,
+      deactivatedBy: json['deactivated_by'] as int?,
+      deactivatedByName: deactivatedByName,
     );
   }
 }

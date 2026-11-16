@@ -958,6 +958,8 @@ def test_individual_order_statuses_value_semantics(
         order = Order(
             order_number=f"ORD-{test_status}-001",
             partner_id=partner.id,
+            assigned_staff_id=staff.id,
+            staff_attribution_status="assigned",
             status=test_status,
             created_at=datetime.now(timezone.utc),
         )
@@ -1095,6 +1097,8 @@ def test_order_status_distribution_reconciles_with_total_orders(client: TestClie
             o = Order(
                 order_number=f"ORD-COMP-{st[:4].upper()}",
                 partner_id=partner.id,
+                assigned_staff_id=staff.id,
+                staff_attribution_status="assigned",
                 status=st,
                 created_at=now,
             )
@@ -1170,3 +1174,354 @@ def test_order_status_distribution_reconciles_with_total_orders(client: TestClie
     p_body = resp_partner.json()
     assert p_body["items"][0]["order_count"] == 6
     assert Decimal(str(p_body["items"][0]["total_order_value"])) == expected_approved_value
+
+
+def test_partner_wise_report_staff_filter_union_orders_and_payments(client: TestClient, test_db_engine) -> None:
+    """
+    Focused verification of the Partner-Wise report when staff_id is supplied:
+    1. A Partner with an order attributed to the selected Staff member appears.
+    2. A Partner with an approved payment recorded by the selected Staff member,
+       but no matching order in the selected date range, also appears with zero orders
+       and the correct payment totals.
+    3. A Partner with neither a matching order nor a matching approved payment does not appear.
+    4. A rejected or recorded-but-not-approved payment alone does not cause a Partner to appear.
+    5. Order and payment date filters are applied independently (Order.created_at vs StaffPaymentRecord.recorded_at).
+    6. Zone and explicit Partner filters continue to work with the combined Partner selection.
+    """
+    with Session(test_db_engine) as session:
+        admin = User(
+            name="Union Admin",
+            mobile="9700000000",
+            password_hash=hash_password("adminPass123"),
+            role="admin",
+            is_active=True,
+        )
+        zone_north = Zone(name="North Zone")
+        zone_south = Zone(name="South Zone")
+        session.add_all([admin, zone_north, zone_south])
+        session.flush()
+
+        staff_1 = User(
+            name="Staff One",
+            mobile="9700000001",
+            password_hash=hash_password("staffPass123"),
+            role="staff",
+            is_active=True,
+        )
+        staff_2 = User(
+            name="Staff Two",
+            mobile="9700000002",
+            password_hash=hash_password("staffPass123"),
+            role="staff",
+            is_active=True,
+        )
+        session.add_all([staff_1, staff_2])
+        session.flush()
+        session.add_all([
+            StaffProfile(user_id=staff_1.id, staff_id="STF-U1"),
+            StaffProfile(user_id=staff_2.id, staff_id="STF-U2"),
+        ])
+
+        cat = ProductCategory(name="Union Category")
+        session.add(cat)
+        session.flush()
+        prod = Product(
+            category_id=cat.id,
+            product_code="PRD-U01",
+            name="Product U01",
+            vehicle_type="Both",
+            price=Decimal("100.00"),
+            is_active=True,
+        )
+        session.add(prod)
+        session.flush()
+
+        # Partner A: Order only for Staff 1 (North Zone)
+        u_p_order = User(name="Partner Order Only", mobile="9700000011", password_hash=hash_password("pass"), role="partner", is_active=True)
+        session.add(u_p_order)
+        session.flush()
+        session.add(PartnerProfile(user_id=u_p_order.id, business_name="Business A", business_address="Address North A", partner_code="PTN-A", zone_id=zone_north.id))
+
+        # Partner B: Payment only for Staff 1 (North Zone)
+        u_p_pay = User(name="Partner Payment Only", mobile="9700000012", password_hash=hash_password("pass"), role="partner", is_active=True)
+        session.add(u_p_pay)
+        session.flush()
+        session.add(PartnerProfile(user_id=u_p_pay.id, business_name="Business B", business_address="Address North B", partner_code="PTN-B", zone_id=zone_north.id))
+
+        # Partner C: Unapproved payments only for Staff 1 (North Zone)
+        u_p_unapp = User(name="Partner Unapproved Pay", mobile="9700000013", password_hash=hash_password("pass"), role="partner", is_active=True)
+        session.add(u_p_unapp)
+        session.flush()
+        session.add(PartnerProfile(user_id=u_p_unapp.id, business_name="Business C", business_address="Address North C", partner_code="PTN-C", zone_id=zone_north.id))
+
+        # Partner D: Associated only with Staff 2 (South Zone)
+        u_p_other = User(name="Partner Other Staff", mobile="9700000014", password_hash=hash_password("pass"), role="partner", is_active=True)
+        session.add(u_p_other)
+        session.flush()
+        session.add(PartnerProfile(user_id=u_p_other.id, business_name="Business D", business_address="Address South D", partner_code="PTN-D", zone_id=zone_south.id))
+
+        # Partner E: Date split for Staff 1 (South Zone) - Order in May, Payment in June
+        u_p_split = User(name="Partner Date Split", mobile="9700000015", password_hash=hash_password("pass"), role="partner", is_active=True)
+        session.add(u_p_split)
+        session.flush()
+        session.add(PartnerProfile(user_id=u_p_split.id, business_name="Business E", business_address="Address South E", partner_code="PTN-E", zone_id=zone_south.id))
+
+        dt_may = datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc)
+        dt_june = datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc)
+
+        # Partner A Order (Staff 1, June)
+        o_a = Order(
+            order_number="ORD-UNION-A",
+            partner_id=u_p_order.id,
+            assigned_staff_id=staff_1.id,
+            staff_attribution_status="assigned",
+            status="delivered",
+            created_at=dt_june,
+        )
+        session.add(o_a)
+        session.flush()
+        session.add(OrderItem(order_id=o_a.id, product_id=prod.id, quantity=2, unit_price=Decimal("100.00")))
+
+        # Partner B Payment (Staff 1, June, Approved)
+        session.add(StaffPaymentRecord(
+            partner_id=u_p_pay.id,
+            staff_id=staff_1.id,
+            recorded_by=staff_1.id,
+            amount=Decimal("350.00"),
+            payment_method="cash",
+            status="approved",
+            recorded_at=dt_june,
+        ))
+
+        # Partner C Payments (Staff 1, June: 1 rejected, 1 recorded/pending)
+        session.add(StaffPaymentRecord(
+            partner_id=u_p_unapp.id,
+            staff_id=staff_1.id,
+            recorded_by=staff_1.id,
+            amount=Decimal("500.00"),
+            payment_method="upi",
+            status="rejected",
+            recorded_at=dt_june,
+        ))
+        session.add(StaffPaymentRecord(
+            partner_id=u_p_unapp.id,
+            staff_id=staff_1.id,
+            recorded_by=staff_1.id,
+            amount=Decimal("250.00"),
+            payment_method="cash",
+            status="recorded",
+            recorded_at=dt_june,
+        ))
+
+        # Partner D Order and Payment (Staff 2 only, June)
+        o_d = Order(
+            order_number="ORD-UNION-D",
+            partner_id=u_p_other.id,
+            assigned_staff_id=staff_2.id,
+            staff_attribution_status="assigned",
+            status="delivered",
+            created_at=dt_june,
+        )
+        session.add(o_d)
+        session.flush()
+        session.add(OrderItem(order_id=o_d.id, product_id=prod.id, quantity=5, unit_price=Decimal("100.00")))
+        session.add(StaffPaymentRecord(
+            partner_id=u_p_other.id,
+            staff_id=staff_2.id,
+            recorded_by=staff_2.id,
+            amount=Decimal("450.00"),
+            payment_method="cash",
+            status="approved",
+            recorded_at=dt_june,
+        ))
+
+        # Partner E Date Split (Staff 1: Order in May, Payment in June)
+        o_e = Order(
+            order_number="ORD-UNION-E",
+            partner_id=u_p_split.id,
+            assigned_staff_id=staff_1.id,
+            staff_attribution_status="assigned",
+            status="approved_processing",
+            created_at=dt_may,
+        )
+        session.add(o_e)
+        session.flush()
+        session.add(OrderItem(order_id=o_e.id, product_id=prod.id, quantity=3, unit_price=Decimal("100.00")))
+        session.add(StaffPaymentRecord(
+            partner_id=u_p_split.id,
+            staff_id=staff_1.id,
+            recorded_by=staff_1.id,
+            amount=Decimal("600.00"),
+            payment_method="cash",
+            status="approved",
+            recorded_at=dt_june,
+        ))
+
+        session.commit()
+
+        admin_token = create_access_token(subject=str(admin.id), role="admin", mobile=admin.mobile)
+        s1_id = staff_1.id
+        s2_id = staff_2.id
+        zn_id = zone_north.id
+        zs_id = zone_south.id
+        pa_id = u_p_order.id
+        pb_id = u_p_pay.id
+        pc_id = u_p_unapp.id
+        pd_id = u_p_other.id
+        pe_id = u_p_split.id
+
+    headers = _auth_header(admin_token)
+
+    # -------------------------------------------------------------------------
+    # 1. Partner with order attributed to Staff 1 appears (Partner A)
+    # 2. Partner with approved payment for Staff 1, but NO order, appears with 0 orders (Partner B)
+    # 3. Partner with neither order nor payment for Staff 1 does not appear (Partner D)
+    # 4. Rejected or recorded-but-not-approved payment alone does not cause Partner to appear (Partner C)
+    # -------------------------------------------------------------------------
+    res_s1 = client.get(f"/api/v1/admin/reports/partner-wise?staff_id={s1_id}&preset=all_time", headers=headers)
+    assert res_s1.status_code == 200
+    items_by_id = {it["partner_user_id"]: it for it in res_s1.json()["items"]}
+
+    # Requirement 1: Partner A (order only)
+    assert pa_id in items_by_id
+    item_a = items_by_id[pa_id]
+    assert item_a["order_count"] == 1
+    assert Decimal(str(item_a["total_order_value"])) == Decimal("200.00")
+    assert item_a["payment_count"] == 0
+    assert Decimal(str(item_a["total_payments_made"])) == Decimal("0.00")
+
+    # Requirement 2: Partner B (payment only) -> 0 matching orders, correct payment totals
+    assert pb_id in items_by_id
+    item_b = items_by_id[pb_id]
+    assert item_b["order_count"] == 0
+    assert Decimal(str(item_b["total_order_value"])) == Decimal("0.00")
+    assert item_b["payment_count"] == 1
+    assert Decimal(str(item_b["total_payments_made"])) == Decimal("350.00")
+
+    # Partner E (both order and payment for Staff 1)
+    assert pe_id in items_by_id
+    item_e = items_by_id[pe_id]
+    assert item_e["order_count"] == 1
+    assert Decimal(str(item_e["total_order_value"])) == Decimal("300.00")
+    assert item_e["payment_count"] == 1
+    assert Decimal(str(item_e["total_payments_made"])) == Decimal("600.00")
+
+    # Requirement 3: Partner D (associated only with Staff 2) does not appear
+    assert pd_id not in items_by_id
+
+    # Requirement 4: Partner C (rejected and recorded-only payments) does not appear
+    assert pc_id not in items_by_id
+
+    # -------------------------------------------------------------------------
+    # 5. Order and payment date filters are applied independently
+    # -------------------------------------------------------------------------
+    # Scenario A: June 2026 window -> Partner E order (in May) excluded, payment (in June) included
+    res_june = client.get(
+        f"/api/v1/admin/reports/partner-wise?staff_id={s1_id}&date_from=2026-06-01&date_to=2026-06-30",
+        headers=headers,
+    )
+    assert res_june.status_code == 200
+    june_items = {it["partner_user_id"]: it for it in res_june.json()["items"]}
+    assert pe_id in june_items
+    pe_june = june_items[pe_id]
+    assert pe_june["order_count"] == 0
+    assert Decimal(str(pe_june["total_order_value"])) == Decimal("0.00")
+    assert pe_june["payment_count"] == 1
+    assert Decimal(str(pe_june["total_payments_made"])) == Decimal("600.00")
+
+    # Scenario B: May 2026 window -> Partner E order (in May) included, payment (in June) excluded
+    res_may = client.get(
+        f"/api/v1/admin/reports/partner-wise?staff_id={s1_id}&date_from=2026-05-01&date_to=2026-05-31",
+        headers=headers,
+    )
+    assert res_may.status_code == 200
+    may_items = {it["partner_user_id"]: it for it in res_may.json()["items"]}
+    assert pe_id in may_items
+    pe_may = may_items[pe_id]
+    assert pe_may["order_count"] == 1
+    assert Decimal(str(pe_may["total_order_value"])) == Decimal("300.00")
+    assert pe_may["payment_count"] == 0
+    assert Decimal(str(pe_may["total_payments_made"])) == Decimal("0.00")
+
+    # Scenario C: July 2026 window -> neither order nor payment for Partner E falls in July
+    res_july = client.get(
+        f"/api/v1/admin/reports/partner-wise?staff_id={s1_id}&date_from=2026-07-01&date_to=2026-07-31",
+        headers=headers,
+    )
+    assert res_july.status_code == 200
+    july_items = {it["partner_user_id"]: it for it in res_july.json()["items"]}
+    assert pe_id not in july_items
+
+    # -------------------------------------------------------------------------
+    # 6. Zone and explicit Partner filters continue to work with combined selection
+    # -------------------------------------------------------------------------
+    # Filter by North Zone + Staff 1 -> Partner A and B appear, Partner E (South Zone) excluded
+    res_north = client.get(
+        f"/api/v1/admin/reports/partner-wise?staff_id={s1_id}&zone_id={zn_id}&preset=all_time",
+        headers=headers,
+    )
+    assert res_north.status_code == 200
+    north_pids = {it["partner_user_id"] for it in res_north.json()["items"]}
+    assert north_pids == {pa_id, pb_id}
+
+    # Filter by South Zone + Staff 1 -> only Partner E appears
+    res_south = client.get(
+        f"/api/v1/admin/reports/partner-wise?staff_id={s1_id}&zone_id={zs_id}&preset=all_time",
+        headers=headers,
+    )
+    assert res_south.status_code == 200
+    south_pids = {it["partner_user_id"] for it in res_south.json()["items"]}
+    assert south_pids == {pe_id}
+
+    # Filter by explicit Partner B + Staff 1 -> returns Partner B with 0 orders and 1 payment
+    res_single_b = client.get(
+        f"/api/v1/admin/reports/partner-wise?staff_id={s1_id}&partner_id={pb_id}",
+        headers=headers,
+    )
+    assert res_single_b.status_code == 200
+    single_b_items = res_single_b.json()["items"]
+    assert len(single_b_items) == 1
+    assert single_b_items[0]["partner_user_id"] == pb_id
+    assert single_b_items[0]["order_count"] == 0
+    assert single_b_items[0]["payment_count"] == 1
+
+    # Filter by explicit Partner D + Staff 1 -> returns 0 items (mismatch)
+    res_single_d = client.get(
+        f"/api/v1/admin/reports/partner-wise?staff_id={s1_id}&partner_id={pd_id}",
+        headers=headers,
+    )
+    assert res_single_d.status_code == 200
+    assert len(res_single_d.json()["items"]) == 0
+
+
+def test_staff_wise_report_item_attribution_category_literal_validation() -> None:
+    """
+    Verifies that StaffWiseReportItem constrains attribution_category to:
+    - 'assigned'
+    - 'unassigned'
+    - 'historically_unattributed'
+    And permits None (default), while rejecting any unsupported string.
+    """
+    from pydantic import ValidationError
+    from app.schemas.admin_reports import StaffWiseReportItem
+
+    # 1. Supported values are accepted
+    item_assigned = StaffWiseReportItem(name="Staff Assigned", attribution_category="assigned")
+    assert item_assigned.attribution_category == "assigned"
+
+    item_unassigned = StaffWiseReportItem(name="Unassigned", attribution_category="unassigned")
+    assert item_unassigned.attribution_category == "unassigned"
+
+    item_hist = StaffWiseReportItem(name="Historical", attribution_category="historically_unattributed")
+    assert item_hist.attribution_category == "historically_unattributed"
+
+    # 2. Default None is accepted
+    item_none = StaffWiseReportItem(name="Staff None")
+    assert item_none.attribution_category is None
+
+    item_explicit_none = StaffWiseReportItem(name="Staff None", attribution_category=None)
+    assert item_explicit_none.attribution_category is None
+
+    # 3. Unsupported value is rejected with ValidationError
+    with pytest.raises(ValidationError):
+        StaffWiseReportItem(name="Invalid Category Staff", attribution_category="invalid_category")

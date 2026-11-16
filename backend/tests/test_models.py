@@ -83,9 +83,17 @@ def test_required_unique_constraints_and_foreign_keys_exist() -> None:
     } == {"users.id"}
     assert any(
         index.unique
-        and index.name == "uq_staff_partner_assignments_active_pair"
+        and index.name == "uq_staff_partner_assignments_active_partner"
         and "is_active" in str(index.dialect_options["postgresql"]["where"])
         for index in assignments.indexes
+    )
+    assert any(
+        foreign_key.target_fullname == "users.id"
+        for foreign_key in orders.c.created_by_user_id.foreign_keys
+    )
+    assert any(
+        foreign_key.target_fullname == "staff_profiles.user_id"
+        for foreign_key in orders.c.assigned_staff_id.foreign_keys
     )
 
 
@@ -131,11 +139,14 @@ def test_single_initial_alembic_revision_is_available() -> None:
     scripts = ScriptDirectory.from_config(config)
 
     assert len(scripts.get_heads()) == 1
-    assert len(list(scripts.walk_revisions())) == 9
-    latest_revision = scripts.get_revision("c4d5e6f7a8b9")
+    assert len(list(scripts.walk_revisions())) == 10
+    latest_revision = scripts.get_revision("d5e6f7a8b9c0")
     assert latest_revision is not None
-    assert latest_revision.down_revision == "b3c4d5e6f7a8"
-    assert scripts.get_heads() == ["c4d5e6f7a8b9"]
+    assert latest_revision.down_revision == "c4d5e6f7a8b9"
+    assert scripts.get_heads() == ["d5e6f7a8b9c0"]
+    previous_revision = scripts.get_revision("c4d5e6f7a8b9")
+    assert previous_revision is not None
+    assert previous_revision.down_revision == "b3c4d5e6f7a8"
     previous_revision = scripts.get_revision("b3c4d5e6f7a8")
     assert previous_revision is not None
     assert previous_revision.down_revision == "a1b2c3d4e5f6"

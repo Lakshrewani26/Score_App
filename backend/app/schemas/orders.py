@@ -72,6 +72,9 @@ class OrderResponse(BaseModel):
     discount_percentage: Optional[Decimal] = None
     total_discount: Optional[Decimal] = None
     final_total: Optional[Decimal] = None
+    created_by_user_id: Optional[int] = None
+    assigned_staff_id: Optional[int] = None
+    staff_attribution_status: Optional[str] = None
     items: list[OrderItemResponse] = []
     status_history: list[OrderStatusHistoryResponse] = []
 

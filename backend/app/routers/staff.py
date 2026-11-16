@@ -690,7 +690,19 @@ def create_staff_order(
             detail="Order must contain at least one item.",
         )
 
-    # 1. Partner exists and is active partner
+    # 1. Lock partner profile (on PostgreSQL) and immediately validate that it exists
+    bind = db.get_bind()
+    is_postgres = bind is not None and getattr(bind.dialect, "name", "") == "postgresql"
+    partner_stmt = select(PartnerProfile).where(PartnerProfile.user_id == payload.partner_id)
+    if is_postgres:
+        partner_stmt = partner_stmt.with_for_update()
+    partner_profile = db.scalar(partner_stmt)
+    if partner_profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Partner profile not found.",
+        )
+
     partner = db.get(User, payload.partner_id)
     if partner is None or partner.role != "partner" or not partner.is_active:
         raise HTTPException(
@@ -785,6 +797,9 @@ def create_staff_order(
     new_order = Order(
         order_number=order_number,
         partner_id=payload.partner_id,
+        created_by_user_id=current_staff.id,
+        assigned_staff_id=current_staff.id,
+        staff_attribution_status="assigned",
         status="pending_approval",
         notes=full_notes,
     )

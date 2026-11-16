@@ -120,15 +120,16 @@ class AreaWiseReportResponse(BaseModel):
 
 
 class StaffWiseReportItem(BaseModel):
-    staff_user_id: int
-    staff_id: str
+    staff_user_id: Optional[int] = None
+    staff_id: Optional[str] = None
     name: str
-    mobile: str
+    mobile: Optional[str] = None
     assigned_partner_count: int = 0
     order_count: int = 0
     total_order_value: Decimal = Field(default_factory=lambda: Decimal("0.00"))
     payment_count: int = 0
     total_payments_collected: Decimal = Field(default_factory=lambda: Decimal("0.00"))
+    attribution_category: Optional[Literal["assigned", "unassigned", "historically_unattributed"]] = None
 
     model_config = ConfigDict(from_attributes=True)
 

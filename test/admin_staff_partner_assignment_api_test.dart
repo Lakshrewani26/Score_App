@@ -117,4 +117,77 @@ void main() {
     expect(reactivated.id, 31);
     expect(reactivated.isActive, isTrue);
   });
+
+  group('AdminStaffPartnerAssignment.fromJson', () {
+    test('parses valid deactivated_at timestamp', () {
+      final json = assignmentJson(isActive: false);
+      json['deactivated_at'] = '2025-05-21T14:30:00Z';
+      json['deactivated_by'] = 1;
+      json['deactivated_by_name'] = 'Super Admin';
+
+      final assignment = AdminStaffPartnerAssignment.fromJson(json);
+
+      expect(assignment.deactivatedAt, DateTime.utc(2025, 5, 21, 14, 30));
+      expect(assignment.deactivatedBy, 1);
+      expect(assignment.deactivatedByName, 'Super Admin');
+    });
+
+    test('preserves null deactivated_at when field is null or absent', () {
+      final jsonWithNull = assignmentJson(isActive: true);
+      jsonWithNull['deactivated_at'] = null;
+
+      final assignmentFromNull =
+          AdminStaffPartnerAssignment.fromJson(jsonWithNull);
+      expect(assignmentFromNull.deactivatedAt, isNull);
+
+      final jsonAbsent = assignmentJson(isActive: true);
+      jsonAbsent.remove('deactivated_at');
+
+      final assignmentFromAbsent =
+          AdminStaffPartnerAssignment.fromJson(jsonAbsent);
+      expect(assignmentFromAbsent.deactivatedAt, isNull);
+    });
+
+    test(
+        'throws FormatException when deactivated_at is malformed non-null string',
+        () {
+      final json = assignmentJson(isActive: false);
+      json['deactivated_at'] = 'not-a-valid-timestamp';
+
+      expect(
+        () => AdminStaffPartnerAssignment.fromJson(json),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test(
+        'throws FormatException when deactivated_at is non-null and not a string',
+        () {
+      final json = assignmentJson(isActive: false);
+      json['deactivated_at'] = 123456789;
+
+      expect(
+        () => AdminStaffPartnerAssignment.fromJson(json),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('preserves strict validation for assigned_at', () {
+      final jsonMissingAssignedAt = assignmentJson();
+      jsonMissingAssignedAt.remove('assigned_at');
+
+      expect(
+        () => AdminStaffPartnerAssignment.fromJson(jsonMissingAssignedAt),
+        throwsA(isA<FormatException>()),
+      );
+
+      final jsonInvalidAssignedAt = assignmentJson();
+      jsonInvalidAssignedAt['assigned_at'] = 'not-a-timestamp';
+
+      expect(
+        () => AdminStaffPartnerAssignment.fromJson(jsonInvalidAssignedAt),
+        throwsA(isA<FormatException>()),
+      );
+    });
+  });
 }

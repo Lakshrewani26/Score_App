@@ -361,5 +361,104 @@ void main() {
       expect(find.text('All catalogue products have valid prices configured.'),
           findsOneWidget);
     });
+
+    testWidgets('8. Staff Performance tab renders assigned, unassigned, and historical rows gracefully',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final staffWiseJson = {
+        'items': [
+          {
+            'staff_user_id': 10,
+            'staff_id': 'STF-01',
+            'name': 'Agent Smith',
+            'mobile': '9123456780',
+            'assigned_partner_count': 5,
+            'order_count': 8,
+            'total_order_value': '40000.00',
+            'payment_count': 2,
+            'total_payments_collected': '20000.00',
+            'attribution_category': 'assigned',
+          },
+          {
+            'staff_user_id': null,
+            'staff_id': null,
+            'name': 'Unassigned',
+            'mobile': null,
+            'assigned_partner_count': 0,
+            'order_count': 3,
+            'total_order_value': '15000.00',
+            'payment_count': 0,
+            'total_payments_collected': '0.00',
+            'attribution_category': 'unassigned',
+          },
+          {
+            'staff_user_id': null,
+            'staff_id': null,
+            'name': 'Historically Unattributed',
+            'mobile': null,
+            'assigned_partner_count': 0,
+            'order_count': 4,
+            'total_order_value': '20000.00',
+            'payment_count': 0,
+            'total_payments_collected': '0.00',
+            'attribution_category': 'historically_unattributed',
+          },
+        ],
+        'total_staff': 1,
+      };
+
+      final client = MockClient((request) async {
+        if (request.url.path == '/api/v1/admin/reports/overview') {
+          return http.Response(jsonEncode(sampleReportJson), 200);
+        }
+        if (request.url.path == '/api/v1/admin/reports/staff-wise') {
+          return http.Response(jsonEncode(staffWiseJson), 200);
+        }
+        return http.Response('Not found', 404);
+      });
+
+      final reportsApi = AdminReportsApi(client: client, baseUrl: 'http://test-server');
+      await tester.pumpWidget(buildTestWidget(reportsApi: reportsApi));
+      await tester.pumpAndSettle();
+
+      // Switch to Staff-wise tab
+      await tester.ensureVisible(find.byKey(const Key('report_tab_staff')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('report_tab_staff')));
+      await tester.pumpAndSettle();
+
+      // Verify header
+      expect(find.text('Staff Performance Report'), findsOneWidget);
+      expect(find.text('1 Staff Members registered in system'), findsOneWidget);
+
+      // Verify Assigned staff item
+      expect(find.text('Agent Smith'), findsOneWidget);
+      expect(find.text('ID: STF-01 | Mobile: 9123456780'), findsOneWidget);
+      expect(find.text('5 Partners'), findsOneWidget);
+      expect(find.text('8'), findsOneWidget);
+
+      // Verify Unassigned row
+      expect(find.text('Unassigned'), findsWidgets); // item name and badge
+      expect(find.text('Orders created without active staff assignment'), findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
+
+      // Verify Historically Unattributed row
+      await tester.scrollUntilVisible(
+        find.text('Historically Unattributed'),
+        100,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Historically Unattributed'), findsOneWidget);
+      expect(find.text('Historical orders without verified staff attribution'), findsOneWidget);
+      expect(find.text('Historical'), findsOneWidget);
+      expect(find.text('4'), findsOneWidget);
+
+      expect(tester.takeException(), isNull);
+    });
   });
 }

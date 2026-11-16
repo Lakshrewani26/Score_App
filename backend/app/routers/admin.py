@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal
 
@@ -54,17 +55,33 @@ from app.schemas.auth import (
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
+def _is_postgres(db: Session) -> bool:
+    try:
+        bind = getattr(db, "bind", None) or (db.get_bind() if hasattr(db, "get_bind") else None)
+        return bool(bind and getattr(bind.dialect, "name", "") == "postgresql")
+    except Exception:
+        return False
+
+
 def _assignment_response(
     assignment: StaffPartnerAssignment,
 ) -> StaffPartnerAssignmentResponse:
     staff_user = assignment.staff.user
     partner_user = assignment.partner.user
+    deactivator_name = (
+        assignment.deactivator.name
+        if getattr(assignment, "deactivator", None) is not None
+        else None
+    )
     return StaffPartnerAssignmentResponse(
         id=assignment.id,
         staff_id=assignment.staff_id,
         partner_id=assignment.partner_id,
         assigned_at=assignment.assigned_at,
         is_active=assignment.is_active,
+        deactivated_at=assignment.deactivated_at,
+        deactivated_by=assignment.deactivated_by,
+        deactivated_by_name=deactivator_name,
         staff=AssignmentUserResponse(
             id=staff_user.id,
             name=staff_user.name,
@@ -95,6 +112,7 @@ def _load_assignment(db: Session, assignment_id: int) -> StaffPartnerAssignment:
             selectinload(StaffPartnerAssignment.partner).selectinload(
                 PartnerProfile.user
             ),
+            selectinload(StaffPartnerAssignment.deactivator),
         )
         .where(StaffPartnerAssignment.id == assignment_id)
     )
@@ -230,6 +248,7 @@ def list_staff_partner_assignments(
             selectinload(StaffPartnerAssignment.partner).selectinload(
                 PartnerProfile.user
             ),
+            selectinload(StaffPartnerAssignment.deactivator),
         )
         .order_by(StaffPartnerAssignment.assigned_at.desc(), StaffPartnerAssignment.id.desc())
     )
@@ -249,112 +268,158 @@ def create_staff_partner_assignment(
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> StaffPartnerAssignmentResponse:
-    staff_profile = db.scalar(
-        select(StaffProfile)
-        .options(selectinload(StaffProfile.user))
-        .where(StaffProfile.user_id == payload.staff_id)
-    )
-    if staff_profile is None:
-        staff_user = db.get(User, payload.staff_id)
+    is_postgres = _is_postgres(db)
+
+    try:
+        # 1. Acquire row-level lock on selected Staff User row first (PostgreSQL)
+        staff_user_stmt = (
+            select(User)
+            .options(selectinload(User.staff_profile))
+            .where(User.id == payload.staff_id)
+        )
+        if is_postgres:
+            staff_user_stmt = staff_user_stmt.with_for_update()
+        staff_user = db.scalar(staff_user_stmt)
+
+        # 2. Immediately check whether the Staff user exists.
+        # If missing, return the existing 404 response without acquiring the Partner lock.
         if staff_user is None:
             raise HTTPException(status_code=404, detail="Staff member not found")
+
+        # 3. Acquire row-level lock on selected Partner PartnerProfile row second (PostgreSQL)
+        partner_stmt = (
+            select(PartnerProfile)
+            .options(selectinload(PartnerProfile.user))
+            .where(PartnerProfile.user_id == payload.partner_id)
+        )
+        if is_postgres:
+            partner_stmt = partner_stmt.with_for_update()
+        partner_profile = db.scalar(partner_stmt)
+
+        # 4. Revalidate Staff role, profile existence, and active status after required locks
         if staff_user.role != "staff":
             raise HTTPException(
                 status_code=422,
-                detail="Selected user does not have a Staff profile",
+                detail="Selected user does not have a Staff profile"
+                if staff_user.staff_profile is None
+                else "Selected user does not have the Staff role",
             )
-        raise HTTPException(
-            status_code=422,
-            detail="Selected Staff account is missing its Staff profile",
-        )
-    if staff_profile.user.role != "staff":
-        raise HTTPException(
-            status_code=422,
-            detail="Selected user does not have the Staff role",
-        )
-    if not staff_profile.user.is_active:
-        raise HTTPException(
-            status_code=422,
-            detail="Selected Staff account is inactive",
-        )
-
-    partner_profile = db.scalar(
-        select(PartnerProfile)
-        .options(selectinload(PartnerProfile.user))
-        .where(PartnerProfile.user_id == payload.partner_id)
-    )
-    if partner_profile is None:
-        partner_user = db.get(User, payload.partner_id)
-        if partner_user is None:
-            raise HTTPException(status_code=404, detail="Partner not found")
-        if partner_user.role != "partner":
+        if staff_user.staff_profile is None:
             raise HTTPException(
                 status_code=422,
-                detail="Selected user does not have a Partner profile",
+                detail="Selected Staff account is missing its Staff profile",
             )
-        raise HTTPException(
-            status_code=422,
-            detail="Selected Partner account is missing its Partner profile",
-        )
-    if partner_profile.user.role != "partner":
-        raise HTTPException(
-            status_code=422,
-            detail="Selected user does not have the Partner role",
-        )
-    if not partner_profile.user.is_active:
-        raise HTTPException(
-            status_code=422,
-            detail="Selected Partner account is inactive",
-        )
+        if not staff_user.is_active:
+            raise HTTPException(
+                status_code=422,
+                detail="Selected Staff account is inactive",
+            )
 
-    existing = db.scalar(
-        select(StaffPartnerAssignment.id).where(
-            StaffPartnerAssignment.staff_id == payload.staff_id,
-            StaffPartnerAssignment.partner_id == payload.partner_id,
-            StaffPartnerAssignment.is_active.is_(True),
-        )
-    )
-    if existing is not None:
-        raise HTTPException(
-            status_code=409,
-            detail="This Partner is already assigned to this Staff member",
-        )
+        # 5. Revalidate Partner existence, role, profile, and active status
+        if partner_profile is None:
+            partner_user = db.get(User, payload.partner_id)
+            if partner_user is None:
+                raise HTTPException(status_code=404, detail="Partner not found")
+            if partner_user.role != "partner":
+                raise HTTPException(
+                    status_code=422,
+                    detail="Selected user does not have a Partner profile",
+                )
+            raise HTTPException(
+                status_code=422,
+                detail="Selected Partner account is missing its Partner profile",
+            )
+        if partner_profile.user.role != "partner":
+            raise HTTPException(
+                status_code=422,
+                detail="Selected user does not have the Partner role",
+            )
+        if not partner_profile.user.is_active:
+            raise HTTPException(
+                status_code=422,
+                detail="Selected Partner account is inactive",
+            )
 
-    assignment = StaffPartnerAssignment(
-        staff=staff_profile,
-        partner=partner_profile,
-        is_active=True,
-    )
-    db.add(assignment)
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        constraint_name = getattr(
-            getattr(exc.orig, "diag", None),
-            "constraint_name",
-            None,
+        staff_profile = staff_user.staff_profile
+
+        # Check whether the exact same Staff-Partner assignment is already active
+        existing_same = db.scalar(
+            select(StaffPartnerAssignment.id).where(
+                StaffPartnerAssignment.staff_id == payload.staff_id,
+                StaffPartnerAssignment.partner_id == payload.partner_id,
+                StaffPartnerAssignment.is_active.is_(True),
+            )
         )
-        orig_msg = str(getattr(exc, "orig", exc))
-        is_postgres_unique = constraint_name == "uq_staff_partner_assignments_active_pair"
-        is_sqlite_unique = (
-            "UNIQUE constraint failed: staff_partner_assignments.staff_id, staff_partner_assignments.partner_id" in orig_msg
-            or "uq_staff_partner_assignments_active_pair" in orig_msg
-        )
-        if is_postgres_unique or is_sqlite_unique:
+        if existing_same is not None:
             raise HTTPException(
                 status_code=409,
                 detail="This Partner is already assigned to this Staff member",
-            ) from exc
-        raise
+            )
 
-    fresh_assignment = _load_assignment(db, assignment.id)
-    return _assignment_response(fresh_assignment)
+        now_utc = datetime.now(timezone.utc)
+
+        # If a different Staff assignment is active for this Partner, deactivate it atomically
+        other_active_assignments = db.scalars(
+            select(StaffPartnerAssignment).where(
+                StaffPartnerAssignment.partner_id == payload.partner_id,
+                StaffPartnerAssignment.is_active.is_(True),
+            )
+        ).all()
+        for other in other_active_assignments:
+            other.is_active = False
+            other.deactivated_at = now_utc
+            other.deactivated_by = current_admin.id
+
+        # Create new assignment record representing this new assignment period
+        assignment = StaffPartnerAssignment(
+            staff=staff_profile,
+            partner=partner_profile,
+            is_active=True,
+            assigned_at=now_utc,
+        )
+        db.add(assignment)
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            constraint_name = getattr(
+                getattr(exc.orig, "diag", None),
+                "constraint_name",
+                None,
+            )
+            orig_msg = str(getattr(exc, "orig", exc))
+            is_postgres_unique = constraint_name in (
+                "uq_staff_partner_assignments_active_partner",
+                "uq_staff_partner_assignments_active_pair",
+            )
+            is_sqlite_unique = (
+                "UNIQUE constraint failed: staff_partner_assignments.partner_id" in orig_msg
+                or "uq_staff_partner_assignments_active_partner" in orig_msg
+                or "UNIQUE constraint failed: staff_partner_assignments.staff_id, staff_partner_assignments.partner_id" in orig_msg
+                or "uq_staff_partner_assignments_active_pair" in orig_msg
+            )
+            if is_postgres_unique or is_sqlite_unique:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This Partner is already assigned to this Staff member",
+                ) from exc
+            raise
+
+        fresh_assignment = _load_assignment(db, assignment.id)
+        return _assignment_response(fresh_assignment)
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
 
 
 def _update_assignment_status_internal(
     assignment_id: int,
     target_active: bool,
+    current_admin_id: int,
     db: Session,
 ) -> StaffPartnerAssignmentResponse:
     assignment = db.scalar(
@@ -366,50 +431,29 @@ def _update_assignment_status_internal(
             detail="Staff-Partner assignment not found",
         )
 
-    # Handle repeated requests safely and consistently (Idempotent)
-    if assignment.is_active == target_active:
+    # Reactivation rule (Phase 4.C):
+    # Once deactivated, an assignment must never be reactivated.
+    # Reassignment creates a new assignment period through assignment creation.
+    if target_active:
+        if not assignment.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Inactive assignments cannot be reactivated. Reassignment creates a new assignment period.",
+            )
+        # Already active: idempotent return
         fresh_assignment = _load_assignment(db, assignment.id)
         return _assignment_response(fresh_assignment)
 
-    # If reactivating, check whether another active assignment already exists
-    # for the same Staff-Partner pair.
-    if target_active:
-        conflicting = db.scalar(
-            select(StaffPartnerAssignment.id).where(
-                StaffPartnerAssignment.staff_id == assignment.staff_id,
-                StaffPartnerAssignment.partner_id == assignment.partner_id,
-                StaffPartnerAssignment.is_active.is_(True),
-                StaffPartnerAssignment.id != assignment.id,
-            )
-        )
-        if conflicting is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="An active assignment already exists for this Staff-Partner pair",
-            )
+    # Deactivation rule (Phase 4.B):
+    # If already inactive, repeated deactivation must not overwrite original metadata.
+    if not assignment.is_active:
+        fresh_assignment = _load_assignment(db, assignment.id)
+        return _assignment_response(fresh_assignment)
 
-    assignment.is_active = target_active
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        constraint_name = getattr(
-            getattr(exc.orig, "diag", None),
-            "constraint_name",
-            None,
-        )
-        orig_msg = str(getattr(exc, "orig", exc))
-        is_postgres_unique = constraint_name == "uq_staff_partner_assignments_active_pair"
-        is_sqlite_unique = (
-            "UNIQUE constraint failed: staff_partner_assignments.staff_id, staff_partner_assignments.partner_id" in orig_msg
-            or "uq_staff_partner_assignments_active_pair" in orig_msg
-        )
-        if is_postgres_unique or is_sqlite_unique:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="An active assignment already exists for this Staff-Partner pair",
-            ) from exc
-        raise
+    assignment.is_active = False
+    assignment.deactivated_at = datetime.now(timezone.utc)
+    assignment.deactivated_by = current_admin_id
+    db.commit()
 
     fresh_assignment = _load_assignment(db, assignment.id)
     return _assignment_response(fresh_assignment)
@@ -431,6 +475,7 @@ def update_staff_partner_assignment_status(
     return _update_assignment_status_internal(
         assignment_id=assignment_id,
         target_active=payload.is_active,
+        current_admin_id=current_admin.id,
         db=db,
     )
 
@@ -755,6 +800,8 @@ def update_user_status(
             detail="Cannot deactivate your own admin account",
         )
 
+    is_postgres = _is_postgres(db)
+
     # Protect against deactivation of the last active Admin
     if target_user.role == "admin" and not payload.is_active and target_user.is_active:
         # Documented locking mechanism:
@@ -763,13 +810,6 @@ def update_user_status(
         # An explicit ORDER BY User.id ensures deterministic row-lock acquisition to prevent deadlocks.
         # SQLite does not support row-level SELECT ... FOR UPDATE; however, SQLite serializes
         # all write transactions at the database connection level.
-        is_postgres = False
-        try:
-            bind = getattr(db, "bind", None) or (db.get_bind() if hasattr(db, "get_bind") else None)
-            is_postgres = bool(bind and bind.dialect.name == "postgresql")
-        except Exception:
-            is_postgres = False
-
         if is_postgres:
             active_admin_ids = db.scalars(
                 select(User.id)
@@ -793,6 +833,40 @@ def update_user_status(
             )
 
     try:
+        # Phase 4.D & Concurrency: Staff deactivation / status change
+        if target_user.role == "staff":
+            if is_postgres:
+                locked_staff = db.scalar(
+                    select(User)
+                    .options(
+                        selectinload(User.partner_profile),
+                        selectinload(User.staff_profile),
+                        selectinload(User.customer_profile),
+                    )
+                    .where(User.id == target_user.id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+                if locked_staff is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="User not found",
+                    )
+                target_user = locked_staff
+
+            if not payload.is_active and target_user.is_active:
+                now_utc = datetime.now(timezone.utc)
+                active_assignments = db.scalars(
+                    select(StaffPartnerAssignment).where(
+                        StaffPartnerAssignment.staff_id == target_user.id,
+                        StaffPartnerAssignment.is_active.is_(True),
+                    )
+                ).all()
+                for asgn in active_assignments:
+                    asgn.is_active = False
+                    asgn.deactivated_at = now_utc
+                    asgn.deactivated_by = current_admin.id
+
         target_user.is_active = payload.is_active
         db.commit()
         db.refresh(target_user)
@@ -979,6 +1053,8 @@ def delete_user(
             detail="Cannot delete your own admin account",
         )
 
+    is_postgres = _is_postgres(db)
+
     if target_user.role == "admin" and target_user.is_active:
         # Documented locking mechanism:
         # In PostgreSQL, we lock active admin rows with FOR UPDATE to prevent race conditions
@@ -986,13 +1062,6 @@ def delete_user(
         # An explicit ORDER BY User.id ensures deterministic row-lock acquisition to prevent deadlocks.
         # SQLite does not support row-level SELECT ... FOR UPDATE; however, SQLite serializes
         # all write transactions at the database connection level.
-        is_postgres = False
-        try:
-            bind = getattr(db, "bind", None) or (db.get_bind() if hasattr(db, "get_bind") else None)
-            is_postgres = bool(bind and bind.dialect.name == "postgresql")
-        except Exception:
-            is_postgres = False
-
         if is_postgres:
             active_admin_ids = db.scalars(
                 select(User.id)
@@ -1014,9 +1083,35 @@ def delete_user(
             )
 
     try:
-        # Check for historical references across models
+        # Step 2 & 3: For a Staff account on PostgreSQL, acquire the Staff User row lock
+        # and re-read the target account while holding the lock.
+        if target_user.role == "staff" and is_postgres:
+            locked_staff = db.scalar(
+                select(User)
+                .options(
+                    selectinload(User.partner_profile),
+                    selectinload(User.staff_profile),
+                    selectinload(User.customer_profile),
+                )
+                .where(User.id == target_user.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if locked_staff is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+            target_user = locked_staff
+
+        # Step 4: Evaluate all historical-reference checks while holding the lock
         has_orders = db.scalar(
-            select(Order.id).where((Order.partner_id == user_id) | (Order.approved_by == user_id)).limit(1)
+            select(Order.id).where(
+                (Order.partner_id == user_id)
+                | (Order.approved_by == user_id)
+                | (Order.assigned_staff_id == user_id)
+                | (Order.created_by_user_id == user_id)
+            ).limit(1)
         ) is not None
         has_order_history = db.scalar(
             select(OrderStatusHistory.id).where(OrderStatusHistory.changed_by == user_id).limit(1)
@@ -1029,7 +1124,9 @@ def delete_user(
         ) is not None
         has_assignments = db.scalar(
             select(StaffPartnerAssignment.id).where(
-                (StaffPartnerAssignment.staff_id == user_id) | (StaffPartnerAssignment.partner_id == user_id)
+                (StaffPartnerAssignment.staff_id == user_id)
+                | (StaffPartnerAssignment.partner_id == user_id)
+                | (StaffPartnerAssignment.deactivated_by == user_id)
             ).limit(1)
         ) is not None
         has_payments = db.scalar(
@@ -1077,7 +1174,23 @@ def delete_user(
             has_points_rules,
         ])
 
+        # Step 5: Decide between hard deletion and soft deactivation only after those checks
         if has_history:
+            # Step 6: If soft-deactivating, close every active StaffPartnerAssignment
+            if target_user.role == "staff" and target_user.is_active:
+                now_utc = datetime.now(timezone.utc)
+                active_assignments = db.scalars(
+                    select(StaffPartnerAssignment).where(
+                        StaffPartnerAssignment.staff_id == target_user.id,
+                        StaffPartnerAssignment.is_active.is_(True),
+                    )
+                ).all()
+                for asgn in active_assignments:
+                    asgn.is_active = False
+                    asgn.deactivated_at = now_utc
+                    asgn.deactivated_by = current_admin.id
+
+            # Step 7: Set the Staff account inactive and commit atomically
             target_user.is_active = False
             db.commit()
             return AdminUserDeleteResponse(

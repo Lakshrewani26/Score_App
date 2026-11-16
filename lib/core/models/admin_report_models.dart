@@ -318,39 +318,42 @@ class AreaWiseReportResponse {
 }
 
 class StaffWiseReportItem {
-  final int staffUserId;
-  final String staffId;
+  final int? staffUserId;
+  final String? staffId;
   final String name;
-  final String mobile;
+  final String? mobile;
   final int assignedPartnerCount;
   final int orderCount;
   final num totalOrderValue;
   final int paymentCount;
   final num totalPaymentsCollected;
+  final String? attributionCategory;
 
   const StaffWiseReportItem({
-    required this.staffUserId,
-    required this.staffId,
+    this.staffUserId,
+    this.staffId,
     required this.name,
-    required this.mobile,
+    this.mobile,
     this.assignedPartnerCount = 0,
     this.orderCount = 0,
     this.totalOrderValue = 0,
     this.paymentCount = 0,
     this.totalPaymentsCollected = 0,
+    this.attributionCategory,
   });
 
   factory StaffWiseReportItem.fromJson(Map<String, dynamic> json) {
     return StaffWiseReportItem(
-      staffUserId: (json['staff_user_id'] as num?)?.toInt() ?? 0,
-      staffId: json['staff_id'] as String? ?? '',
+      staffUserId: (json['staff_user_id'] as num?)?.toInt(),
+      staffId: json['staff_id'] as String?,
       name: json['name'] as String? ?? '',
-      mobile: json['mobile'] as String? ?? '',
+      mobile: json['mobile'] as String?,
       assignedPartnerCount: (json['assigned_partner_count'] as num?)?.toInt() ?? 0,
       orderCount: (json['order_count'] as num?)?.toInt() ?? 0,
       totalOrderValue: num.tryParse(json['total_order_value']?.toString() ?? '0') ?? 0,
       paymentCount: (json['payment_count'] as num?)?.toInt() ?? 0,
       totalPaymentsCollected: num.tryParse(json['total_payments_collected']?.toString() ?? '0') ?? 0,
+      attributionCategory: json['attribution_category'] as String?,
     );
   }
 }

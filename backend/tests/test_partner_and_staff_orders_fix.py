@@ -668,3 +668,40 @@ def test_staff_cannot_create_order_for_unassigned_partner(
     )
     assert res.status_code == 403
     assert "Access denied: You are not assigned to this partner's account." in res.json()["detail"]
+
+
+def test_staff_order_creation_fails_when_partner_profile_missing(
+    client: TestClient, db_session: Session
+) -> None:
+    staff, staff_token = _create_staff(db_session, name="Staff Assignee", mobile="9824444441", staff_code="STF-20")
+    # Create partner user WITHOUT PartnerProfile
+    partner_user = _create_user(db_session, name="Profileless Partner", mobile="9824444442", role="partner")
+    # Create active assignment
+    assignment = StaffPartnerAssignment(staff_id=staff.id, partner_id=partner_user.id, is_active=True)
+    db_session.add(assignment)
+
+    cat = ProductCategory(name="Filters", is_active=True)
+    db_session.add(cat)
+    db_session.flush()
+    prod = Product(
+        name="Oil Filter",
+        product_code="STAFF-ORD-03",
+        category_id=cat.id,
+        vehicle_type="Both",
+        price=Decimal("300.00"),
+        is_active=True,
+    )
+    db_session.add(prod)
+    db_session.commit()
+
+    payload = {
+        "partner_id": partner_user.id,
+        "items": [{"product_id": prod.id, "quantity": 1}],
+    }
+    res = client.post(
+        "/api/v1/staff/orders",
+        headers={"Authorization": f"Bearer {staff_token}"},
+        json=payload,
+    )
+    assert res.status_code == 404
+    assert res.json()["detail"] == "Partner profile not found."

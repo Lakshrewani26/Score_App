@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -503,6 +503,8 @@ def test_detailed_reports(enhancement_db_engine, client):
         order = Order(
             order_number="ORD-REPORT-001",
             partner_id=p_user.id,
+            assigned_staff_id=s_user.id,
+            staff_attribution_status="assigned",
             status="delivered",
             created_at=datetime.now(timezone.utc),
         )
@@ -572,3 +574,572 @@ def test_detailed_reports(enhancement_db_engine, client):
     assert ptn["order_count"] == 1
     assert Decimal(str(ptn["total_order_value"])) == Decimal("3600.00")
     assert Decimal(str(ptn["total_payments_made"])) == Decimal("3600.00")
+
+
+# =============================================================================
+# 8. Historical Attribution Deletion Safety & Assignment Metadata Tests
+# =============================================================================
+
+def test_staff_deletion_with_assigned_staff_id_soft_deactivates(enhancement_db_engine, client):
+    """
+    Prove that a Staff account referenced by Order.assigned_staff_id
+    is soft-deactivated rather than hard-deleted.
+    """
+    _seed_admin(enhancement_db_engine)
+    headers = {"Authorization": f"Bearer {_admin_token()}"}
+
+    # 1. Create Staff
+    st_res = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "Attributed Staff", "mobile": "9811100001", "password": "pass", "staff_id": "STF-ATTR-1"},
+    )
+    assert st_res.status_code == 201
+    staff_id = st_res.json()["id"]
+
+    # 2. Create Partner
+    p_res = client.post(
+        "/api/v1/admin/users/partners",
+        headers=headers,
+        json={"name": "Attributed Partner", "mobile": "9811100002", "password": "pass", "business_name": "Partner A", "business_address": "123 Test St"},
+    )
+    assert p_res.status_code == 201
+    partner_id = p_res.json()["id"]
+
+    # 3. Create an Order directly referencing assigned_staff_id, but NO assignment or order history rows
+    with Session(enhancement_db_engine) as session:
+        order = Order(
+            order_number="ORD-ATTR-001",
+            partner_id=partner_id,
+            created_by_user_id=partner_id,
+            assigned_staff_id=staff_id,
+            staff_attribution_status="assigned",
+            status="pending_approval",
+        )
+        session.add(order)
+        session.commit()
+        order_id = order.id
+
+    # 4. Attempt to delete the Staff user
+    del_res = client.delete(f"/api/v1/admin/users/{staff_id}", headers=headers)
+    assert del_res.status_code == 200
+    data = del_res.json()
+    assert data["action"] == "deactivated"
+    assert data["user_id"] == staff_id
+
+    # 5. Verify Staff user still exists in DB as inactive
+    with Session(enhancement_db_engine) as session:
+        staff_user = session.get(User, staff_id)
+        assert staff_user is not None
+        assert staff_user.is_active is False
+
+        # Verify order attribution remains intact
+        reloaded_order = session.get(Order, order_id)
+        assert reloaded_order is not None
+        assert reloaded_order.assigned_staff_id == staff_id
+        assert reloaded_order.staff_attribution_status == "assigned"
+
+
+def test_staff_deletion_with_created_by_user_id_only_soft_deactivates(enhancement_db_engine, client):
+    """
+    Prove that a Staff account referenced only by Order.created_by_user_id
+    is soft-deactivated and its creator attribution remains intact.
+    """
+    _seed_admin(enhancement_db_engine)
+    headers = {"Authorization": f"Bearer {_admin_token()}"}
+
+    # 1. Create Staff
+    st_res = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "Creator Staff", "mobile": "9811100003", "password": "pass", "staff_id": "STF-CREAT-1"},
+    )
+    assert st_res.status_code == 201
+    staff_id = st_res.json()["id"]
+
+    # 2. Create Partner
+    p_res = client.post(
+        "/api/v1/admin/users/partners",
+        headers=headers,
+        json={"name": "Creator Partner", "mobile": "9811100004", "password": "pass", "business_name": "Partner B", "business_address": "123 Test St"},
+    )
+    assert p_res.status_code == 201
+    partner_id = p_res.json()["id"]
+
+    # 3. Create an Order directly referencing created_by_user_id only, with assigned_staff_id=None
+    with Session(enhancement_db_engine) as session:
+        order = Order(
+            order_number="ORD-CREAT-001",
+            partner_id=partner_id,
+            created_by_user_id=staff_id,
+            assigned_staff_id=None,
+            staff_attribution_status="historically_unattributed",
+            status="pending_approval",
+        )
+        session.add(order)
+        session.commit()
+        order_id = order.id
+
+    # 4. Attempt to delete the creator Staff user
+    del_res = client.delete(f"/api/v1/admin/users/{staff_id}", headers=headers)
+    assert del_res.status_code == 200
+    data = del_res.json()
+    assert data["action"] == "deactivated"
+    assert data["user_id"] == staff_id
+
+    # 5. Verify creator Staff user still exists in DB as inactive and creator attribution remains intact
+    with Session(enhancement_db_engine) as session:
+        staff_user = session.get(User, staff_id)
+        assert staff_user is not None
+        assert staff_user.is_active is False
+
+        reloaded_order = session.get(Order, order_id)
+        assert reloaded_order is not None
+        assert reloaded_order.created_by_user_id == staff_id
+
+
+def test_admin_deletion_with_assignment_deactivated_by_soft_deactivates(enhancement_db_engine, client):
+    """
+    Prove that an Admin account referenced by StaffPartnerAssignment.deactivated_by
+    is soft-deactivated and not hard-deleted.
+    """
+    _seed_admin(enhancement_db_engine)
+    headers = {"Authorization": f"Bearer {_admin_token()}"}
+
+    # 1. Create a second Admin user directly in DB
+    with Session(enhancement_db_engine) as session:
+        admin2 = User(
+            name="Deactivating Admin",
+            mobile="9811100005",
+            password_hash=hash_password("admin2_pw"),
+            role="admin",
+            is_active=True,
+        )
+        session.add(admin2)
+        session.commit()
+        admin2_id = admin2.id
+
+    # 2. Create Staff and Partner
+    st_res = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "Assigned Staff", "mobile": "9811100006", "password": "pass", "staff_id": "STF-DEACT-1"},
+    )
+    staff_id = st_res.json()["id"]
+
+    p_res = client.post(
+        "/api/v1/admin/users/partners",
+        headers=headers,
+        json={"name": "Assigned Partner", "mobile": "9811100007", "password": "pass", "business_name": "Partner C", "business_address": "123 Test St"},
+    )
+    partner_id = p_res.json()["id"]
+
+    # 3. Create an inactive assignment directly with deactivated_by = admin2_id
+    with Session(enhancement_db_engine) as session:
+        assignment = StaffPartnerAssignment(
+            staff_id=staff_id,
+            partner_id=partner_id,
+            is_active=False,
+            deactivated_at=datetime.now(timezone.utc),
+            deactivated_by=admin2_id,
+        )
+        session.add(assignment)
+        session.commit()
+        asgn_id = assignment.id
+
+    # 4. Super Admin deletes Admin 2
+    del_res = client.delete(f"/api/v1/admin/users/{admin2_id}", headers=headers)
+    assert del_res.status_code == 200
+    data = del_res.json()
+    assert data["action"] == "deactivated"
+    assert data["user_id"] == admin2_id
+
+    # 5. Verify Admin 2 still exists and is deactivated, assignment metadata intact
+    with Session(enhancement_db_engine) as session:
+        reloaded_admin2 = session.get(User, admin2_id)
+        assert reloaded_admin2 is not None
+        assert reloaded_admin2.is_active is False
+
+        reloaded_asgn = session.get(StaffPartnerAssignment, asgn_id)
+        assert reloaded_asgn is not None
+        assert reloaded_asgn.deactivated_by == admin2_id
+
+
+def test_clean_account_deletion_hard_deletes(enhancement_db_engine, client):
+    """
+    Prove that an account with no historical references is hard-deleted.
+    """
+    _seed_admin(enhancement_db_engine)
+    headers = {"Authorization": f"Bearer {_admin_token()}"}
+
+    st_res = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "Unreferenced Staff", "mobile": "9811100008", "password": "pass", "staff_id": "STF-CLEAN-1"},
+    )
+    assert st_res.status_code == 201
+    staff_id = st_res.json()["id"]
+
+    del_res = client.delete(f"/api/v1/admin/users/{staff_id}", headers=headers)
+    assert del_res.status_code == 200
+    data = del_res.json()
+    assert data["action"] == "deleted"
+    assert data["user_id"] == staff_id
+
+    with Session(enhancement_db_engine) as session:
+        assert session.get(User, staff_id) is None
+
+
+def test_staff_deactivation_closes_active_assignments_and_reactivation_safe(enhancement_db_engine, client):
+    """
+    Prove that deactivating a Staff account closes all active assignments with metadata,
+    and reactivating the Staff account does not reactivate old assignments.
+    """
+    _seed_admin(enhancement_db_engine)
+    headers = {"Authorization": f"Bearer {_admin_token()}"}
+
+    st_res = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "Active Staff", "mobile": "9811100009", "password": "pass", "staff_id": "STF-LIFECYCLE-1"},
+    )
+    staff_id = st_res.json()["id"]
+
+    p_res = client.post(
+        "/api/v1/admin/users/partners",
+        headers=headers,
+        json={"name": "Partner D", "mobile": "9811100010", "password": "pass", "business_name": "Partner D", "business_address": "123 Test St"},
+    )
+    partner_id = p_res.json()["id"]
+
+    # Assign
+    asgn_res = client.post(
+        "/api/v1/admin/staff-partner-assignments",
+        headers=headers,
+        json={"staff_id": staff_id, "partner_id": partner_id},
+    )
+    assert asgn_res.status_code == 201
+    asgn_id = asgn_res.json()["id"]
+
+    # Deactivate Staff via status endpoint
+    deact_res = client.post(
+        f"/api/v1/admin/users/{staff_id}/status",
+        headers=headers,
+        json={"is_active": False},
+    )
+    assert deact_res.status_code == 200
+    assert deact_res.json()["is_active"] is False
+
+    # Check assignment was automatically deactivated with deactivation metadata
+    with Session(enhancement_db_engine) as session:
+        asgn = session.get(StaffPartnerAssignment, asgn_id)
+        assert asgn is not None
+        assert asgn.is_active is False
+        assert asgn.deactivated_at is not None
+        assert asgn.deactivated_by == 1  # Super Admin ID
+
+    # Verify assignment list endpoint returns deactivated_by_name
+    list_res = client.get("/api/v1/admin/staff-partner-assignments?is_active=false", headers=headers)
+    assert list_res.status_code == 200
+    assignments = list_res.json()
+    matching = next((a for a in assignments if a["id"] == asgn_id), None)
+    assert matching is not None
+    assert matching["is_active"] is False
+    assert matching["deactivated_by"] == 1
+    assert matching["deactivated_by_name"] == "Super Admin"
+
+    # Reactivate Staff
+    react_res = client.post(
+        f"/api/v1/admin/users/{staff_id}/status",
+        headers=headers,
+        json={"is_active": True},
+    )
+    assert react_res.status_code == 200
+    assert react_res.json()["is_active"] is True
+
+    # Assignment must REMAIN inactive
+    with Session(enhancement_db_engine) as session:
+        asgn_after = session.get(StaffPartnerAssignment, asgn_id)
+        assert asgn_after.is_active is False
+
+
+def test_staff_soft_deletion_closes_active_assignments(enhancement_db_engine, client):
+    """
+    Prove that soft deleting a Staff account that has historical references (orders)
+    deactivates the account and atomically closes all its active partner assignments.
+    """
+    _seed_admin(enhancement_db_engine)
+    headers = {"Authorization": f"Bearer {_admin_token()}"}
+
+    # 1. Create Staff
+    st_res = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "Staff SoftDel", "mobile": "9811100088", "password": "pass", "staff_id": "STF-SD-01"},
+    )
+    assert st_res.status_code == 201
+    staff_id = st_res.json()["id"]
+
+    # 2. Create Partner
+    p_res = client.post(
+        "/api/v1/admin/users/partners",
+        headers=headers,
+        json={"name": "Partner SoftDel", "mobile": "9811100089", "password": "pass", "business_name": "Partner SoftDel", "business_address": "123 Test St"},
+    )
+    assert p_res.status_code == 201
+    partner_id = p_res.json()["id"]
+
+    # 3. Create active assignment
+    asgn_res = client.post(
+        "/api/v1/admin/staff-partner-assignments",
+        headers=headers,
+        json={"staff_id": staff_id, "partner_id": partner_id},
+    )
+    assert asgn_res.status_code == 201
+    asgn_id = asgn_res.json()["id"]
+
+    # 4. Create an Order with historical attribution to staff to force soft-deletion path
+    with Session(enhancement_db_engine) as session:
+        order = Order(
+            order_number="ORD-SD-001",
+            partner_id=partner_id,
+            created_by_user_id=partner_id,
+            assigned_staff_id=staff_id,
+            staff_attribution_status="assigned",
+            status="pending_approval",
+        )
+        session.add(order)
+        session.commit()
+
+    # 5. Soft delete staff
+    res_del = client.delete(f"/api/v1/admin/users/{staff_id}", headers=headers)
+    assert res_del.status_code == 200
+    assert res_del.json()["action"] == "deactivated"
+
+    # 6. Confirm staff is deactivated and assignment is closed in DB
+    with Session(enhancement_db_engine) as session:
+        staff_user = session.get(User, staff_id)
+        assert staff_user is not None
+        assert staff_user.is_active is False
+
+        asgn = session.get(StaffPartnerAssignment, asgn_id)
+        assert asgn is not None
+        assert asgn.is_active is False
+        assert asgn.deactivated_at is not None
+        assert asgn.deactivated_by == 1  # Super Admin ID
+
+
+def test_staff_deletion_evaluates_history_while_holding_lock_on_postgres(
+    enhancement_db_engine,
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Mocked lock-order test: Verifies that on PostgreSQL, Staff User row lock
+    (SELECT ... FOR UPDATE) is acquired before any historical-reference checks are evaluated.
+    """
+    _seed_admin(enhancement_db_engine)
+    headers = {"Authorization": f"Bearer {_admin_token()}"}
+
+    st_res = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "LockOrder Staff", "mobile": "9811100095", "password": "pass", "staff_id": "STF-LOCK-01"},
+    )
+    assert st_res.status_code == 201
+    staff_id = st_res.json()["id"]
+
+    # Force _is_postgres to True
+    from app.routers import admin as admin_router
+    monkeypatch.setattr(admin_router, "_is_postgres", lambda db: True)
+
+    executed_queries: list[dict] = []
+    original_scalar = Session.scalar
+
+    def tracking_scalar(self, statement, *args, **kwargs):
+        is_for_update = getattr(statement, "_for_update_arg", None) is not None
+        stmt_str = str(statement)
+        executed_queries.append({
+            "stmt": stmt_str,
+            "for_update": is_for_update,
+        })
+        return original_scalar(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "scalar", tracking_scalar)
+
+    del_res = client.delete(f"/api/v1/admin/users/{staff_id}", headers=headers)
+    assert del_res.status_code == 200
+
+    # Verify that the very first query inside delete_user's try-block is User with FOR UPDATE
+    assert len(executed_queries) > 0
+    first_query = executed_queries[0]
+    assert first_query["for_update"] is True
+    assert "users" in first_query["stmt"].lower()
+
+    # Verify subsequent queries (orders, stock_requests, assignments, etc.) occur AFTER the lock
+    subsequent_stmts = [q["stmt"].lower() for q in executed_queries[1:]]
+    assert any("orders" in s for s in subsequent_stmts)
+
+
+def test_staff_status_update_refreshes_already_loaded_staff_under_lock_on_postgres(
+    enhancement_db_engine,
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Mocked lock test: Verifies that update_user_status on PostgreSQL executes the
+    Staff User row lock with execution_options(populate_existing=True) and refreshes
+    an already-loaded Staff User object's in-memory attributes when the database state changes.
+    """
+    _seed_admin(enhancement_db_engine)
+    headers = {"Authorization": f"Bearer {_admin_token()}"}
+
+    st_res = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "Initial Staff Name", "mobile": "9811100096", "password": "pass", "staff_id": "STF-POP-01"},
+    )
+    assert st_res.status_code == 201
+    staff_id = st_res.json()["id"]
+
+    from app.routers import admin as admin_router
+    monkeypatch.setattr(admin_router, "_is_postgres", lambda db: True)
+
+    original_scalar = Session.scalar
+    captured_options: list[dict] = []
+
+    def mutating_scalar(self, statement, *args, **kwargs):
+        is_for_update = getattr(statement, "_for_update_arg", None) is not None
+        if is_for_update and "users" in str(statement).lower():
+            captured_options.append(dict(getattr(statement, "_execution_options", {})))
+            # Mutate database row out-of-band before executing lock query
+            self.connection().execute(
+                text("UPDATE users SET name = :new_name WHERE id = :user_id"),
+                {"new_name": "Refreshed Status Staff", "user_id": staff_id},
+            )
+        return original_scalar(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "scalar", mutating_scalar)
+
+    # Call update_user_status
+    patch_res = client.post(
+        f"/api/v1/admin/users/{staff_id}/status",
+        headers=headers,
+        json={"is_active": False},
+    )
+    assert patch_res.status_code == 200
+    res_data = patch_res.json()
+    assert res_data["is_active"] is False
+    # Verify populate_existing was set on the locked statement
+    assert len(captured_options) == 1
+    assert captured_options[0].get("populate_existing") is True
+    # Verify that the returned AdminUserSummary reflects the refreshed name from the database
+    assert res_data["name"] == "Refreshed Status Staff"
+
+
+def test_staff_deletion_refreshes_already_loaded_staff_under_lock_on_postgres(
+    enhancement_db_engine,
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Mocked lock test: Verifies that delete_user on PostgreSQL executes the Staff User
+    row lock with execution_options(populate_existing=True) and refreshes an already-loaded
+    Staff User object's attributes.
+    """
+    _seed_admin(enhancement_db_engine)
+    headers = {"Authorization": f"Bearer {_admin_token()}"}
+
+    st_res = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "Initial Del Staff", "mobile": "9811100097", "password": "pass", "staff_id": "STF-POPDEL-01"},
+    )
+    assert st_res.status_code == 201
+    staff_id = st_res.json()["id"]
+
+    from app.routers import admin as admin_router
+    monkeypatch.setattr(admin_router, "_is_postgres", lambda db: True)
+
+    original_scalar = Session.scalar
+    captured_options: list[dict] = []
+    refreshed_instances: list[User] = []
+
+    def mutating_scalar(self, statement, *args, **kwargs):
+        is_for_update = getattr(statement, "_for_update_arg", None) is not None
+        if is_for_update and "users" in str(statement).lower():
+            captured_options.append(dict(getattr(statement, "_execution_options", {})))
+            # Mutate database row out-of-band before executing lock query
+            self.connection().execute(
+                text("UPDATE users SET mobile = :new_mobile WHERE id = :user_id"),
+                {"new_mobile": "9811199999", "user_id": staff_id},
+            )
+            res = original_scalar(self, statement, *args, **kwargs)
+            refreshed_instances.append(res)
+            return res
+        return original_scalar(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "scalar", mutating_scalar)
+
+    del_res = client.delete(f"/api/v1/admin/users/{staff_id}", headers=headers)
+    assert del_res.status_code == 200
+
+    assert len(captured_options) == 1
+    assert captured_options[0].get("populate_existing") is True
+    # Verify the locked object returned had its attribute refreshed in memory
+    assert len(refreshed_instances) == 1
+    assert refreshed_instances[0].mobile == "9811199999"
+
+
+def test_staff_status_update_and_deletion_safe_when_locked_staff_missing(
+    enhancement_db_engine,
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Verifies that if the locked Staff row unexpectedly does not exist (returns None)
+    after initial lookup, both update_user_status and delete_user abort safely with
+    HTTP 404 Not Found rather than proceeding with a stale object.
+    """
+    _seed_admin(enhancement_db_engine)
+    headers = {"Authorization": f"Bearer {_admin_token()}"}
+
+    # 1. Test update_user_status when locked staff row is missing
+    st1 = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "Missing Staff 1", "mobile": "9811100098", "password": "pass", "staff_id": "STF-MISS-01"},
+    ).json()["id"]
+
+    from app.routers import admin as admin_router
+    monkeypatch.setattr(admin_router, "_is_postgres", lambda db: True)
+
+    original_scalar = Session.scalar
+
+    def simulate_missing_on_lock(self, statement, *args, **kwargs):
+        is_for_update = getattr(statement, "_for_update_arg", None) is not None
+        if is_for_update and "users" in str(statement).lower():
+            # Simulate row having been deleted concurrently
+            return None
+        return original_scalar(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "scalar", simulate_missing_on_lock)
+
+    res_status = client.post(
+        f"/api/v1/admin/users/{st1}/status",
+        headers=headers,
+        json={"is_active": False},
+    )
+    assert res_status.status_code == 404
+    assert res_status.json()["detail"] == "User not found"
+
+    # 2. Test delete_user when locked staff row is missing
+    st2 = client.post(
+        "/api/v1/admin/users/staff",
+        headers=headers,
+        json={"name": "Missing Staff 2", "mobile": "9811100099", "password": "pass", "staff_id": "STF-MISS-02"},
+    ).json()["id"]
+
+    res_del = client.delete(f"/api/v1/admin/users/{st2}", headers=headers)
+    assert res_del.status_code == 404
+    assert res_del.json()["detail"] == "User not found"

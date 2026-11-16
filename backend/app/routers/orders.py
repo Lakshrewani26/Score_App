@@ -158,6 +158,9 @@ def _build_order_response(order: Order) -> OrderResponse:
         discount_percentage=disc_pct_order,
         total_discount=total_disc_order,
         final_total=final_tot,
+        created_by_user_id=order.created_by_user_id,
+        assigned_staff_id=order.assigned_staff_id,
+        staff_attribution_status=order.staff_attribution_status,
         items=item_responses,
         status_history=history_responses,
     )
@@ -327,17 +330,36 @@ def create_partner_order(
             )
             return _build_order_response(existing_order)
 
-    # 2. Fetch products and validate prices server-side
-    partner_profile = getattr(current_partner, "partner_profile", None)
-    if not partner_profile:
-        partner_profile = db.scalar(
-            select(PartnerProfile).where(PartnerProfile.user_id == current_partner.id)
-        )
-    disc_pct = (
-        Decimal(str(partner_profile.discount_percentage or 0)).quantize(Decimal("0.01"))
-        if partner_profile
-        else Decimal("0.00")
+    # 2. Lock partner profile (on PostgreSQL) and require profile to exist
+    bind = db.get_bind()
+    is_postgres = bind is not None and getattr(bind.dialect, "name", "") == "postgresql"
+    partner_stmt = select(PartnerProfile).where(
+        PartnerProfile.user_id == current_partner.id
     )
+    if is_postgres:
+        partner_stmt = partner_stmt.with_for_update()
+    partner_profile = db.scalar(partner_stmt)
+    if partner_profile is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Partner profile not found.",
+        )
+
+    # Look up Partner's active Staff assignment
+    active_assignment = db.scalar(
+        select(StaffPartnerAssignment).where(
+            StaffPartnerAssignment.partner_id == current_partner.id,
+            StaffPartnerAssignment.is_active.is_(True),
+        )
+    )
+    if active_assignment is not None:
+        assigned_staff_id = active_assignment.staff_id
+        staff_attribution_status = "assigned"
+    else:
+        assigned_staff_id = None
+        staff_attribution_status = "unassigned"
+
+    disc_pct = Decimal(str(partner_profile.discount_percentage or 0)).quantize(Decimal("0.01"))
 
     product_ids = [item.product_id for item in payload.items]
     products = db.scalars(select(Product).where(Product.id.in_(product_ids))).all()
@@ -407,6 +429,9 @@ def create_partner_order(
     new_order = Order(
         order_number=order_number,
         partner_id=current_partner.id,
+        created_by_user_id=current_partner.id,
+        assigned_staff_id=assigned_staff_id,
+        staff_attribution_status=staff_attribution_status,
         status="pending_approval",
         notes=full_notes,
         subtotal_before_discount=total_subtotal_before,
