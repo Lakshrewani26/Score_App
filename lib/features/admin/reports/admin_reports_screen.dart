@@ -281,14 +281,20 @@ class _AdminReportsScreenState extends State<AdminReportsScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Column(
-        children: [
-          _buildReportTypeSelector(),
-          _buildFilterBar(),
-          Expanded(
-            child: _buildBody(),
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 840),
+          child: Column(
+            children: [
+              _buildReportTypeSelector(),
+              _buildFilterBar(),
+              Expanded(
+                child: _buildBody(),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

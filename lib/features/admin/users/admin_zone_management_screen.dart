@@ -16,7 +16,8 @@ class AdminZoneManagementScreen extends StatefulWidget {
   final AdminSessionManager? sessionManager;
 
   @override
-  State<AdminZoneManagementScreen> createState() => _AdminZoneManagementScreenState();
+  State<AdminZoneManagementScreen> createState() =>
+      _AdminZoneManagementScreenState();
 }
 
 class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
@@ -79,12 +80,14 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           backgroundColor: Colors.white,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 440),
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Form(
                 key: formKey,
@@ -116,8 +119,11 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.close_rounded, color: Color(0xFF78909C)),
-                          onPressed: isSubmitting ? null : () => Navigator.of(ctx).pop(),
+                          icon: const Icon(Icons.close_rounded,
+                              color: Color(0xFF78909C)),
+                          onPressed: isSubmitting
+                              ? null
+                              : () => Navigator.of(ctx).pop(),
                         ),
                       ],
                     ),
@@ -125,32 +131,37 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                     if (localError != null) ...[
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFEBEE),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           localError!,
-                          style: const TextStyle(color: Color(0xFFD32F2F), fontSize: 13),
+                          style: const TextStyle(
+                              color: Color(0xFFD32F2F), fontSize: 13),
                         ),
                       ),
                       const SizedBox(height: 12),
                     ],
                     const Text('Zone Name',
                         style: TextStyle(
-                            color: _deepBlue, fontSize: 13, fontWeight: FontWeight.w700)),
+                            color: _deepBlue,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700)),
                     const SizedBox(height: 5),
                     TextFormField(
                       key: const Key('create_zone_name_field'),
                       controller: nameController,
                       decoration: InputDecoration(
                         hintText: 'e.g. North Zone, Pune Central',
-                        hintStyle: const TextStyle(color: Color(0xFFB0BEC5), fontSize: 13),
+                        hintStyle: const TextStyle(
+                            color: Color(0xFFB0BEC5), fontSize: 13),
                         filled: true,
                         fillColor: const Color(0xFFF7FCFF),
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: const BorderSide(color: _fieldBorderBlue),
@@ -166,19 +177,23 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                     const SizedBox(height: 12),
                     const Text('Description (Optional)',
                         style: TextStyle(
-                            color: _deepBlue, fontSize: 13, fontWeight: FontWeight.w700)),
+                            color: _deepBlue,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700)),
                     const SizedBox(height: 5),
                     TextFormField(
                       key: const Key('create_zone_desc_field'),
                       controller: descController,
                       maxLines: 2,
                       decoration: InputDecoration(
-                        hintText: 'Describe coverage area, districts, or landmarks',
-                        hintStyle: const TextStyle(color: Color(0xFFB0BEC5), fontSize: 13),
+                        hintText:
+                            'Describe coverage area, districts, or landmarks',
+                        hintStyle: const TextStyle(
+                            color: Color(0xFFB0BEC5), fontSize: 13),
                         filled: true,
                         fillColor: const Color(0xFFF7FCFF),
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: const BorderSide(color: _fieldBorderBlue),
@@ -190,7 +205,9 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                       children: [
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: isSubmitting ? null : () => Navigator.of(ctx).pop(),
+                            onPressed: isSubmitting
+                                ? null
+                                : () => Navigator.of(ctx).pop(),
                             child: const Text('Cancel'),
                           ),
                         ),
@@ -205,7 +222,9 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                             onPressed: isSubmitting
                                 ? null
                                 : () async {
-                                    if (!formKey.currentState!.validate()) return;
+                                    if (!formKey.currentState!.validate()) {
+                                      return;
+                                    }
                                     setDialogState(() {
                                       isSubmitting = true;
                                       localError = null;
@@ -213,7 +232,9 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                                     try {
                                       await _api.createZone(
                                         name: nameController.text.trim(),
-                                        description: descController.text.trim().isNotEmpty
+                                        description: descController.text
+                                                .trim()
+                                                .isNotEmpty
                                             ? descController.text.trim()
                                             : null,
                                       );
@@ -221,9 +242,11 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                                       Navigator.of(ctx).pop();
                                       _fetchZones();
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
                                           const SnackBar(
-                                            content: Text('Zone created successfully'),
+                                            content: Text(
+                                                'Zone created successfully'),
                                             backgroundColor: Color(0xFF2E7D32),
                                           ),
                                         );
@@ -276,12 +299,14 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           backgroundColor: Colors.white,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 440),
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: Form(
                 key: formKey,
@@ -313,8 +338,11 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.close_rounded, color: Color(0xFF78909C)),
-                          onPressed: isSubmitting ? null : () => Navigator.of(ctx).pop(),
+                          icon: const Icon(Icons.close_rounded,
+                              color: Color(0xFF78909C)),
+                          onPressed: isSubmitting
+                              ? null
+                              : () => Navigator.of(ctx).pop(),
                         ),
                       ],
                     ),
@@ -322,21 +350,25 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                     if (localError != null) ...[
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFFEBEE),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           localError!,
-                          style: const TextStyle(color: Color(0xFFD32F2F), fontSize: 13),
+                          style: const TextStyle(
+                              color: Color(0xFFD32F2F), fontSize: 13),
                         ),
                       ),
                       const SizedBox(height: 12),
                     ],
                     const Text('Zone Name',
                         style: TextStyle(
-                            color: _deepBlue, fontSize: 13, fontWeight: FontWeight.w700)),
+                            color: _deepBlue,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700)),
                     const SizedBox(height: 5),
                     TextFormField(
                       key: const Key('edit_zone_name_field'),
@@ -344,8 +376,8 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: const Color(0xFFF7FCFF),
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: const BorderSide(color: _fieldBorderBlue),
@@ -361,7 +393,9 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                     const SizedBox(height: 12),
                     const Text('Description (Optional)',
                         style: TextStyle(
-                            color: _deepBlue, fontSize: 13, fontWeight: FontWeight.w700)),
+                            color: _deepBlue,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700)),
                     const SizedBox(height: 5),
                     TextFormField(
                       key: const Key('edit_zone_desc_field'),
@@ -370,8 +404,8 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                       decoration: InputDecoration(
                         filled: true,
                         fillColor: const Color(0xFFF7FCFF),
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: const BorderSide(color: _fieldBorderBlue),
@@ -383,7 +417,9 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                       children: [
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: isSubmitting ? null : () => Navigator.of(ctx).pop(),
+                            onPressed: isSubmitting
+                                ? null
+                                : () => Navigator.of(ctx).pop(),
                             child: const Text('Cancel'),
                           ),
                         ),
@@ -398,7 +434,9 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                             onPressed: isSubmitting
                                 ? null
                                 : () async {
-                                    if (!formKey.currentState!.validate()) return;
+                                    if (!formKey.currentState!.validate()) {
+                                      return;
+                                    }
                                     setDialogState(() {
                                       isSubmitting = true;
                                       localError = null;
@@ -407,7 +445,9 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                                       await _api.updateZone(
                                         zoneId: zone.id,
                                         name: nameController.text.trim(),
-                                        description: descController.text.trim().isNotEmpty
+                                        description: descController.text
+                                                .trim()
+                                                .isNotEmpty
                                             ? descController.text.trim()
                                             : null,
                                       );
@@ -415,9 +455,11 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                                       Navigator.of(ctx).pop();
                                       _fetchZones();
                                       if (mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
                                           const SnackBar(
-                                            content: Text('Zone updated successfully'),
+                                            content: Text(
+                                                'Zone updated successfully'),
                                             backgroundColor: Color(0xFF2E7D32),
                                           ),
                                         );
@@ -474,7 +516,8 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: target ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
+              backgroundColor:
+                  target ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.of(ctx).pop(true),
@@ -492,8 +535,10 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
       _fetchZones();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Zone ${target ? "activated" : "deactivated"} successfully'),
-          backgroundColor: target ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
+          content:
+              Text('Zone ${target ? "activated" : "deactivated"} successfully'),
+          backgroundColor:
+              target ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
         ),
       );
     } catch (e) {
@@ -529,11 +574,13 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        SizedBox(height: MediaQuery.of(context).padding.top + 10),
+                        SizedBox(
+                            height: MediaQuery.of(context).padding.top + 10),
                         _buildHeader(context),
                         const SizedBox(height: 14),
                         Expanded(child: _buildZoneList()),
-                        SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
+                        SizedBox(
+                            height: MediaQuery.of(context).padding.bottom + 10),
                       ],
                     ),
                   ),
@@ -607,11 +654,13 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: _royalBlue,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           ),
           icon: const Icon(Icons.add_rounded, size: 18),
-          label: const Text('Add Zone', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+          label: const Text('Add Zone',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
         ),
       ],
     );
@@ -627,7 +676,10 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
             SizedBox(height: 14),
             Text(
               'Loading zones...',
-              style: TextStyle(color: Color(0xFF557A95), fontSize: 14, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                  color: Color(0xFF557A95),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -641,12 +693,16 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline_rounded, size: 48, color: Colors.redAccent),
+              const Icon(Icons.error_outline_rounded,
+                  size: 48, color: Colors.redAccent),
               const SizedBox(height: 12),
               Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: _deepBlue, fontSize: 15, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    color: _deepBlue,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 16),
               ElevatedButton.icon(
@@ -674,12 +730,16 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                   color: Color(0xFFE1F5FE),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.location_off_rounded, size: 32, color: _royalBlue),
+                child: const Icon(Icons.location_off_rounded,
+                    size: 32, color: _royalBlue),
               ),
               const SizedBox(height: 14),
               const Text(
                 'No Zones Created',
-                style: TextStyle(color: _deepBlue, fontSize: 17, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                    color: _deepBlue,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 4),
               const Text(
@@ -696,7 +756,8 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
     return RefreshIndicator(
       onRefresh: _fetchZones,
       child: ListView.separated(
-        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics()),
         itemCount: _zones.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
         itemBuilder: (context, index) {
@@ -728,7 +789,8 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                         color: _royalBlue.withAlpha(24),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.location_on_rounded, color: _royalBlue, size: 22),
+                      child: const Icon(Icons.location_on_rounded,
+                          color: _royalBlue, size: 22),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -743,18 +805,21 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                          if (zone.description != null && zone.description!.isNotEmpty) ...[
+                          if (zone.description != null &&
+                              zone.description!.isNotEmpty) ...[
                             const SizedBox(height: 2),
                             Text(
                               zone.description!,
-                              style: const TextStyle(color: Color(0xFF557A95), fontSize: 13),
+                              style: const TextStyle(
+                                  color: Color(0xFF557A95), fontSize: 13),
                             ),
                           ],
                         ],
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: zone.isActive
                             ? const Color(0xFFE8F8EE)
@@ -780,7 +845,8 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF0F4F8),
                         borderRadius: BorderRadius.circular(8),
@@ -788,7 +854,8 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.handshake_rounded, size: 14, color: Color(0xFF00897B)),
+                          const Icon(Icons.handshake_rounded,
+                              size: 14, color: Color(0xFF00897B)),
                           const SizedBox(width: 4),
                           Text(
                             '${zone.partnerCount} Partners',
@@ -804,18 +871,24 @@ class _AdminZoneManagementScreenState extends State<AdminZoneManagementScreen> {
                     const Spacer(),
                     IconButton(
                       key: Key('edit_zone_btn_${zone.id}'),
-                      icon: const Icon(Icons.edit_rounded, size: 18, color: _royalBlue),
+                      icon: const Icon(Icons.edit_rounded,
+                          size: 18, color: _royalBlue),
                       tooltip: 'Edit Zone',
                       onPressed: () => _openEditZoneDialog(zone),
                     ),
                     IconButton(
                       key: Key('toggle_zone_btn_${zone.id}'),
                       icon: Icon(
-                        zone.isActive ? Icons.block_rounded : Icons.check_circle_outline_rounded,
+                        zone.isActive
+                            ? Icons.block_rounded
+                            : Icons.check_circle_outline_rounded,
                         size: 18,
-                        color: zone.isActive ? const Color(0xFFD32F2F) : const Color(0xFF2E7D32),
+                        color: zone.isActive
+                            ? const Color(0xFFD32F2F)
+                            : const Color(0xFF2E7D32),
                       ),
-                      tooltip: zone.isActive ? 'Deactivate Zone' : 'Activate Zone',
+                      tooltip:
+                          zone.isActive ? 'Deactivate Zone' : 'Activate Zone',
                       onPressed: () => _toggleZoneStatus(zone),
                     ),
                   ],

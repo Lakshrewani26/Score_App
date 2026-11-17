@@ -1,13 +1,26 @@
 import 'dart:typed_data';
 
-import 'package:flutter_file_dialog/flutter_file_dialog.dart';
-
 import '../models/admin_qr_models.dart';
 import 'admin_qr_api.dart';
+import 'excel_saver/excel_saver.dart';
 
 class AdminQrExcelExporter {
   static const _xlsxMimeType =
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  final Future<String?> Function({
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+  }) _saver;
+
+  AdminQrExcelExporter({
+    Future<String?> Function({
+      required Uint8List bytes,
+      required String fileName,
+      required String mimeType,
+    })? saver,
+  }) : _saver = saver ?? saveExcelFile;
 
   Future<String?> exportBatch({
     required AdminQrApi qrApi,
@@ -18,12 +31,10 @@ class AdminQrExcelExporter {
       throw const FormatException('The server returned an invalid Excel file.');
     }
 
-    return FlutterFileDialog.saveFile(
-      params: SaveFileDialogParams(
-        data: bytes,
-        fileName: '${batch.batchNumber}_qr_codes.xlsx',
-        mimeTypesFilter: const [_xlsxMimeType],
-      ),
+    return _saver(
+      bytes: bytes,
+      fileName: '${batch.batchNumber}_qr_codes.xlsx',
+      mimeType: _xlsxMimeType,
     );
   }
 

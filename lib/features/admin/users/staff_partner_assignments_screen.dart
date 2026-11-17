@@ -420,32 +420,38 @@ class _StaffPartnerAssignmentsScreenState
         ),
       ),
       body: SafeArea(
-        child: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: _royalBlue),
-              )
-            : _errorMessage != null && _staff.isEmpty && _partners.isEmpty
-                ? _buildLoadError()
-                : RefreshIndicator(
-                    onRefresh: _loadData,
-                    child: ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        _buildAssignmentForm(),
-                        const SizedBox(height: 12),
-                        if (_actionErrorMessage != null) ...[
-                          _buildActionErrorBanner(),
-                          const SizedBox(height: 12),
-                        ],
-                        _buildListHeader(),
-                        const SizedBox(height: 10),
-                        if (_assignments.isEmpty)
-                          _buildEmptyAssignments()
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 680),
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: _royalBlue),
+                  )
+                : _errorMessage != null && _staff.isEmpty && _partners.isEmpty
+                    ? _buildLoadError()
+                    : RefreshIndicator(
+                        onRefresh: _loadData,
+                        child: ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            _buildAssignmentForm(),
+                            const SizedBox(height: 12),
+                            if (_actionErrorMessage != null) ...[
+                              _buildActionErrorBanner(),
+                              const SizedBox(height: 12),
+                            ],
+                            _buildListHeader(),
+                            const SizedBox(height: 10),
+                            if (_assignments.isEmpty)
+                              _buildEmptyAssignments()
                         else
                           ..._assignments.map(_buildAssignmentCard),
                       ],
                     ),
                   ),
+          ),
+        ),
       ),
     );
   }

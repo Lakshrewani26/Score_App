@@ -208,12 +208,16 @@ class _AdminOrderDetailSheetState extends State<AdminOrderDetailSheet> {
       minChildSize: 0.5,
       maxChildSize: 0.95,
       builder: (context, scrollController) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
+        return Align(
+          alignment: Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
             children: [
               // Top drag handle
               Center(
@@ -338,7 +342,9 @@ class _AdminOrderDetailSheetState extends State<AdminOrderDetailSheet> {
               ),
             ],
           ),
-        );
+        ),
+      ),
+    );
       },
     );
   }

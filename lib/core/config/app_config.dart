@@ -19,7 +19,7 @@ class AppConfig {
     }
 
     if (kIsWeb) {
-      return desktopBaseUrl;
+      return productionBaseUrl;
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {

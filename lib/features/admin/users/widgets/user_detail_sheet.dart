@@ -334,14 +334,18 @@ class _UserDetailSheetState extends State<UserDetailSheet> {
   Widget build(BuildContext context) {
     final roleColor = _getRoleColor(_currentUser.role);
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: SingleChildScrollView(
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -634,7 +638,9 @@ class _UserDetailSheetState extends State<UserDetailSheet> {
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 
   Widget _buildInfoRow(String label, String value) {

@@ -1,10 +1,12 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/models/admin_models.dart';
 import '../../../core/services/admin_api.dart';
 import '../../../core/services/admin_session_manager.dart';
 import '../../welcome/welcome_screen.dart';
+import '../login/admin_login_screen.dart';
 import '../catalogue/admin_catalogue_screen.dart';
 import '../qr/admin_qr_generation_screen.dart';
 import '../settings/admin_settings_screen.dart';
@@ -83,12 +85,21 @@ class AdminHomeScreen extends StatelessWidget {
 
     if (!context.mounted) return;
 
-    navigator.pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => const WelcomeScreen(),
-      ),
-      (route) => false,
-    );
+    if (kIsWeb) {
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const AdminLoginScreen(),
+        ),
+        (route) => false,
+      );
+    } else {
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const WelcomeScreen(),
+        ),
+        (route) => false,
+      );
+    }
 
     messenger.showSnackBar(
       const SnackBar(
@@ -154,13 +165,15 @@ class AdminHomeScreen extends StatelessWidget {
                   onPressed: () {
                     Navigator.of(context).pushAndRemoveUntil(
                       MaterialPageRoute(
-                        builder: (_) => const WelcomeScreen(),
+                        builder: (_) => kIsWeb
+                            ? const AdminLoginScreen()
+                            : const WelcomeScreen(),
                       ),
                       (route) => false,
                     );
                   },
                   icon: const Icon(Icons.arrow_back_rounded),
-                  label: const Text('Return to Welcome'),
+                  label: Text(kIsWeb ? 'Return to Login' : 'Return to Welcome'),
                 ),
               ],
             ),

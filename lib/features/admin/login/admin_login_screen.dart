@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/services/admin_api.dart';
@@ -208,12 +209,13 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                     ),
                   ),
                 ),
-                // Top-left Back Button
-                Positioned(
-                  top: math.max(36.0, height * 0.05),
-                  left: 16,
-                  child: _buildBackButton(context),
-                ),
+                // Top-left Back Button (Mobile only; hidden on Web as Admin Login is root)
+                if (!kIsWeb || Navigator.of(context).canPop())
+                  Positioned(
+                    top: math.max(36.0, height * 0.05),
+                    left: 16,
+                    child: _buildBackButton(context),
+                  ),
               ],
             );
           },
@@ -231,7 +233,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
           if (_isLoading) return;
           if (Navigator.of(context).canPop()) {
             Navigator.of(context).pop();
-          } else {
+          } else if (!kIsWeb) {
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
                 builder: (_) => const WelcomeScreen(),
@@ -302,6 +304,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                     icon: Icons.smartphone_rounded,
                     controller: _mobileController,
                     keyboardType: TextInputType.phone,
+                    textInputAction: TextInputAction.next,
                     enabled: !_isLoading,
                   ),
                   const SizedBox(height: 16),
@@ -359,6 +362,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     required IconData icon,
     required TextEditingController controller,
     TextInputType keyboardType = TextInputType.text,
+    TextInputAction? textInputAction,
     bool enabled = true,
   }) {
     return _buildFieldContainer(
@@ -371,6 +375,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               controller: controller,
               enabled: enabled,
               keyboardType: keyboardType,
+              textInputAction: textInputAction,
               style: const TextStyle(
                 color: _royalBlue,
                 fontSize: 16,
@@ -405,6 +410,8 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
               controller: _passwordController,
               enabled: !_isLoading,
               obscureText: _obscurePassword,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _handleLogin(),
               style: const TextStyle(
                 color: _royalBlue,
                 fontSize: 16,

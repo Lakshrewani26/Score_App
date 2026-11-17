@@ -295,15 +295,19 @@ class _AdminProductDetailSheetState extends State<AdminProductDetailSheet> {
     final vehicleColor = _getVehicleColor(_product.vehicleType);
     final priceLabel = _product.price == null ? 'Price not set' : _product.displayPrice;
 
-    return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.90,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.90,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Drag handle
@@ -715,7 +719,9 @@ class _AdminProductDetailSheetState extends State<AdminProductDetailSheet> {
           ),
         ],
       ),
-    );
+    ),
+  ),
+);
   }
 
   Widget _buildFieldRow(
