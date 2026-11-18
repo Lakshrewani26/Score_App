@@ -36,6 +36,7 @@ class PlaceholderPartnerNewArrivalsDataSource
         description: 'Placeholder product description for starter motor',
         vehicleType: '2-Wheeler',
         price: 1550.00,
+        listPrice: 1250.00,
         imageUrl: null,
       ),
       CatalogueProduct(
@@ -47,6 +48,7 @@ class PlaceholderPartnerNewArrivalsDataSource
         description: 'Placeholder product description for disc brake assembly',
         vehicleType: '2-Wheeler',
         price: 890.00,
+        listPrice: 720.00,
         imageUrl: null,
       ),
       CatalogueProduct(
@@ -58,6 +60,7 @@ class PlaceholderPartnerNewArrivalsDataSource
         description: 'Placeholder product description for piston kit',
         vehicleType: '3-Wheeler',
         price: 2450.00,
+        listPrice: 1980.00,
         imageUrl: null,
       ),
       CatalogueProduct(
@@ -69,6 +72,7 @@ class PlaceholderPartnerNewArrivalsDataSource
         description: 'Placeholder product description for gas shock absorber',
         vehicleType: 'Both',
         price: 2100.00,
+        listPrice: 1700.00,
         imageUrl: null,
       ),
     ];

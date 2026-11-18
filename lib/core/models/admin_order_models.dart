@@ -56,6 +56,8 @@ class AdminOrderItem {
   final num? unitPrice;
   final num? subtotal;
   final num? originalPrice;
+  final num? mrp;
+  final num? listPrice;
   final num? discountPercentage;
   final num? discountAmount;
   final num? discountedPrice;
@@ -70,6 +72,8 @@ class AdminOrderItem {
     this.unitPrice,
     this.subtotal,
     this.originalPrice,
+    this.mrp,
+    this.listPrice,
     this.discountPercentage,
     this.discountAmount,
     this.discountedPrice,
@@ -79,6 +83,8 @@ class AdminOrderItem {
     final rawUnitPrice = json['unit_price'];
     final rawSubtotal = json['subtotal'];
     final rawOriginalPrice = json['original_price'];
+    final rawMrp = json['mrp'];
+    final rawListPrice = json['list_price'];
     final rawDiscountPercentage = json['discount_percentage'];
     final rawDiscountAmount = json['discount_amount'];
     final rawDiscountedPrice = json['discounted_price'];
@@ -86,6 +92,8 @@ class AdminOrderItem {
     num? parsedUnitPrice;
     num? parsedSubtotal;
     num? parsedOriginalPrice;
+    num? parsedMrp;
+    num? parsedListPrice;
     num? parsedDiscountPercentage;
     num? parsedDiscountAmount;
     num? parsedDiscountedPrice;
@@ -99,6 +107,12 @@ class AdminOrderItem {
     if (rawOriginalPrice != null &&
         rawOriginalPrice.toString().trim().isNotEmpty) {
       parsedOriginalPrice = num.tryParse(rawOriginalPrice.toString());
+    }
+    if (rawMrp != null && rawMrp.toString().trim().isNotEmpty) {
+      parsedMrp = num.tryParse(rawMrp.toString());
+    }
+    if (rawListPrice != null && rawListPrice.toString().trim().isNotEmpty) {
+      parsedListPrice = num.tryParse(rawListPrice.toString());
     }
     if (rawDiscountPercentage != null &&
         rawDiscountPercentage.toString().trim().isNotEmpty) {
@@ -124,6 +138,8 @@ class AdminOrderItem {
       unitPrice: parsedUnitPrice,
       subtotal: parsedSubtotal,
       originalPrice: parsedOriginalPrice,
+      mrp: parsedMrp,
+      listPrice: parsedListPrice,
       discountPercentage: parsedDiscountPercentage,
       discountAmount: parsedDiscountAmount,
       discountedPrice: parsedDiscountedPrice,
@@ -133,6 +149,8 @@ class AdminOrderItem {
   String get displayUnitPrice => formatCurrency(unitPrice);
   String get displaySubtotal => formatCurrency(subtotal);
   String get displayOriginalPrice => formatCurrency(originalPrice);
+  String get displayMrp => formatCurrency(mrp);
+  String get displayListPrice => formatCurrency(listPrice);
   String get displayDiscountAmount => formatCurrency(discountAmount);
 }
 

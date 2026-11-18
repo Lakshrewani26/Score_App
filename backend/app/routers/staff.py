@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 import logging
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
@@ -751,7 +752,10 @@ def create_staff_order(
     products = db.scalars(select(Product).where(Product.id.in_(product_ids))).all()
     products_by_id = {p.id: p for p in products}
 
+    disc_pct = Decimal(str(partner_profile.discount_percentage or 0)).quantize(Decimal("0.01"))
     order_items_to_create: list[OrderItem] = []
+    total_subtotal_before = Decimal("0.00")
+    total_disc = Decimal("0.00")
 
     for item in payload.items:
         if item.quantity <= 0:
@@ -767,7 +771,8 @@ def create_staff_order(
                 detail=f"Product ID {item.product_id} is unavailable or not found.",
             )
 
-        if product.price is None:
+        calc_price_val = product.list_price if product.list_price is not None else product.price
+        if calc_price_val is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
@@ -776,13 +781,43 @@ def create_staff_order(
                 ),
             )
 
+        calc_price = Decimal(str(calc_price_val)).quantize(Decimal("0.01"))
+        disc_amt = (calc_price * (disc_pct / Decimal("100"))).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        disc_price = (calc_price - disc_amt).quantize(Decimal("0.01"))
+        line_before = (Decimal(item.quantity) * calc_price).quantize(Decimal("0.01"))
+        line_disc = (Decimal(item.quantity) * disc_amt).quantize(Decimal("0.01"))
+
+        mrp_val = (
+            Decimal(str(product.price)).quantize(Decimal("0.01"))
+            if product.price is not None
+            else None
+        )
+        list_price_val = (
+            Decimal(str(product.list_price)).quantize(Decimal("0.01"))
+            if product.list_price is not None
+            else None
+        )
+
+        total_subtotal_before += line_before
+        total_disc += line_disc
+
         order_items_to_create.append(
             OrderItem(
                 product_id=product.id,
                 quantity=item.quantity,
-                unit_price=product.price,
+                unit_price=disc_price,
+                original_price=calc_price,
+                mrp=mrp_val,
+                list_price=list_price_val,
+                discount_percentage=disc_pct,
+                discount_amount=disc_amt,
+                discounted_price=disc_price,
             )
         )
+
+    order_final_total = (total_subtotal_before - total_disc).quantize(Decimal("0.01"))
 
     # 5. Build order record
     notes_parts = []
@@ -802,6 +837,10 @@ def create_staff_order(
         staff_attribution_status="assigned",
         status="pending_approval",
         notes=full_notes,
+        subtotal_before_discount=total_subtotal_before,
+        discount_percentage=disc_pct,
+        total_discount=total_disc,
+        final_total=order_final_total,
     )
     db.add(new_order)
     db.flush()

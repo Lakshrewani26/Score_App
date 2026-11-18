@@ -319,7 +319,7 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
 
     // Check for invalid price
     for (final item in _items) {
-      if (item.product.price == null) {
+      if (item.product.calculationPrice == null) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1120,6 +1120,29 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                     color: _subtitleColor,
                   ),
                 ),
+                if (item.product.listPrice != null) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    item.product.price != null
+                        ? 'List Price: ₹ ${item.product.listPrice!.toStringAsFixed(2)} · MRP: ₹ ${item.product.price!.toStringAsFixed(2)}'
+                        : 'List Price: ₹ ${item.product.listPrice!.toStringAsFixed(2)} · MRP: Not set',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF00897B),
+                    ),
+                  ),
+                ] else if (item.product.price != null) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    'List Price: ₹ ${item.product.price!.toStringAsFixed(2)} (temporary MRP fallback) · MRP: ₹ ${item.product.price!.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFB78103),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1385,11 +1408,42 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                     color: _subtitleColor,
                   ),
                 ),
-                if (item.discountPercentage != null &&
-                    item.discountPercentage! > 0) ...[
+                if (item.listPrice != null) ...[
                   const SizedBox(height: 1),
                   Text(
-                    'MRP: ₹ ${item.originalPrice?.toStringAsFixed(2) ?? ''} (-${item.discountPercentage!.toStringAsFixed(1)}%)',
+                    item.discountPercentage != null && item.discountPercentage! > 0
+                        ? 'List Price: ₹ ${item.listPrice!.toStringAsFixed(2)} (-${item.discountPercentage!.toStringAsFixed(1)}%) · ${item.mrp != null ? 'MRP: ₹ ${item.mrp!.toStringAsFixed(2)}' : 'MRP: Not set'}'
+                        : 'List Price: ₹ ${item.listPrice!.toStringAsFixed(2)} · ${item.mrp != null ? 'MRP: ₹ ${item.mrp!.toStringAsFixed(2)}' : 'MRP: Not set'}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF00897B),
+                    ),
+                  ),
+                ] else if (item.mrp != null) ...[
+                  const SizedBox(height: 1),
+                  Builder(
+                    builder: (context) {
+                      final fallbackPrice = item.mrp!;
+                      final discText = item.discountPercentage != null && item.discountPercentage! > 0
+                          ? ' (-${item.discountPercentage!.toStringAsFixed(1)}%)'
+                          : '';
+                      return Text(
+                        'List Price: ₹ ${fallbackPrice.toStringAsFixed(2)} (temporary MRP fallback)$discText · MRP: ₹ ${fallbackPrice.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFB78103),
+                        ),
+                      );
+                    },
+                  ),
+                ] else if (item.discountPercentage != null &&
+                    item.discountPercentage! > 0 &&
+                    item.originalPrice != null) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    'MRP: ₹ ${item.originalPrice!.toStringAsFixed(2)} (-${item.discountPercentage!.toStringAsFixed(1)}%)',
                     style: const TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,

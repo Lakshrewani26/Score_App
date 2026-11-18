@@ -28,6 +28,8 @@ class AdminOrderItemDetail(BaseModel):
     unit_price: Decimal
     subtotal: Decimal
     original_price: Optional[Decimal] = None
+    mrp: Optional[Decimal] = None
+    list_price: Optional[Decimal] = None
     discount_percentage: Optional[Decimal] = None
     discount_amount: Optional[Decimal] = None
     discounted_price: Optional[Decimal] = None

@@ -306,6 +306,7 @@ def test_admin_create_product_success_and_nullable_price(client: TestClient) -> 
         "category_id": cat.id,
         "vehicle_type": "2-Wheeler",
         "price": "120.50",
+        "list_price": "100.00",
         "description": "High performance oil filter",
         "image_url": "https://example.com/filter.png",
         "is_active": True,
@@ -317,21 +318,24 @@ def test_admin_create_product_success_and_nullable_price(client: TestClient) -> 
     assert data["product_code"] == "FLTR-001"
     assert data["name"] == "Oil Filter Special"
     assert data["price"] == "120.50"
+    assert data["list_price"] == "100.00"
     assert data["category_name"] == "Filters"
     assert data["is_active"] is True
 
-    # Test creating product with NULL price
+    # Test creating product with NULL price (MRP) and valid list_price
     null_price_payload = {
         "product_code": "FLTR-002",
         "name": "Custom Air Filter",
         "category_id": cat.id,
         "vehicle_type": "3-Wheeler",
         "price": None,
+        "list_price": "95.00",
         "is_active": True,
     }
     null_res = client.post("/api/v1/admin/catalogue/products", json=null_price_payload, headers=headers)
     assert null_res.status_code == 201
     assert null_res.json()["price"] is None
+    assert null_res.json()["list_price"] == "95.00"
 
 
 def test_admin_create_product_allows_duplicate_codes(client: TestClient) -> None:
@@ -347,6 +351,7 @@ def test_admin_create_product_allows_duplicate_codes(client: TestClient) -> None
         "category_id": cat.id,
         "vehicle_type": "2-Wheeler",
         "price": "350.00",
+        "list_price": "300.00",
     }
     payload2 = {
         "product_code": "CLT-DUP",
@@ -354,6 +359,7 @@ def test_admin_create_product_allows_duplicate_codes(client: TestClient) -> None
         "category_id": cat.id,
         "vehicle_type": "3-Wheeler",
         "price": "420.00",
+        "list_price": "360.00",
     }
 
     assert client.post("/api/v1/admin/catalogue/products", json=payload1, headers=headers).status_code == 201
@@ -376,6 +382,7 @@ def test_admin_create_product_validations(client: TestClient) -> None:
         "category_id": cat.id,
         "vehicle_type": "2-Wheeler",
         "price": "-25.00",
+        "list_price": "20.00",
     }
     assert client.post("/api/v1/admin/catalogue/products", json=bad_price, headers=headers).status_code == 422
 
@@ -386,6 +393,7 @@ def test_admin_create_product_validations(client: TestClient) -> None:
         "category_id": cat.id,
         "vehicle_type": "4-Wheeler",
         "price": "100.00",
+        "list_price": "80.00",
     }
     assert client.post("/api/v1/admin/catalogue/products", json=bad_vt, headers=headers).status_code == 422
 
@@ -396,6 +404,7 @@ def test_admin_create_product_validations(client: TestClient) -> None:
         "category_id": 99999,
         "vehicle_type": "2-Wheeler",
         "price": "100.00",
+        "list_price": "80.00",
     }
     assert client.post("/api/v1/admin/catalogue/products", json=bad_cat, headers=headers).status_code == 404
 

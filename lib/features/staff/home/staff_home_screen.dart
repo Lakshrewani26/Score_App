@@ -328,13 +328,13 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
                 ),
                 Padding(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       _buildProductImageOrPlaceholder(product.imageUrl),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 2),
                       Text(
                         product.name,
                         textAlign: TextAlign.center,
@@ -347,43 +347,86 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
                           height: 1.15,
                         ),
                       ),
-                      const SizedBox(height: 3),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEAF5FF),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                      const SizedBox(height: 2),
+                      if (product.listPrice != null) ...[
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 2,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Flexible(
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F5E9),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFFA5D6A7),
+                                  width: 0.8,
+                                ),
+                              ),
                               child: Text(
-                                product.displayPrice,
+                                product.displayListPrice,
                                 style: const TextStyle(
-                                  color: _royalBlue,
-                                  fontSize: 11.5,
+                                  color: Color(0xFF2E7D32),
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w800,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(width: 3),
-                            const Text(
-                              'MRP',
-                              style: TextStyle(
-                                color: Color(0xFF5B7898),
-                                fontSize: 8.5,
-                                fontWeight: FontWeight.w700,
+                            Text(
+                              'MRP: ${product.displayPrice}',
+                              style: const TextStyle(
+                                color: Color(0xFF757575),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
                         ),
-                      ),
+                      ] else ...[
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 2,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF8E1),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFFFFE082),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Text(
+                                product.displayPrice,
+                                style: const TextStyle(
+                                  color: Color(0xFFE65100),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              'MRP (fallback): ${product.displayPrice}',
+                              style: const TextStyle(
+                                color: Color(0xFF757575),
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -399,8 +442,8 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
     final hasValidImage = imageUrl != null && imageUrl.trim().isNotEmpty;
     if (!hasValidImage) {
       return Container(
-        width: 62,
-        height: 62,
+        width: 54,
+        height: 54,
         decoration: const BoxDecoration(
           shape: BoxShape.circle,
           color: Color(0xFFDCEBFE),
@@ -408,14 +451,14 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
         child: const Icon(
           Icons.inventory_2_outlined,
           color: _royalBlue,
-          size: 28,
+          size: 26,
         ),
       );
     }
 
     return Container(
-      width: 62,
-      height: 62,
+      width: 54,
+      height: 54,
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
         color: Color(0xFFDCEBFE),
@@ -423,14 +466,14 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
       child: ClipOval(
         child: Image.network(
           imageUrl,
-          width: 62,
-          height: 62,
+          width: 54,
+          height: 54,
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) {
             return const Icon(
               Icons.image_not_supported_rounded,
               color: _royalBlue,
-              size: 26,
+              size: 24,
             );
           },
         ),
@@ -518,27 +561,159 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
               const SizedBox(height: 16),
               const Divider(color: Color(0xFFE2E8F0)),
               const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'MRP',
-                    style: TextStyle(
-                      color: Color(0xFF5B7898),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+              if (product.listPrice != null) ...[
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: const Color(0xFFA5D6A7),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'List Price (Order Price)',
+                            style: TextStyle(
+                              color: Color(0xFF1B5E20),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            product.displayListPrice,
+                            style: const TextStyle(
+                              color: Color(0xFF2E7D32),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Text(
-                    product.displayPrice,
-                    style: const TextStyle(
-                      color: _royalBlue,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'MRP',
+                            style: TextStyle(
+                              color: Color(0xFF757575),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            product.displayPrice,
+                            style: const TextStyle(
+                              color: Color(0xFF616161),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ] else ...[
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF8E1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: const Color(0xFFFFE082),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'List Price (temporary MRP fallback)',
+                            style: TextStyle(
+                              color: Color(0xFFB78103),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            product.displayPrice,
+                            style: const TextStyle(
+                              color: Color(0xFFE65100),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'MRP',
+                            style: TextStyle(
+                              color: Color(0xFF757575),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            product.displayPrice,
+                            style: const TextStyle(
+                              color: Color(0xFF616161),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               if (product.description != null &&
                   product.description!.isNotEmpty) ...[
                 const SizedBox(height: 12),

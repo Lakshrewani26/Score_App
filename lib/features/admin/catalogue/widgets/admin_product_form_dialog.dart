@@ -42,6 +42,7 @@ class _AdminProductFormDialogState extends State<AdminProductFormDialog> {
   late final TextEditingController _codeController;
   late final TextEditingController _nameController;
   late final TextEditingController _priceController;
+  late final TextEditingController _listPriceController;
   late final TextEditingController _descriptionController;
   late final TextEditingController _imageUrlController;
 
@@ -70,6 +71,9 @@ class _AdminProductFormDialogState extends State<AdminProductFormDialog> {
     _priceController = TextEditingController(
       text: p?.price != null ? p!.price.toString() : '',
     );
+    _listPriceController = TextEditingController(
+      text: p?.listPrice != null ? p!.listPrice.toString() : '',
+    );
     _descriptionController = TextEditingController(text: p?.description ?? '');
     _imageUrlController = TextEditingController(text: p?.imageUrl ?? '');
 
@@ -93,6 +97,7 @@ class _AdminProductFormDialogState extends State<AdminProductFormDialog> {
     _codeController.dispose();
     _nameController.dispose();
     _priceController.dispose();
+    _listPriceController.dispose();
     _descriptionController.dispose();
     _imageUrlController.dispose();
     super.dispose();
@@ -145,6 +150,7 @@ class _AdminProductFormDialogState extends State<AdminProductFormDialog> {
     final codeVal = _codeController.text.trim();
     final nameVal = _nameController.text.trim();
     final priceText = _priceController.text.trim();
+    final listPriceText = _listPriceController.text.trim();
     final descVal = _descriptionController.text.trim();
     final imgVal = _imageUrlController.text.trim();
 
@@ -153,12 +159,19 @@ class _AdminProductFormDialogState extends State<AdminProductFormDialog> {
       parsedPrice = num.tryParse(priceText);
     }
 
+    num? parsedListPrice;
+    if (listPriceText.isNotEmpty) {
+      parsedListPrice = num.tryParse(listPriceText);
+    }
+
     try {
       AdminProduct resultProduct;
 
       if (widget.isEditing) {
         final existing = widget.product!;
         final shouldClearPrice = existing.price != null && priceText.isEmpty;
+        final shouldClearListPrice =
+            existing.listPrice != null && listPriceText.isEmpty;
         final shouldClearDesc =
             (existing.description != null && existing.description!.trim().isNotEmpty) &&
                 descVal.isEmpty;
@@ -173,6 +186,8 @@ class _AdminProductFormDialogState extends State<AdminProductFormDialog> {
           vehicleType: _selectedVehicleType,
           price: parsedPrice,
           clearPrice: shouldClearPrice,
+          listPrice: parsedListPrice,
+          clearListPrice: shouldClearListPrice,
           description: descVal.isNotEmpty ? descVal : null,
           clearDescription: shouldClearDesc,
           imageUrl: imgVal.isNotEmpty ? imgVal : null,
@@ -190,6 +205,7 @@ class _AdminProductFormDialogState extends State<AdminProductFormDialog> {
           categoryId: _selectedCategoryId!,
           vehicleType: _selectedVehicleType,
           price: parsedPrice,
+          listPrice: parsedListPrice,
           description: descVal.isNotEmpty ? descVal : null,
           imageUrl: imgVal.isNotEmpty ? imgVal : null,
           isActive: true,
@@ -470,8 +486,8 @@ class _AdminProductFormDialogState extends State<AdminProductFormDialog> {
                 ),
                 const SizedBox(height: 12),
 
-                // Price (Nullable!)
-                _buildFieldLabel('Price (₹) (Optional)'),
+                // MRP (₹) (Optional)
+                _buildFieldLabel('MRP (₹) (Optional)'),
                 const SizedBox(height: 5),
                 TextFormField(
                   key: const Key('product_form_price_input'),
@@ -497,6 +513,48 @@ class _AdminProductFormDialogState extends State<AdminProductFormDialog> {
                     }
                     if (parsed < 0) {
                       return 'Cannot be negative';
+                    }
+                    if (trimmed.contains('.') && trimmed.split('.')[1].length > 2) {
+                      return 'Max 2 decimal places';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // List Price (₹)
+                _buildFieldLabel(widget.isEditing ? 'List Price (₹) (Optional)' : 'List Price (₹) *'),
+                const SizedBox(height: 5),
+                TextFormField(
+                  key: const Key('product_form_list_price_input'),
+                  controller: _listPriceController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  style: const TextStyle(
+                    color: _deepBlue,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: _inputDecoration(
+                    hintText: widget.isEditing ? 'Leave blank if not set' : 'e.g. 1200.00',
+                    prefixIcon: Icons.sell_outlined,
+                  ),
+                  validator: (value) {
+                    final trimmed = value?.trim() ?? '';
+                    if (trimmed.isEmpty) {
+                      if (!widget.isEditing) {
+                        return 'List Price is required for new products';
+                      }
+                      return null;
+                    }
+                    final parsed = num.tryParse(trimmed);
+                    if (parsed == null) {
+                      return 'Enter a valid number';
+                    }
+                    if (parsed < 0) {
+                      return 'Cannot be negative';
+                    }
+                    if (trimmed.contains('.') && trimmed.split('.')[1].length > 2) {
+                      return 'Max 2 decimal places';
                     }
                     return null;
                   },

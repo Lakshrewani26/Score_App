@@ -83,6 +83,17 @@ def _build_order_response(order: Order) -> OrderResponse:
         calculated_total_discount += Decimal(str(item.quantity * disc_amt))
         calculated_final += line_subtotal
 
+        item_mrp = (
+            Decimal(str(item.mrp))
+            if item.mrp is not None
+            else None
+        )
+        item_list_price = (
+            Decimal(str(item.list_price))
+            if item.list_price is not None
+            else None
+        )
+
         item_responses.append(
             OrderItemResponse(
                 id=item.id,
@@ -94,6 +105,8 @@ def _build_order_response(order: Order) -> OrderResponse:
                 unit_price=disc_price,
                 subtotal=line_subtotal,
                 original_price=orig_price,
+                mrp=item_mrp,
+                list_price=item_list_price,
                 discount_percentage=disc_pct,
                 discount_amount=disc_amt,
                 discounted_price=disc_price,
@@ -229,7 +242,8 @@ def preview_order_totals(
                 detail=f"Product ID {item.product_id} is unavailable or not found.",
             )
 
-        if product.price is None:
+        calc_price_val = product.list_price if product.list_price is not None else product.price
+        if calc_price_val is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
@@ -238,14 +252,25 @@ def preview_order_totals(
                 ),
             )
 
-        orig_price = Decimal(str(product.price)).quantize(Decimal("0.01"))
-        disc_amt = (orig_price * (disc_pct / Decimal("100"))).quantize(
+        calc_price = Decimal(str(calc_price_val)).quantize(Decimal("0.01"))
+        disc_amt = (calc_price * (disc_pct / Decimal("100"))).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
-        disc_price = (orig_price - disc_amt).quantize(Decimal("0.01"))
+        disc_price = (calc_price - disc_amt).quantize(Decimal("0.01"))
         line_subtotal = (Decimal(item.quantity) * disc_price).quantize(Decimal("0.01"))
-        line_before = (Decimal(item.quantity) * orig_price).quantize(Decimal("0.01"))
+        line_before = (Decimal(item.quantity) * calc_price).quantize(Decimal("0.01"))
         line_disc = (Decimal(item.quantity) * disc_amt).quantize(Decimal("0.01"))
+
+        mrp_val = (
+            Decimal(str(product.price)).quantize(Decimal("0.01"))
+            if product.price is not None
+            else None
+        )
+        list_price_val = (
+            Decimal(str(product.list_price)).quantize(Decimal("0.01"))
+            if product.list_price is not None
+            else None
+        )
 
         total_qty += item.quantity
         subtotal_before_discount += line_before
@@ -259,7 +284,9 @@ def preview_order_totals(
                 vehicle_type=product.vehicle_type,
                 quantity=item.quantity,
                 unit_price=disc_price,
-                original_price=orig_price,
+                original_price=calc_price,
+                mrp=mrp_val,
+                list_price=list_price_val,
                 discount_percentage=disc_pct,
                 discount_amount=disc_amt,
                 discounted_price=disc_price,
@@ -383,7 +410,8 @@ def create_partner_order(
                 detail=f"Product ID {item.product_id} is unavailable or not found.",
             )
 
-        if product.price is None:
+        calc_price_val = product.list_price if product.list_price is not None else product.price
+        if calc_price_val is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=(
@@ -392,13 +420,24 @@ def create_partner_order(
                 ),
             )
 
-        orig_price = Decimal(str(product.price)).quantize(Decimal("0.01"))
-        disc_amt = (orig_price * (disc_pct / Decimal("100"))).quantize(
+        calc_price = Decimal(str(calc_price_val)).quantize(Decimal("0.01"))
+        disc_amt = (calc_price * (disc_pct / Decimal("100"))).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
-        disc_price = (orig_price - disc_amt).quantize(Decimal("0.01"))
-        line_before = (Decimal(item.quantity) * orig_price).quantize(Decimal("0.01"))
+        disc_price = (calc_price - disc_amt).quantize(Decimal("0.01"))
+        line_before = (Decimal(item.quantity) * calc_price).quantize(Decimal("0.01"))
         line_disc = (Decimal(item.quantity) * disc_amt).quantize(Decimal("0.01"))
+
+        mrp_val = (
+            Decimal(str(product.price)).quantize(Decimal("0.01"))
+            if product.price is not None
+            else None
+        )
+        list_price_val = (
+            Decimal(str(product.list_price)).quantize(Decimal("0.01"))
+            if product.list_price is not None
+            else None
+        )
 
         total_subtotal_before += line_before
         total_disc += line_disc
@@ -408,7 +447,9 @@ def create_partner_order(
                 product_id=product.id,
                 quantity=item.quantity,
                 unit_price=disc_price,
-                original_price=orig_price,
+                original_price=calc_price,
+                mrp=mrp_val,
+                list_price=list_price_val,
                 discount_percentage=disc_pct,
                 discount_amount=disc_amt,
                 discounted_price=disc_price,

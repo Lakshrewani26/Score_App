@@ -7,6 +7,7 @@ class AdminProduct {
   final bool categoryIsActive;
   final String vehicleType;
   final num? price;
+  final num? listPrice;
   final String? description;
   final String? imageUrl;
   final bool isActive;
@@ -20,6 +21,7 @@ class AdminProduct {
     this.categoryIsActive = true,
     required this.vehicleType,
     this.price,
+    this.listPrice,
     this.description,
     this.imageUrl,
     required this.isActive,
@@ -32,6 +34,12 @@ class AdminProduct {
       parsedPrice = num.tryParse(rawPrice.toString());
     }
 
+    final rawListPrice = json['list_price'];
+    num? parsedListPrice;
+    if (rawListPrice != null && rawListPrice.toString().trim().isNotEmpty) {
+      parsedListPrice = num.tryParse(rawListPrice.toString());
+    }
+
     return AdminProduct(
       id: json['id'] as int? ?? 0,
       productCode: (json['product_code'] ?? '').toString(),
@@ -41,6 +49,7 @@ class AdminProduct {
       categoryIsActive: json['category_is_active'] as bool? ?? true,
       vehicleType: (json['vehicle_type'] ?? 'Both').toString(),
       price: parsedPrice,
+      listPrice: parsedListPrice,
       description: json['description'] as String?,
       imageUrl: json['image_url'] as String?,
       isActive: json['is_active'] as bool? ?? true,
@@ -56,6 +65,7 @@ class AdminProduct {
         'category_is_active': categoryIsActive,
         'vehicle_type': vehicleType,
         'price': price,
+        'list_price': listPrice,
         if (description != null) 'description': description,
         if (imageUrl != null) 'image_url': imageUrl,
         'is_active': isActive,
@@ -67,6 +77,22 @@ class AdminProduct {
     }
 
     final rounded = price!.toStringAsFixed(2);
+    final integerPart = rounded.split('.').first;
+    final decimalPart = rounded.split('.').last;
+    final thousands = integerPart.replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (Match match) => '${match[1]},',
+    );
+
+    return '₹ $thousands.$decimalPart';
+  }
+
+  String get displayListPrice {
+    if (listPrice == null) {
+      return 'Price to be confirmed';
+    }
+
+    final rounded = listPrice!.toStringAsFixed(2);
     final integerPart = rounded.split('.').first;
     final decimalPart = rounded.split('.').last;
     final thousands = integerPart.replaceAllMapped(
@@ -90,6 +116,7 @@ class AdminProduct {
           categoryIsActive == other.categoryIsActive &&
           vehicleType == other.vehicleType &&
           price == other.price &&
+          listPrice == other.listPrice &&
           description == other.description &&
           imageUrl == other.imageUrl &&
           isActive == other.isActive;
@@ -104,6 +131,7 @@ class AdminProduct {
       categoryIsActive.hashCode ^
       vehicleType.hashCode ^
       price.hashCode ^
+      listPrice.hashCode ^
       description.hashCode ^
       imageUrl.hashCode ^
       isActive.hashCode;
@@ -286,6 +314,7 @@ class AdminProductCreateRequest {
   final int categoryId;
   final String vehicleType;
   final num? price;
+  final num? listPrice;
   final String? description;
   final String? imageUrl;
   final bool isActive;
@@ -296,6 +325,7 @@ class AdminProductCreateRequest {
     required this.categoryId,
     required this.vehicleType,
     this.price,
+    this.listPrice,
     this.description,
     this.imageUrl,
     this.isActive = true,
@@ -311,6 +341,9 @@ class AdminProductCreateRequest {
     };
     if (price != null) {
       map['price'] = price;
+    }
+    if (listPrice != null) {
+      map['list_price'] = listPrice;
     }
     if (description != null && description!.trim().isNotEmpty) {
       map['description'] = description!.trim();
@@ -329,6 +362,8 @@ class AdminProductUpdateRequest {
   final String? vehicleType;
   final num? price;
   final bool clearPrice;
+  final num? listPrice;
+  final bool clearListPrice;
   final String? description;
   final bool clearDescription;
   final String? imageUrl;
@@ -342,12 +377,15 @@ class AdminProductUpdateRequest {
     this.vehicleType,
     this.price,
     this.clearPrice = false,
+    this.listPrice,
+    this.clearListPrice = false,
     this.description,
     this.clearDescription = false,
     this.imageUrl,
     this.clearImageUrl = false,
     this.isActive,
-  }) : assert(!(clearPrice && price != null), 'Cannot provide both price and clearPrice: true');
+  })  : assert(!(clearPrice && price != null), 'Cannot provide both price and clearPrice: true'),
+        assert(!(clearListPrice && listPrice != null), 'Cannot provide both listPrice and clearListPrice: true');
 
   /// Convenience factory to explicitly clear the product price.
   factory AdminProductUpdateRequest.clearPrice({
@@ -393,6 +431,11 @@ class AdminProductUpdateRequest {
       map['price'] = price;
     } else if (clearPrice) {
       map['price'] = null;
+    }
+    if (listPrice != null) {
+      map['list_price'] = listPrice;
+    } else if (clearListPrice) {
+      map['list_price'] = null;
     }
     if (description != null) {
       map['description'] = description!.trim();

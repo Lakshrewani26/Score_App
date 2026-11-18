@@ -165,7 +165,11 @@ class Product(Base):
             "vehicle_type IN ('2-Wheeler', '3-Wheeler', 'Both')",
             name="supported_vehicle_type",
         ),
-        CheckConstraint("price >= 0", name="nonnegative_price"),
+        CheckConstraint("price IS NULL OR price >= 0", name="nonnegative_price"),
+        CheckConstraint(
+            "list_price IS NULL OR list_price >= 0",
+            name="nonnegative_list_price",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -178,6 +182,7 @@ class Product(Base):
     package_quantity: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     vehicle_type: Mapped[str] = mapped_column(String(20), nullable=False)
     price: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
+    list_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2), nullable=True)
     image_url: Mapped[Optional[str]] = mapped_column(String(2048))
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
@@ -321,6 +326,14 @@ class OrderItem(Base):
             "discounted_price IS NULL OR discounted_price >= 0",
             name="nonnegative_discounted_price",
         ),
+        CheckConstraint(
+            "mrp IS NULL OR mrp >= 0",
+            name="nonnegative_item_mrp",
+        ),
+        CheckConstraint(
+            "list_price IS NULL OR list_price >= 0",
+            name="nonnegative_item_list_price",
+        ),
         Index("ix_order_items_order_id", "order_id"),
     )
 
@@ -334,6 +347,12 @@ class OrderItem(Base):
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     original_price: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    mrp: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
+    list_price: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(12, 2), nullable=True
     )
     discount_percentage: Mapped[Optional[Decimal]] = mapped_column(

@@ -132,6 +132,7 @@ void main() {
       expect(find.byKey(const Key('product_form_category_dropdown')), findsOneWidget);
       expect(find.byKey(const Key('product_form_vehicle_type_dropdown')), findsOneWidget);
       expect(find.byKey(const Key('product_form_price_input')), findsOneWidget);
+      expect(find.byKey(const Key('product_form_list_price_input')), findsOneWidget);
       expect(find.byKey(const Key('product_form_description_input')), findsOneWidget);
       expect(find.byKey(const Key('product_form_image_url_input')), findsOneWidget);
       expect(find.byKey(const Key('product_form_submit_button')), findsOneWidget);
@@ -186,6 +187,7 @@ void main() {
       // Validation errors should appear
       expect(find.text('Product code is required'), findsOneWidget);
       expect(find.text('Product name is required'), findsOneWidget);
+      expect(find.text('List Price is required for new products'), findsOneWidget);
       expect(postCallCount, 0);
     });
 
@@ -304,6 +306,7 @@ void main() {
       await tester.enterText(find.byKey(const Key('product_form_code_input')), 'PRD-NEW-01');
       await tester.enterText(find.byKey(const Key('product_form_name_input')), 'Performance Clutch Plate');
       await tester.enterText(find.byKey(const Key('product_form_price_input')), '450.00');
+      await tester.enterText(find.byKey(const Key('product_form_list_price_input')), '380.00');
       await tester.enterText(find.byKey(const Key('product_form_description_input')), 'Heavy duty clutch');
 
       await tester.ensureVisible(find.byKey(const Key('product_form_submit_button')));
@@ -319,6 +322,7 @@ void main() {
       expect(receivedBody!['product_code'], 'PRD-NEW-01');
       expect(receivedBody!['name'], 'Performance Clutch Plate');
       expect(receivedBody!['price'], 450.0);
+      expect(receivedBody!['list_price'], 380.0);
       expect(receivedBody!['description'], 'Heavy duty clutch');
 
       // Verify SnackBar
@@ -367,6 +371,7 @@ void main() {
 
       await tester.enterText(find.byKey(const Key('product_form_code_input')), 'PRD-ERR');
       await tester.enterText(find.byKey(const Key('product_form_name_input')), 'Error Product');
+      await tester.enterText(find.byKey(const Key('product_form_list_price_input')), '500.00');
 
       await tester.ensureVisible(find.byKey(const Key('product_form_submit_button')));
       await tester.pumpAndSettle();
@@ -429,6 +434,7 @@ void main() {
 
       await tester.enterText(find.byKey(const Key('product_form_code_input')), 'PRD-DBL');
       await tester.enterText(find.byKey(const Key('product_form_name_input')), 'Double Submit Test');
+      await tester.enterText(find.byKey(const Key('product_form_list_price_input')), '200.00');
 
       await tester.ensureVisible(find.byKey(const Key('product_form_submit_button')));
       await tester.pumpAndSettle();

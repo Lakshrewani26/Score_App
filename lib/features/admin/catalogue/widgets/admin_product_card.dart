@@ -188,15 +188,30 @@ class AdminProductCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text(
-                              priceLabel,
-                              style: TextStyle(
-                                color: product.price == null ? const Color(0xFF78909C) : _deepBlue,
-                                fontSize: 12,
-                                fontWeight: product.price == null ? FontWeight.w500 : FontWeight.w700,
-                                fontStyle: product.price == null ? FontStyle.italic : FontStyle.normal,
-                              ),
-                              overflow: TextOverflow.ellipsis,
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 2,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  priceLabel,
+                                  style: TextStyle(
+                                    color: product.price == null ? const Color(0xFF78909C) : _deepBlue,
+                                    fontSize: 12,
+                                    fontWeight: product.price == null ? FontWeight.w500 : FontWeight.w700,
+                                    fontStyle: product.price == null ? FontStyle.italic : FontStyle.normal,
+                                  ),
+                                ),
+                                if (product.listPrice != null)
+                                  Text(
+                                    'List: ${product.displayListPrice}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF00897B),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                           const Icon(

@@ -242,6 +242,11 @@ def test_import_sql_writes_package_quantity_and_preserves_repeatable_candidates(
     assert [row["price"] for row in connection.products] == [
         None,
         Decimal("20.00"),
+        Decimal("25.00"),
+    ]
+    assert [row["list_price"] for row in connection.products] == [
+        None,
+        None,
         Decimal("22.50"),
     ]
     assert len(connection.audits) == 3

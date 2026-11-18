@@ -139,11 +139,14 @@ def test_single_initial_alembic_revision_is_available() -> None:
     scripts = ScriptDirectory.from_config(config)
 
     assert len(scripts.get_heads()) == 1
-    assert len(list(scripts.walk_revisions())) == 10
-    latest_revision = scripts.get_revision("d5e6f7a8b9c0")
+    assert len(list(scripts.walk_revisions())) == 11
+    latest_revision = scripts.get_revision("e6f7a8b9c0d1")
     assert latest_revision is not None
-    assert latest_revision.down_revision == "c4d5e6f7a8b9"
-    assert scripts.get_heads() == ["d5e6f7a8b9c0"]
+    assert latest_revision.down_revision == "d5e6f7a8b9c0"
+    assert scripts.get_heads() == ["e6f7a8b9c0d1"]
+    previous_revision = scripts.get_revision("d5e6f7a8b9c0")
+    assert previous_revision is not None
+    assert previous_revision.down_revision == "c4d5e6f7a8b9"
     previous_revision = scripts.get_revision("c4d5e6f7a8b9")
     assert previous_revision is not None
     assert previous_revision.down_revision == "b3c4d5e6f7a8"

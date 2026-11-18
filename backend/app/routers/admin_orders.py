@@ -130,6 +130,8 @@ def _build_order_detail(order: Order) -> AdminOrderDetail:
             unit_price=item.unit_price,
             subtotal=item.quantity * item.unit_price,
             original_price=item.original_price if item.original_price is not None else item.unit_price,
+            mrp=item.mrp,
+            list_price=item.list_price,
             discount_percentage=item.discount_percentage if item.discount_percentage is not None else Decimal("0.00"),
             discount_amount=item.discount_amount if item.discount_amount is not None else Decimal("0.00"),
             discounted_price=item.discounted_price if item.discounted_price is not None else item.unit_price,

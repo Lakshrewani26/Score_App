@@ -63,6 +63,11 @@ class ProductCandidate:
     side_price: float | None
     package_quantity: str | None
     source_row: list[str]
+    mrp: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.mrp is None and self.list_price is not None:
+            self.mrp = self.list_price
 
 
 def _clean_text(value: Any) -> str:
@@ -356,7 +361,8 @@ def _import_workbooks() -> None:
                     )
                     category = result.scalar_one()
 
-                product_price = candidate.side_price if candidate.side_price is not None else candidate.list_price
+                mrp_val = candidate.mrp if candidate.mrp is not None else candidate.list_price
+                list_price_val = candidate.side_price
                 product_name = candidate.description[:200]
                 product_code = candidate.code[:50]
                 vehicle_type = candidate.vehicle_type or ""
@@ -379,6 +385,7 @@ def _import_workbooks() -> None:
                             package_quantity,
                             vehicle_type,
                             price,
+                            list_price,
                             image_url,
                             is_active
                         ) VALUES (
@@ -389,6 +396,7 @@ def _import_workbooks() -> None:
                             :package_quantity,
                             :vehicle_type,
                             :price,
+                            :list_price,
                             NULL,
                             TRUE
                         )
@@ -401,7 +409,8 @@ def _import_workbooks() -> None:
                         "description": candidate.description if candidate.description else None,
                         "package_quantity": candidate.package_quantity,
                         "vehicle_type": vehicle_type,
-                        "price": None if product_price is None else Decimal(str(product_price)),
+                        "price": None if mrp_val is None else Decimal(str(mrp_val)),
+                        "list_price": None if list_price_val is None else Decimal(str(list_price_val)),
                     },
                 )
                 product_id = conn.execute(

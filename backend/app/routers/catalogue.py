@@ -1,11 +1,12 @@
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.security import get_optional_current_active_user
 from app.db.session import get_db
-from app.models import Product, ProductCategory
+from app.models import Product, ProductCategory, User
 from app.schemas.catalogue import (
     CategoryResponse,
     ProductListResponse,
@@ -16,7 +17,12 @@ from app.schemas.catalogue import (
 router = APIRouter(prefix="/api/v1", tags=["catalogue"])
 
 
-def _product_response(product: Product, category_name: str | None) -> ProductResponse:
+def _product_response(
+    product: Product, category_name: str | None, can_see_list_price: bool = False
+) -> ProductResponse:
+    extra = {}
+    if can_see_list_price:
+        extra["list_price"] = product.list_price
     return ProductResponse(
         id=product.id,
         category_id=product.category_id,
@@ -28,6 +34,7 @@ def _product_response(product: Product, category_name: str | None) -> ProductRes
         vehicle_type=product.vehicle_type,
         price=product.price,
         image_url=product.image_url,
+        **extra,
     )
 
 
@@ -48,7 +55,7 @@ def list_categories(db: Session = Depends(get_db)) -> list[CategoryResponse]:
     ]
 
 
-@router.get("/products", response_model=ProductListResponse)
+@router.get("/products", response_model=ProductListResponse, response_model_exclude_unset=True)
 def list_products(
     category_id: int | None = Query(default=None, ge=1),
     vehicle_type: Literal["2-Wheeler", "3-Wheeler", "Both"] | None = None,
@@ -56,7 +63,13 @@ def list_products(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_active_user),
 ) -> ProductListResponse:
+    can_see_list_price = current_user is not None and current_user.role in (
+        "admin",
+        "partner",
+        "staff",
+    )
     filters = [
         Product.is_active.is_(True),
         ProductCategory.is_active.is_(True),
@@ -93,7 +106,7 @@ def list_products(
 
     return ProductListResponse(
         items=[
-            _product_response(product, category_name)
+            _product_response(product, category_name, can_see_list_price=can_see_list_price)
             for product, category_name in product_rows
         ],
         pagination=ProductPagination(
@@ -105,8 +118,17 @@ def list_products(
     )
 
 
-@router.get("/products/{product_id}", response_model=ProductResponse)
-def get_product(product_id: int, db: Session = Depends(get_db)) -> ProductResponse:
+@router.get("/products/{product_id}", response_model=ProductResponse, response_model_exclude_unset=True)
+def get_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_active_user),
+) -> ProductResponse:
+    can_see_list_price = current_user is not None and current_user.role in (
+        "admin",
+        "partner",
+        "staff",
+    )
     product_row = db.execute(
         select(Product, ProductCategory.name)
         .join(ProductCategory, Product.category_id == ProductCategory.id)
@@ -120,4 +142,4 @@ def get_product(product_id: int, db: Session = Depends(get_db)) -> ProductRespon
         raise HTTPException(status_code=404, detail="Product not found")
 
     product, category_name = product_row
-    return _product_response(product, category_name)
+    return _product_response(product, category_name, can_see_list_price=can_see_list_price)

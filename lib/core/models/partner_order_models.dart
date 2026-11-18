@@ -9,21 +9,21 @@ class CartItem {
   final CatalogueProduct product;
   final int quantity;
 
-  num? get unitPrice => product.price;
+  num? get unitPrice => product.calculationPrice;
   num? get lineTotal {
-    final price = product.price;
+    final price = unitPrice;
     return price == null ? null : price * quantity;
   }
 
   String get displayUnitPrice {
-    if (product.price == null) {
+    if (unitPrice == null) {
       return 'Price unavailable';
     }
-    return product.displayPrice;
+    return product.displayCalculationPrice;
   }
 
   String get displayLineTotal {
-    if (product.price == null) {
+    if (unitPrice == null) {
       return 'N/A';
     }
     final total = lineTotal;
@@ -59,6 +59,8 @@ class PartnerOrderItemResponse {
     required this.unitPrice,
     required this.subtotal,
     this.originalPrice,
+    this.mrp,
+    this.listPrice,
     this.discountPercentage,
     this.discountAmount,
     this.discountedPrice,
@@ -73,6 +75,8 @@ class PartnerOrderItemResponse {
   final num unitPrice;
   final num subtotal;
   final num? originalPrice;
+  final num? mrp;
+  final num? listPrice;
   final num? discountPercentage;
   final num? discountAmount;
   final num? discountedPrice;
@@ -89,6 +93,12 @@ class PartnerOrderItemResponse {
       subtotal: num.tryParse(json['subtotal']?.toString() ?? '0') ?? 0,
       originalPrice: json['original_price'] != null
           ? num.tryParse(json['original_price'].toString())
+          : null,
+      mrp: json['mrp'] != null
+          ? num.tryParse(json['mrp'].toString())
+          : null,
+      listPrice: json['list_price'] != null
+          ? num.tryParse(json['list_price'].toString())
           : null,
       discountPercentage: json['discount_percentage'] != null
           ? num.tryParse(json['discount_percentage'].toString())

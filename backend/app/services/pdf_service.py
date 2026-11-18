@@ -252,7 +252,8 @@ def generate_order_pdf(order: Order) -> bytes:
             Paragraph("<b>SKU / Code</b>", table_header_style),
             Paragraph("<b>Product Name</b>", table_header_style),
             Paragraph("<b>Qty</b>", table_header_style),
-            Paragraph("<b>Orig. Price</b>", table_header_style),
+            Paragraph("<b>MRP</b>", table_header_style),
+            Paragraph("<b>List Price</b>", table_header_style),
             Paragraph("<b>Discount</b>", table_header_style),
             Paragraph("<b>Final Price</b>", table_header_style),
             Paragraph("<b>Line Total</b>", table_header_style),
@@ -273,6 +274,16 @@ def generate_order_pdf(order: Order) -> bytes:
             Decimal(str(item.original_price))
             if item.original_price is not None
             else Decimal(str(item.unit_price))
+        )
+        item_mrp = (
+            Decimal(str(item.mrp))
+            if item.mrp is not None
+            else None
+        )
+        item_list = (
+            Decimal(str(item.list_price))
+            if item.list_price is not None
+            else None
         )
         disc_pct = (
             Decimal(str(item.discount_percentage))
@@ -299,6 +310,13 @@ def generate_order_pdf(order: Order) -> bytes:
         calculated_subtotal += (qty * orig_price)
         calculated_discount += (qty * disc_amt)
 
+        mrp_display = f"Rs. {item_mrp:,.2f}" if item_mrp is not None else "-"
+        if item_list is not None:
+            list_display = f"Rs. {item_list:,.2f}"
+        elif item_mrp is not None:
+            list_display = f"Rs. {orig_price:,.2f}*<br/><font size=6.5 color='#64748B'>(Temporary MRP fallback)</font>"
+        else:
+            list_display = "-"
         disc_display = f"{disc_pct:.1f}% (-Rs. {disc_amt:,.2f})" if disc_amt > 0 else "-"
 
         items_data.append(
@@ -307,7 +325,8 @@ def generate_order_pdf(order: Order) -> bytes:
                 Paragraph(sku, table_cell_style),
                 Paragraph(prod_name, table_cell_style),
                 Paragraph(str(qty), table_cell_style),
-                Paragraph(f"Rs. {orig_price:,.2f}", table_cell_right_style),
+                Paragraph(mrp_display, table_cell_right_style),
+                Paragraph(list_display, table_cell_right_style),
                 Paragraph(disc_display, table_cell_right_style),
                 Paragraph(f"Rs. {final_price:,.2f}", table_cell_right_style),
                 Paragraph(f"Rs. {line_total:,.2f}", table_cell_right_style),
@@ -333,12 +352,13 @@ def generate_order_pdf(order: Order) -> bytes:
     # Subtotal row
     items_data.append(
         [
-            "",
-            "",
             Paragraph("<b>Total Items:</b>", total_label_style),
-            Paragraph(f"<b>{len(items)}</b>", table_cell_style),
             "",
+            "",
+            Paragraph(f"<b>{len(items)}</b>", table_cell_style),
             Paragraph("<b>Subtotal Before Discount:</b>", total_label_style),
+            "",
+            "",
             "",
             Paragraph(f"<b>Rs. {order_subtotal:,.2f}</b>", total_value_style),
         ]
@@ -349,12 +369,13 @@ def generate_order_pdf(order: Order) -> bytes:
     )
     items_data.append(
         [
-            "",
-            "",
             Paragraph("<b>Total Quantity:</b>", total_label_style),
-            Paragraph(f"<b>{total_qty}</b>", table_cell_style),
             "",
+            "",
+            Paragraph(f"<b>{total_qty}</b>", table_cell_style),
             Paragraph(disc_summary_label, total_label_style),
+            "",
+            "",
             "",
             Paragraph(f"<b>- Rs. {order_discount:,.2f}</b>", total_value_style),
         ]
@@ -366,14 +387,15 @@ def generate_order_pdf(order: Order) -> bytes:
             "",
             "",
             "",
-            "",
             Paragraph("<b>Final Order Total:</b>", total_label_style),
+            "",
+            "",
             "",
             Paragraph(f"<b>Rs. {order_final:,.2f}</b>", total_value_style),
         ]
     )
 
-    col_widths = [20, 75, 140, 30, 65, 80, 65, 65]
+    col_widths = [18, 56, 114, 25, 55, 62, 65, 65, 80]
     items_table = Table(items_data, colWidths=col_widths, repeatRows=1)
     items_table.setStyle(
         TableStyle(
@@ -387,11 +409,31 @@ def generate_order_pdf(order: Order) -> bytes:
                 # Total row styling
                 ("BACKGROUND", (0, -3), (-1, -1), colors.HexColor("#F1F5F9")),
                 ("LINEABOVE", (0, -3), (-1, -3), 1.2, primary_color),
+                ("SPAN", (0, -3), (2, -3)),
+                ("SPAN", (4, -3), (7, -3)),
+                ("SPAN", (0, -2), (2, -2)),
+                ("SPAN", (4, -2), (7, -2)),
+                ("SPAN", (0, -1), (3, -1)),
+                ("SPAN", (4, -1), (7, -1)),
             ]
         )
     )
     story.append(items_table)
-    story.append(Spacer(1, 16))
+
+    has_mrp_fallback = any(
+        item.list_price is None and item.mrp is not None for item in items
+    )
+    if has_mrp_fallback:
+        story.append(Spacer(1, 4))
+        story.append(
+            Paragraph(
+                "<font size=7.5 color='#64748B'>* Note: Items marked with (Temporary MRP fallback) use the MRP as the temporary calculation price because List Price was not set.</font>",
+                styles["Normal"],
+            )
+        )
+        story.append(Spacer(1, 12))
+    else:
+        story.append(Spacer(1, 16))
 
     # 4. Approval and Workflow Notice
     notice_text = (

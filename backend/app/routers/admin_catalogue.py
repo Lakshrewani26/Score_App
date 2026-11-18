@@ -115,6 +115,7 @@ def list_admin_products(
             category_is_active=cat_active,
             vehicle_type=p.vehicle_type,
             price=p.price,
+            list_price=p.list_price,
             description=p.description,
             image_url=p.image_url,
             is_active=p.is_active,
@@ -170,6 +171,7 @@ def get_admin_product_detail(
         category_is_active=cat_active,
         vehicle_type=product.vehicle_type,
         price=product.price,
+        list_price=product.list_price,
         description=product.description,
         image_url=product.image_url,
         is_active=product.is_active,
@@ -204,6 +206,7 @@ def create_product(
         category_id=payload.category_id,
         vehicle_type=payload.vehicle_type,
         price=payload.price,
+        list_price=payload.list_price,
         description=payload.description.strip() if payload.description else None,
         image_url=payload.image_url.strip() if payload.image_url else None,
         is_active=payload.is_active,
@@ -222,6 +225,7 @@ def create_product(
         category_is_active=category.is_active,
         vehicle_type=product.vehicle_type,
         price=product.price,
+        list_price=product.list_price,
         description=product.description,
         image_url=product.image_url,
         is_active=product.is_active,
@@ -267,6 +271,8 @@ def update_product(
         product.vehicle_type = update_data["vehicle_type"]
     if "price" in update_data:
         product.price = update_data["price"]
+    if "list_price" in update_data:
+        product.list_price = update_data["list_price"]
     if "description" in update_data:
         desc = update_data["description"]
         product.description = desc.strip() if desc else None
@@ -289,6 +295,7 @@ def update_product(
         category_is_active=cat.is_active if cat else True,
         vehicle_type=product.vehicle_type,
         price=product.price,
+        list_price=product.list_price,
         description=product.description,
         image_url=product.image_url,
         is_active=product.is_active,
@@ -326,6 +333,7 @@ def update_product_status(
         category_is_active=cat.is_active if cat else True,
         vehicle_type=product.vehicle_type,
         price=product.price,
+        list_price=product.list_price,
         description=product.description,
         image_url=product.image_url,
         is_active=product.is_active,

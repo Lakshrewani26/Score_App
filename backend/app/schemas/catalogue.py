@@ -20,6 +20,7 @@ class ProductResponse(BaseModel):
     package_quantity: str | None = None
     vehicle_type: Literal["2-Wheeler", "3-Wheeler", "Both"]
     price: Decimal | None = None
+    list_price: Decimal | None = None
     image_url: str | None
 
 

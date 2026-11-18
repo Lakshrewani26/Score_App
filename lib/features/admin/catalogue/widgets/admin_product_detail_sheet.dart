@@ -497,20 +497,62 @@ class _AdminProductDetailSheetState extends State<AdminProductDetailSheet> {
                             ),
                             const SizedBox(height: 6),
                             // Price display
-                            Text(
-                              priceLabel,
-                              style: TextStyle(
-                                color: _product.price == null
-                                    ? const Color(0xFF78909C)
-                                    : _deepBlue,
-                                fontSize: 16,
-                                fontWeight: _product.price == null
-                                    ? FontWeight.w600
-                                    : FontWeight.w800,
-                                fontStyle: _product.price == null
-                                    ? FontStyle.italic
-                                    : FontStyle.normal,
-                              ),
+                            Wrap(
+                              spacing: 16,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'MRP: ',
+                                      style: TextStyle(
+                                        color: Color(0xFF78909C),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      priceLabel,
+                                      style: TextStyle(
+                                        color: _product.price == null
+                                            ? const Color(0xFF78909C)
+                                            : _deepBlue,
+                                        fontSize: 16,
+                                        fontWeight: _product.price == null
+                                            ? FontWeight.w600
+                                            : FontWeight.w800,
+                                        fontStyle: _product.price == null
+                                            ? FontStyle.italic
+                                            : FontStyle.normal,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (_product.listPrice != null)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Text(
+                                        'List Price: ',
+                                        style: TextStyle(
+                                          color: Color(0xFF00897B),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        _product.displayListPrice,
+                                        style: const TextStyle(
+                                          color: Color(0xFF00897B),
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                              ],
                             ),
                             const SizedBox(height: 16),
                             // Details card
@@ -551,6 +593,12 @@ class _AdminProductDetailSheetState extends State<AdminProductDetailSheet> {
                                   _buildFieldRow(
                                     'Category Status',
                                     _product.categoryIsActive ? 'Active' : 'Inactive',
+                                  ),
+                                  const Divider(height: 16, color: Color(0xFFE3F2FD)),
+                                  _buildFieldRow(
+                                    'List Price',
+                                    _product.listPrice == null ? 'Not set' : _product.displayListPrice,
+                                    valueColor: _product.listPrice == null ? const Color(0xFF78909C) : const Color(0xFF00897B),
                                   ),
                                   if (_product.imageUrl != null &&
                                       _product.imageUrl!.trim().isNotEmpty) ...[

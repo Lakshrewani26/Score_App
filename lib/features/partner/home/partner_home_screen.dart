@@ -337,13 +337,13 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 ),
                 Padding(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       _buildProductImageOrPlaceholder(product.imageUrl),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(
                         product.name,
                         textAlign: TextAlign.center,
@@ -351,48 +351,91 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: _royalBlue,
-                          fontSize: 13.5,
+                          fontSize: 13,
                           fontWeight: FontWeight.w800,
                           height: 1.15,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEAF5FF),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                      const SizedBox(height: 2),
+                      if (product.listPrice != null) ...[
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 2,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Flexible(
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE8F5E9),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFFA5D6A7),
+                                  width: 0.8,
+                                ),
+                              ),
                               child: Text(
-                                product.displayPrice,
+                                product.displayListPrice,
                                 style: const TextStyle(
-                                  color: _royalBlue,
-                                  fontSize: 12,
+                                  color: Color(0xFF2E7D32),
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w800,
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(width: 3),
-                            const Text(
-                              'MRP',
-                              style: TextStyle(
-                                color: Color(0xFF5B7898),
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
+                            Text(
+                              'MRP: ${product.displayPrice}',
+                              style: const TextStyle(
+                                color: Color(0xFF757575),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
                         ),
-                      ),
+                      ] else ...[
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 2,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF8E1),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFFFFE082),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Text(
+                                product.displayPrice,
+                                style: const TextStyle(
+                                  color: Color(0xFFE65100),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              'MRP (fallback): ${product.displayPrice}',
+                              style: const TextStyle(
+                                color: Color(0xFF757575),
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -408,8 +451,8 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
     final hasValidImage = imageUrl != null && imageUrl.trim().isNotEmpty;
     if (!hasValidImage) {
       return Container(
-        width: 70,
-        height: 70,
+        width: 64,
+        height: 64,
         decoration: const BoxDecoration(
           shape: BoxShape.circle,
           color: Color(0xFFDCEBFE),
@@ -417,14 +460,14 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
         child: const Icon(
           Icons.inventory_2_outlined,
           color: _royalBlue,
-          size: 32,
+          size: 28,
         ),
       );
     }
 
     return Container(
-      width: 70,
-      height: 70,
+      width: 64,
+      height: 64,
       decoration: const BoxDecoration(
         shape: BoxShape.circle,
         color: Color(0xFFDCEBFE),
@@ -432,14 +475,14 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
       child: ClipOval(
         child: Image.network(
           imageUrl,
-          width: 70,
-          height: 70,
+          width: 64,
+          height: 64,
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) {
             return const Icon(
               Icons.image_not_supported_rounded,
               color: _royalBlue,
-              size: 30,
+              size: 28,
             );
           },
         ),
@@ -542,22 +585,95 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                   ),
                 ],
                 const SizedBox(height: 12),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDCEBFE),
-                    borderRadius: BorderRadius.circular(16),
+                if (product.listPrice != null) ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8F5E9),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: const Color(0xFFA5D6A7),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          '${product.displayListPrice} (List Price)',
+                          style: const TextStyle(
+                            color: Color(0xFF2E7D32),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(
+                          '${product.displayPrice} MRP',
+                          style: const TextStyle(
+                            color: Color(0xFF616161),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  child: Text(
-                    '${product.displayPrice} MRP',
-                    style: const TextStyle(
-                      color: _royalBlue,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
+                ] else ...[
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF8E1),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: const Color(0xFFFFE082),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          'List Price: ${product.displayPrice} (temporary MRP fallback)',
+                          style: const TextStyle(
+                            color: Color(0xFFE65100),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(
+                          'MRP: ${product.displayPrice}',
+                          style: const TextStyle(
+                            color: Color(0xFF616161),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                ],
                 const SizedBox(height: 12),
               ],
             ),

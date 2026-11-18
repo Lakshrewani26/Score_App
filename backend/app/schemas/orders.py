@@ -32,6 +32,8 @@ class OrderItemResponse(BaseModel):
     unit_price: Decimal
     subtotal: Decimal
     original_price: Optional[Decimal] = None
+    mrp: Optional[Decimal] = None
+    list_price: Optional[Decimal] = None
     discount_percentage: Optional[Decimal] = None
     discount_amount: Optional[Decimal] = None
     discounted_price: Optional[Decimal] = None
@@ -89,6 +91,8 @@ class OrderPreviewItem(BaseModel):
     quantity: int
     unit_price: Decimal
     original_price: Decimal
+    mrp: Optional[Decimal] = None
+    list_price: Optional[Decimal] = None
     discount_percentage: Decimal
     discount_amount: Decimal
     discounted_price: Decimal

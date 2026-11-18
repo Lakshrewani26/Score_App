@@ -17,6 +17,7 @@ class AdminProductResponse(BaseModel):
     category_is_active: bool = True
     vehicle_type: Literal["2-Wheeler", "3-Wheeler", "Both"]
     price: Decimal | None = None
+    list_price: Decimal | None = None
     description: str | None = None
     image_url: str | None = None
     is_active: bool
@@ -44,6 +45,7 @@ class AdminProductCreateRequest(BaseModel):
     category_id: int = Field(..., ge=1)
     vehicle_type: Literal["2-Wheeler", "3-Wheeler", "Both"]
     price: Decimal | None = None
+    list_price: Decimal = Field(...)
     description: str | None = None
     image_url: str | None = Field(default=None, max_length=2048)
     is_active: bool = True
@@ -56,11 +58,14 @@ class AdminProductCreateRequest(BaseModel):
             raise ValueError("Field cannot be empty or whitespace only")
         return cleaned
 
-    @field_validator("price")
+    @field_validator("price", "list_price")
     @classmethod
     def validate_price(cls, v: Decimal | None) -> Decimal | None:
-        if v is not None and v < Decimal("0.00"):
-            raise ValueError("Price cannot be negative")
+        if v is not None:
+            if v < Decimal("0.00"):
+                raise ValueError("Price cannot be negative")
+            if v.as_tuple().exponent < -2:
+                raise ValueError("Price cannot have more than two decimal places")
         return v
 
 
@@ -70,6 +75,7 @@ class AdminProductUpdateRequest(BaseModel):
     category_id: int | None = Field(default=None, ge=1)
     vehicle_type: Literal["2-Wheeler", "3-Wheeler", "Both"] | None = None
     price: Decimal | None = None
+    list_price: Decimal | None = None
     description: str | None = None
     image_url: str | None = Field(default=None, max_length=2048)
     is_active: bool | None = None
@@ -84,11 +90,14 @@ class AdminProductUpdateRequest(BaseModel):
             return cleaned
         return v
 
-    @field_validator("price")
+    @field_validator("price", "list_price")
     @classmethod
     def validate_price(cls, v: Decimal | None) -> Decimal | None:
-        if v is not None and v < Decimal("0.00"):
-            raise ValueError("Price cannot be negative")
+        if v is not None:
+            if v < Decimal("0.00"):
+                raise ValueError("Price cannot be negative")
+            if v.as_tuple().exponent < -2:
+                raise ValueError("Price cannot have more than two decimal places")
         return v
 
 

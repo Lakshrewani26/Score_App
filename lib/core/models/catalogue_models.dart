@@ -51,6 +51,7 @@ class CatalogueProduct {
     this.categoryName,
     this.description,
     this.price,
+    this.listPrice,
     this.imageUrl,
   });
 
@@ -62,13 +63,22 @@ class CatalogueProduct {
   final String? description;
   final String vehicleType;
   final num? price;
+  final num? listPrice;
   final String? imageUrl;
+
+  num? get calculationPrice => listPrice ?? price;
 
   factory CatalogueProduct.fromJson(Map<String, dynamic> json) {
     final rawPrice = json['price'];
     num? parsedPrice;
     if (rawPrice != null && rawPrice.toString().trim().isNotEmpty) {
-      parsedPrice = num.parse(rawPrice.toString());
+      parsedPrice = num.tryParse(rawPrice.toString());
+    }
+
+    final rawListPrice = json['list_price'];
+    num? parsedListPrice;
+    if (rawListPrice != null && rawListPrice.toString().trim().isNotEmpty) {
+      parsedListPrice = num.tryParse(rawListPrice.toString());
     }
 
     return CatalogueProduct(
@@ -80,6 +90,7 @@ class CatalogueProduct {
       description: json['description'] as String?,
       vehicleType: (json['vehicle_type'] ?? 'Both').toString(),
       price: parsedPrice,
+      listPrice: parsedListPrice,
       imageUrl: json['image_url'] as String?,
     );
   }
@@ -90,6 +101,39 @@ class CatalogueProduct {
     }
 
     final rounded = price!.toStringAsFixed(2);
+    final integerPart = rounded.split('.').first;
+    final decimalPart = rounded.split('.').last;
+    final thousands = integerPart.replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (Match match) => '${match[1]},',
+    );
+
+    return '₹ $thousands.$decimalPart';
+  }
+
+  String get displayListPrice {
+    if (listPrice == null) {
+      return 'Price to be confirmed';
+    }
+
+    final rounded = listPrice!.toStringAsFixed(2);
+    final integerPart = rounded.split('.').first;
+    final decimalPart = rounded.split('.').last;
+    final thousands = integerPart.replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (Match match) => '${match[1]},',
+    );
+
+    return '₹ $thousands.$decimalPart';
+  }
+
+  String get displayCalculationPrice {
+    final calc = calculationPrice;
+    if (calc == null) {
+      return 'Price to be confirmed';
+    }
+
+    final rounded = calc.toStringAsFixed(2);
     final integerPart = rounded.split('.').first;
     final decimalPart = rounded.split('.').last;
     final thousands = integerPart.replaceAllMapped(

@@ -4,6 +4,10 @@ import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 import '../models/catalogue_models.dart';
+import 'admin_session_manager.dart';
+import 'customer_session_manager.dart';
+import 'partner_session_manager.dart';
+import 'staff_session_manager.dart';
 
 class CatalogueApiException implements Exception {
   CatalogueApiException(this.message, {this.statusCode});
@@ -16,12 +20,26 @@ class CatalogueApiException implements Exception {
 }
 
 class CatalogueApi {
-  CatalogueApi({http.Client? client, String? baseUrl})
-      : _client = client ?? http.Client(),
-        _baseUrl = (baseUrl ?? AppConfig.baseUrl).replaceAll(RegExp(r'/+$'), '');
+  CatalogueApi({
+    http.Client? client,
+    String? baseUrl,
+    PartnerSessionManager? partnerSessionManager,
+    StaffSessionManager? staffSessionManager,
+    AdminSessionManager? adminSessionManager,
+    CustomerSessionManager? customerSessionManager,
+  })  : _client = client ?? http.Client(),
+        _baseUrl = (baseUrl ?? AppConfig.baseUrl).replaceAll(RegExp(r'/+$'), ''),
+        _partnerSessionManager = partnerSessionManager,
+        _staffSessionManager = staffSessionManager,
+        _adminSessionManager = adminSessionManager,
+        _customerSessionManager = customerSessionManager;
 
   final http.Client _client;
   final String _baseUrl;
+  final PartnerSessionManager? _partnerSessionManager;
+  final StaffSessionManager? _staffSessionManager;
+  final AdminSessionManager? _adminSessionManager;
+  final CustomerSessionManager? _customerSessionManager;
 
   Uri _uri(String path, [Map<String, dynamic>? queryParameters]) {
     final uri = Uri.parse('$_baseUrl$path');
@@ -40,8 +58,54 @@ class CatalogueApi {
     return uri.replace(queryParameters: cleaned.isEmpty ? null : cleaned);
   }
 
+  Future<Map<String, String>> _authHeaders() async {
+    final headers = <String, String>{};
+
+    final partnerSession = _partnerSessionManager ?? PartnerSessionManager.instance;
+    if (partnerSession.isAuthenticated) {
+      final token = await partnerSession.getToken();
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+        return headers;
+      }
+    }
+
+    final staffSession = _staffSessionManager ?? StaffSessionManager.instance;
+    if (staffSession.isAuthenticated) {
+      final token = await staffSession.getToken();
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+        return headers;
+      }
+    }
+
+    final adminSession = _adminSessionManager ?? AdminSessionManager.instance;
+    if (adminSession.isAuthenticated) {
+      final token = await adminSession.tokenStorage.getToken();
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+        return headers;
+      }
+    }
+
+    final customerSession = _customerSessionManager ?? CustomerSessionManager.instance;
+    if (customerSession.isAuthenticated) {
+      final token = await customerSession.getToken();
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+        return headers;
+      }
+    }
+
+    return headers;
+  }
+
   Future<List<CatalogueCategory>> loadCategories() async {
-    final response = await _client.get(_uri('/api/v1/categories'));
+    final headers = await _authHeaders();
+    final response = await _client.get(
+      _uri('/api/v1/categories'),
+      headers: headers.isEmpty ? null : headers,
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw CatalogueApiException(
         'Unable to load categories',
@@ -81,7 +145,11 @@ class CatalogueApi {
       query['search'] = search.trim();
     }
 
-    final response = await _client.get(_uri('/api/v1/products', query));
+    final headers = await _authHeaders();
+    final response = await _client.get(
+      _uri('/api/v1/products', query),
+      headers: headers.isEmpty ? null : headers,
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw CatalogueApiException(
         'Unable to load products',
@@ -98,7 +166,11 @@ class CatalogueApi {
   }
 
   Future<CatalogueProduct> getProduct(int productId) async {
-    final response = await _client.get(_uri('/api/v1/products/$productId'));
+    final headers = await _authHeaders();
+    final response = await _client.get(
+      _uri('/api/v1/products/$productId'),
+      headers: headers.isEmpty ? null : headers,
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw CatalogueApiException(
         'Unable to load product details',
