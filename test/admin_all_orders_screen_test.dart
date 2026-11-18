@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,7 @@ import 'package:http/testing.dart';
 import 'package:score_app/core/models/admin_models.dart';
 import 'package:score_app/core/services/admin_orders_api.dart';
 import 'package:score_app/core/services/admin_session_manager.dart';
+import 'package:score_app/core/services/pdf_printer/pdf_printer.dart';
 import 'package:score_app/features/admin/orders/admin_all_orders_screen.dart';
 
 void main() {
@@ -28,11 +30,16 @@ void main() {
     );
   });
 
-  Widget createTestWidget({required AdminOrdersApi ordersApi, Size? physicalSize}) {
+  Widget createTestWidget({
+    required AdminOrdersApi ordersApi,
+    Size? physicalSize,
+    PdfPrinterFn? pdfPrinter,
+  }) {
     return MaterialApp(
       home: AdminAllOrdersScreen(
         ordersApi: ordersApi,
         sessionManager: sessionManager,
+        pdfPrinter: pdfPrinter,
       ),
     );
   }
@@ -352,13 +359,22 @@ void main() {
         return http.Response('Not Found', 404);
       });
 
+      Uint8List? printedBytes;
+      String? printedFileName;
+
       final ordersApi = AdminOrdersApi(
         client: mockClient,
         baseUrl: 'http://test.local',
         sessionManager: sessionManager,
       );
 
-      await tester.pumpWidget(createTestWidget(ordersApi: ordersApi));
+      await tester.pumpWidget(createTestWidget(
+        ordersApi: ordersApi,
+        pdfPrinter: ({required bytes, required fileName}) async {
+          printedBytes = bytes;
+          printedFileName = fileName;
+        },
+      ));
       await tester.pumpAndSettle();
 
       // Tap order row to view details
@@ -379,8 +395,13 @@ void main() {
       // Tap Print Order button
       await tester.tap(find.byKey(const Key('all_orders_detail_print_button')));
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       expect(pdfDownloaded, isTrue);
+      expect(printedBytes, isNotNull);
+      expect(utf8.decode(printedBytes!), equals('fake-pdf-bytes'));
+      expect(printedFileName, equals('Score_Order_ORD-PTN-001.pdf'));
+      expect(find.text('Print preview opened for Order #ORD-PTN-001.'), findsOneWidget);
     });
 
     testWidgets('6. Error state shows retry button and retry reloads data',
@@ -489,6 +510,298 @@ void main() {
       expect(find.text('ORD-HIST-003'), findsOneWidget);
       expect(find.text('Rajesh Auto Spares'), findsOneWidget);
       expect(find.text('Unknown / Legacy'), findsNWidgets(2));
+    });
+
+    testWidgets(
+        '8. Print button in desktop table requests correct order ID and triggers print workflow',
+        (tester) async {
+      tester.view.physicalSize = const Size(1600, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      int? requestedPdfOrderId;
+      Uint8List? printedBytes;
+      String? printedFileName;
+
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/admin/orders') {
+          return http.Response(
+            jsonEncode({
+              'items': [
+                {
+                  'id': 42,
+                  'order_number': 'ORD-ACTUAL-042',
+                  'partner_id': 5,
+                  'partner_name': 'Kavita Rao',
+                  'business_name': 'Rao Motors',
+                  'partner_mobile': '9876543242',
+                  'status': 'dispatched',
+                  'created_at': '2026-11-18T10:00:00Z',
+                  'created_by_user_id': 5,
+                  'created_by_name': 'Kavita Rao',
+                  'created_by_role': 'partner',
+                  'item_count': 1,
+                  'total_quantity': 3,
+                  'order_total': '1500.00',
+                  'subtotal_before_discount': '1500.00',
+                  'discount_percentage': '0.00',
+                  'total_discount': '0.00',
+                  'final_total': '1500.00',
+                },
+              ],
+              'total': 1,
+              'page': 1,
+              'page_size': 20,
+              'total_pages': 1,
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        } else if (request.url.path == '/api/v1/admin/orders/42/pdf') {
+          requestedPdfOrderId = 42;
+          return http.Response(
+            'actual-order-42-pdf-bytes',
+            200,
+            headers: {'content-type': 'application/pdf'},
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final ordersApi = AdminOrdersApi(
+        client: mockClient,
+        baseUrl: 'http://test.local',
+        sessionManager: sessionManager,
+      );
+
+      await tester.pumpWidget(createTestWidget(
+        ordersApi: ordersApi,
+        pdfPrinter: ({required bytes, required fileName}) async {
+          printedBytes = bytes;
+          printedFileName = fileName;
+        },
+      ));
+      await tester.pumpAndSettle();
+
+      // Tap table print button
+      final printBtn = find.byKey(const Key('print_order_42'));
+      await tester.ensureVisible(printBtn);
+      await tester.tap(printBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(requestedPdfOrderId, equals(42));
+      expect(printedBytes, isNotNull);
+      expect(utf8.decode(printedBytes!), equals('actual-order-42-pdf-bytes'));
+      expect(printedFileName, equals('Score_Order_ORD-ACTUAL-042.pdf'));
+      expect(
+        find.text('Print preview opened for Order #ORD-ACTUAL-042.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+        '9. Handles PDF download API failure properly and shows error SnackBar',
+        (tester) async {
+      tester.view.physicalSize = const Size(1600, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      bool printerCalled = false;
+
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/admin/orders') {
+          return http.Response(
+            jsonEncode({
+              'items': [
+                {
+                  'id': 15,
+                  'order_number': 'ORD-ERR-015',
+                  'partner_id': 2,
+                  'partner_name': 'Test Partner',
+                  'business_name': 'Test Spares',
+                  'partner_mobile': '9876543210',
+                  'status': 'pending_approval',
+                  'created_at': '2026-11-18T10:00:00Z',
+                  'created_by_user_id': 2,
+                  'created_by_name': 'Test Partner',
+                  'created_by_role': 'partner',
+                  'item_count': 1,
+                  'total_quantity': 1,
+                  'order_total': '100.00',
+                  'subtotal_before_discount': '100.00',
+                  'discount_percentage': '0.00',
+                  'total_discount': '0.00',
+                  'final_total': '100.00',
+                },
+              ],
+              'total': 1,
+              'page': 1,
+              'page_size': 20,
+              'total_pages': 1,
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        } else if (request.url.path == '/api/v1/admin/orders/15/pdf') {
+          return http.Response('Internal Server Error', 500);
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final ordersApi = AdminOrdersApi(
+        client: mockClient,
+        baseUrl: 'http://test.local',
+        sessionManager: sessionManager,
+      );
+
+      await tester.pumpWidget(createTestWidget(
+        ordersApi: ordersApi,
+        pdfPrinter: ({required bytes, required fileName}) async {
+          printerCalled = true;
+        },
+      ));
+      await tester.pumpAndSettle();
+
+      final printBtn = find.byKey(const Key('print_order_15'));
+      await tester.ensureVisible(printBtn);
+      await tester.tap(printBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(printerCalled, isFalse);
+      expect(
+        find.textContaining('Failed to print order: Failed to download order PDF'),
+        findsOneWidget,
+      );
+      // Ensure it does not falsely report success
+      expect(find.textContaining('Print preview opened'), findsNothing);
+    });
+
+    testWidgets(
+        '10. Handles browser printing failure (e.g. popup blocked) and shows error SnackBar',
+        (tester) async {
+      tester.view.physicalSize = const Size(1600, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/admin/orders') {
+          return http.Response(
+            jsonEncode({
+              'items': [
+                {
+                  'id': 16,
+                  'order_number': 'ORD-BLOCKED-016',
+                  'partner_id': 2,
+                  'partner_name': 'Test Partner',
+                  'business_name': 'Test Spares',
+                  'partner_mobile': '9876543210',
+                  'status': 'pending_approval',
+                  'created_at': '2026-11-18T10:00:00Z',
+                  'created_by_user_id': 2,
+                  'created_by_name': 'Test Partner',
+                  'created_by_role': 'partner',
+                  'item_count': 1,
+                  'total_quantity': 1,
+                  'order_total': '100.00',
+                  'subtotal_before_discount': '100.00',
+                  'discount_percentage': '0.00',
+                  'total_discount': '0.00',
+                  'final_total': '100.00',
+                },
+              ],
+              'total': 1,
+              'page': 1,
+              'page_size': 20,
+              'total_pages': 1,
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        } else if (request.url.path == '/api/v1/admin/orders/16/pdf') {
+          return http.Response(
+            'pdf-data',
+            200,
+            headers: {'content-type': 'application/pdf'},
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final ordersApi = AdminOrdersApi(
+        client: mockClient,
+        baseUrl: 'http://test.local',
+        sessionManager: sessionManager,
+      );
+
+      await tester.pumpWidget(createTestWidget(
+        ordersApi: ordersApi,
+        pdfPrinter: ({required bytes, required fileName}) async {
+          throw Exception('Print popup was blocked by browser. Please allow popups for this site to print.');
+        },
+      ));
+      await tester.pumpAndSettle();
+
+      final printBtn = find.byKey(const Key('print_order_16'));
+      await tester.ensureVisible(printBtn);
+      await tester.tap(printBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(
+        find.textContaining('Failed to print order: Print popup was blocked by browser'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Print preview opened'), findsNothing);
+    });
+
+    testWidgets(
+        '11. Verifies All Orders screen strictly renders real API data without static fallbacks',
+        (tester) async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/admin/orders') {
+          // Verify that query parameters are forwarded to backend API
+          expect(request.url.queryParameters['page'], equals('1'));
+          expect(request.url.queryParameters['page_size'], equals('20'));
+          return http.Response(
+            jsonEncode({
+              'items': [],
+              'total': 0,
+              'page': 1,
+              'page_size': 20,
+              'total_pages': 0,
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        return http.Response('Not Found', 404);
+      });
+
+      final ordersApi = AdminOrdersApi(
+        client: mockClient,
+        baseUrl: 'http://test.local',
+        sessionManager: sessionManager,
+      );
+
+      await tester.pumpWidget(createTestWidget(ordersApi: ordersApi));
+      await tester.pumpAndSettle();
+
+      // Confirms empty state when backend returns empty list (no hardcoded orders injected)
+      expect(find.text('No Orders Found'), findsOneWidget);
+      expect(find.text('ORD-PTN-001'), findsNothing);
+      expect(find.text('ORD-STF-002'), findsNothing);
+      expect(find.text('ORD-HIST-003'), findsNothing);
     });
   });
 }

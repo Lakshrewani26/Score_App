@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter_file_dialog/flutter_file_dialog.dart';
-
 import '../../../core/models/admin_order_models.dart';
 import '../../../core/services/admin_api.dart';
 import '../../../core/services/admin_orders_api.dart';
 import '../../../core/services/admin_session_manager.dart';
+import '../../../core/services/pdf_printer/pdf_printer.dart';
 
 Color _getCreatorBadgeBg(String role) {
   final r = role.toLowerCase();
@@ -39,11 +38,13 @@ class AdminAllOrdersScreen extends StatefulWidget {
     this.adminApi,
     this.ordersApi,
     this.sessionManager,
+    this.pdfPrinter,
   });
 
   final AdminApi? adminApi;
   final AdminOrdersApi? ordersApi;
   final AdminSessionManager? sessionManager;
+  final PdfPrinterFn? pdfPrinter;
 
   @override
   State<AdminAllOrdersScreen> createState() => _AdminAllOrdersScreenState();
@@ -57,6 +58,7 @@ class _AdminAllOrdersScreenState extends State<AdminAllOrdersScreen> {
 
   late final AdminSessionManager _session;
   late final AdminOrdersApi _ordersApi;
+  late final PdfPrinterFn _pdfPrinter;
 
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounceTimer;
@@ -83,6 +85,7 @@ class _AdminAllOrdersScreenState extends State<AdminAllOrdersScreen> {
     _ordersApi = widget.ordersApi ??
         widget.adminApi?.orders ??
         AdminOrdersApi(sessionManager: _session);
+    _pdfPrinter = widget.pdfPrinter ?? printPdfDocument;
 
     _searchController.addListener(_onSearchChanged);
     _fetchOrders();
@@ -161,41 +164,26 @@ class _AdminAllOrdersScreenState extends State<AdminAllOrdersScreen> {
       if (!mounted) return;
 
       final fileName = 'Score_Order_${order.orderNumber}.pdf';
-      try {
-        final savedPath = await FlutterFileDialog.saveFile(
-          params: SaveFileDialogParams(
-            data: pdfBytes,
-            fileName: fileName,
-          ),
-        );
-        if (!mounted) return;
-
-        if (savedPath == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Print/Save PDF cancelled.')),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Order PDF saved successfully: $savedPath'),
-              backgroundColor: const Color(0xFF2E7D32),
-            ),
-          );
-        }
-      } catch (_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('PDF generated successfully for Order #${order.orderNumber} (${pdfBytes.lengthInBytes} bytes)'),
-            backgroundColor: const Color(0xFF2E7D32),
-          ),
-        );
-      }
-    } catch (e) {
+      await _pdfPrinter(bytes: pdfBytes, fileName: fileName);
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to print order: $e'),
+          content: Text('Print preview opened for Order #${order.orderNumber}.'),
+          backgroundColor: const Color(0xFF2E7D32),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final String errorMsg;
+      if (e is AdminApiException) {
+        errorMsg = e.message;
+      } else {
+        errorMsg = e.toString().replaceFirst(RegExp(r'^(Exception|AdminApiException):\s*'), '');
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to print order: $errorMsg'),
           backgroundColor: const Color(0xFFD32F2F),
         ),
       );
