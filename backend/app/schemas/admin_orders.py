@@ -56,6 +56,9 @@ class AdminOrderSummary(BaseModel):
     partner_name: str
     business_name: Optional[str] = None
     partner_mobile: str
+    created_by_user_id: Optional[int] = None
+    created_by_name: Optional[str] = None
+    created_by_role: Optional[str] = None
     status: str
     notes: Optional[str] = None
     created_at: datetime

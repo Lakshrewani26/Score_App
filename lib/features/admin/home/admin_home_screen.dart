@@ -8,6 +8,7 @@ import '../../../core/services/admin_session_manager.dart';
 import '../../welcome/welcome_screen.dart';
 import '../login/admin_login_screen.dart';
 import '../catalogue/admin_catalogue_screen.dart';
+import '../orders/admin_all_orders_screen.dart';
 import '../qr/admin_qr_generation_screen.dart';
 import '../settings/admin_settings_screen.dart';
 import '../users/admin_users_screen.dart';
@@ -604,6 +605,12 @@ class AdminHomeScreen extends StatelessWidget {
         const Color(0xFF0055B8),
       ),
       (
+        'All Orders',
+        'Partner & Staff orders with PDF print',
+        Icons.receipt_long_rounded,
+        const Color(0xFF00897B),
+      ),
+      (
         'Catalogue Management',
         'Products, categories & inventory',
         Icons.category_rounded,
@@ -640,6 +647,7 @@ class AdminHomeScreen extends StatelessWidget {
     required IconData icon,
     required Color color,
   }) {
+    final isAllOrders = title == 'All Orders';
     final isUserManagement = title == 'User Management';
     final isCatalogueManagement = title == 'Catalogue Management';
     final isSystemSettings = title == 'System Settings';
@@ -662,6 +670,18 @@ class AdminHomeScreen extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () {
+            if (isAllOrders) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => AdminAllOrdersScreen(
+                    sessionManager: _activeSession,
+                    adminApi: adminApi,
+                  ),
+                ),
+              );
+              return;
+            }
+
             if (isUserManagement) {
               Navigator.of(context).push(
                 MaterialPageRoute(
@@ -743,7 +763,35 @@ class AdminHomeScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (isUserManagement)
+                if (isAllOrders)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE0F2F1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'View',
+                          style: TextStyle(
+                            color: Color(0xFF00897B),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        SizedBox(width: 2),
+                        Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 10,
+                          color: Color(0xFF00897B),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (isUserManagement)
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

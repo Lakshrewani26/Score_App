@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -197,6 +198,28 @@ class AdminOrdersApi {
     }
 
     throw _parseError(response, 'Failed to update order status');
+  }
+
+  /// Download the generated official Sales Order PDF for direct printing.
+  Future<Uint8List> downloadOrderPdf(int orderId, {String? token}) async {
+    final authToken = await _getAuthToken(token);
+    final url = _uri('/api/v1/admin/orders/$orderId/pdf');
+
+    final response = await _sendWithTimeout(
+      () => _client.get(
+        url,
+        headers: {
+          'Accept': 'application/pdf',
+          'Authorization': 'Bearer $authToken',
+        },
+      ),
+    );
+
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    }
+
+    throw _parseError(response, 'Failed to download order PDF');
   }
 
   // =========================================================================

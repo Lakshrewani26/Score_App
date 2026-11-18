@@ -198,6 +198,9 @@ class AdminOrderSummary {
   final String partnerName;
   final String? businessName;
   final String partnerMobile;
+  final int? createdByUserId;
+  final String? createdByName;
+  final String? createdByRole;
   final String status;
   final String? notes;
   final DateTime createdAt;
@@ -219,6 +222,9 @@ class AdminOrderSummary {
     required this.partnerName,
     this.businessName,
     required this.partnerMobile,
+    this.createdByUserId,
+    this.createdByName,
+    this.createdByRole,
     required this.status,
     this.notes,
     required this.createdAt,
@@ -272,6 +278,9 @@ class AdminOrderSummary {
       partnerName: (json['partner_name'] ?? '').toString(),
       businessName: json['business_name'] as String?,
       partnerMobile: (json['partner_mobile'] ?? '').toString(),
+      createdByUserId: json['created_by_user_id'] as int?,
+      createdByName: json['created_by_name'] as String?,
+      createdByRole: json['created_by_role'] as String?,
       status: (json['status'] ?? '').toString(),
       notes: json['notes'] as String?,
       createdAt: json['created_at'] != null
@@ -291,6 +300,23 @@ class AdminOrderSummary {
       finalTotal: parsedFinalTotal,
     );
   }
+
+  String get displayCreatorRole {
+    final role = createdByRole?.trim().toLowerCase();
+    if (role == 'staff') return 'Staff';
+    if (role == 'partner') return 'Partner';
+    if (role == 'unknown') return 'Unknown / Legacy';
+    return (role != null && role.isNotEmpty)
+        ? role.toUpperCase()
+        : 'Unknown / Legacy';
+  }
+
+  String get displayCreatorName =>
+      (createdByName != null && createdByName!.isNotEmpty)
+          ? createdByName!
+          : (createdByRole?.trim().toLowerCase() == 'unknown' || createdByRole == null
+              ? 'Unknown / Legacy'
+              : partnerName);
 
   String get displayStatus => formatStatus(status);
   String get displayOrderTotal => formatCurrency(finalTotal ?? orderTotal);
@@ -314,6 +340,9 @@ class AdminOrderDetail extends AdminOrderSummary {
     required super.partnerName,
     super.businessName,
     required super.partnerMobile,
+    super.createdByUserId,
+    super.createdByName,
+    super.createdByRole,
     required super.status,
     super.notes,
     required super.createdAt,
@@ -343,6 +372,9 @@ class AdminOrderDetail extends AdminOrderSummary {
       partnerName: summary.partnerName,
       businessName: summary.businessName,
       partnerMobile: summary.partnerMobile,
+      createdByUserId: summary.createdByUserId,
+      createdByName: summary.createdByName,
+      createdByRole: summary.createdByRole,
       status: summary.status,
       notes: summary.notes,
       createdAt: summary.createdAt,

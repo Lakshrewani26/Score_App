@@ -4,7 +4,7 @@ from datetime import datetime, time, timezone
 from decimal import Decimal
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -36,6 +36,7 @@ from app.schemas.admin_orders import (
     PaginationMetadata,
 )
 from app.services.order_service import apply_order_status_transition
+from app.services.pdf_service import generate_order_pdf
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin-orders"])
 
@@ -67,6 +68,16 @@ def _build_order_summary(order: Order) -> AdminOrderSummary:
     partner = order.partner
     partner_profile: Optional[PartnerProfile] = getattr(partner, "partner_profile", None) if partner else None
     approver = order.approver
+    creator = order.created_by
+
+    if creator:
+        created_by_user_id = creator.id
+        created_by_name = creator.name
+        created_by_role = creator.role
+    else:
+        created_by_user_id = None
+        created_by_name = "Unknown / Legacy"
+        created_by_role = "unknown"
 
     items = order.items or []
     item_count = len(items)
@@ -84,6 +95,9 @@ def _build_order_summary(order: Order) -> AdminOrderSummary:
         partner_name=partner.name if partner else f"User #{order.partner_id}",
         business_name=partner_profile.business_name if partner_profile else None,
         partner_mobile=partner.mobile if partner else "",
+        created_by_user_id=created_by_user_id,
+        created_by_name=created_by_name,
+        created_by_role=created_by_role,
         status=order.status,
         notes=order.notes,
         created_at=order.created_at,
@@ -278,6 +292,10 @@ def list_orders(
         clean_search = search.strip()
         if clean_search:
             pattern = f"%{clean_search}%"
+            creator_search = Order.created_by.has(User.name.ilike(pattern))
+            if "unknown" in clean_search.lower() or "legacy" in clean_search.lower():
+                creator_search = creator_search | Order.created_by_user_id.is_(None)
+
             search_clause = (
                 Order.order_number.ilike(pattern)
                 | Order.partner.has(User.name.ilike(pattern))
@@ -285,6 +303,7 @@ def list_orders(
                 | Order.partner.has(
                     User.partner_profile.has(PartnerProfile.business_name.ilike(pattern))
                 )
+                | creator_search
             )
             filters.append(search_clause)
 
@@ -299,6 +318,7 @@ def list_orders(
         select(Order)
         .options(
             selectinload(Order.partner).selectinload(User.partner_profile),
+            selectinload(Order.created_by),
             selectinload(Order.approver),
             selectinload(Order.items).selectinload(OrderItem.product),
         )
@@ -336,6 +356,7 @@ def get_order_detail(
         select(Order)
         .options(
             selectinload(Order.partner).selectinload(User.partner_profile),
+            selectinload(Order.created_by),
             selectinload(Order.approver),
             selectinload(Order.items).selectinload(OrderItem.product),
             selectinload(Order.status_history).selectinload(OrderStatusHistory.actor),
@@ -349,6 +370,41 @@ def get_order_detail(
         )
 
     return _build_order_detail(order)
+
+
+@router.get("/orders/{order_id}/pdf")
+def get_admin_order_pdf(
+    order_id: int,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Generate and return official printable Sales Order PDF for an order."""
+    order = db.scalar(
+        select(Order)
+        .options(
+            selectinload(Order.partner).selectinload(User.partner_profile),
+            selectinload(Order.created_by),
+            selectinload(Order.items).selectinload(OrderItem.product),
+        )
+        .where(Order.id == order_id)
+    )
+    if order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Order #{order_id} not found",
+        )
+
+    pdf_bytes = generate_order_pdf(order)
+    filename = f"Score_Order_{order.order_number}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, no-cache, no-store, must-revalidate",
+        },
+    )
 
 
 @router.patch("/orders/{order_id}/status", response_model=AdminOrderDetail)
