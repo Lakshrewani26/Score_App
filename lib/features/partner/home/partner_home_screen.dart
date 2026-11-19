@@ -698,7 +698,8 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const PartnerTwoWheelerCatalogueScreen(),
+                      builder: (_) =>
+                          const PartnerTwoWheelerCatalogueScreen(showCategoryList: true),
                     ),
                   );
                 },
@@ -716,7 +717,7 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) =>
-                          const PartnerThreeWheelerCatalogueScreen(),
+                          const PartnerThreeWheelerCatalogueScreen(showCategoryList: true),
                     ),
                   );
                 },

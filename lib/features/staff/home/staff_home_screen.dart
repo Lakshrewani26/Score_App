@@ -772,7 +772,8 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const StaffTwoWheelerCatalogueScreen(),
+                      builder: (_) =>
+                          const StaffTwoWheelerCatalogueScreen(showCategoryList: true),
                     ),
                   );
                 },
@@ -793,7 +794,8 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const StaffThreeWheelerCatalogueScreen(),
+                      builder: (_) =>
+                          const StaffThreeWheelerCatalogueScreen(showCategoryList: true),
                     ),
                   );
                 },

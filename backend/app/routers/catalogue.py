@@ -39,12 +39,21 @@ def _product_response(
 
 
 @router.get("/categories", response_model=list[CategoryResponse])
-def list_categories(db: Session = Depends(get_db)) -> list[CategoryResponse]:
-    categories = db.scalars(
-        select(ProductCategory)
-        .where(ProductCategory.is_active.is_(True))
-        .order_by(ProductCategory.name, ProductCategory.id)
-    ).all()
+def list_categories(
+    vehicle_type: Literal["2-Wheeler", "3-Wheeler", "Both"] | None = None,
+    db: Session = Depends(get_db),
+) -> list[CategoryResponse]:
+    query = select(ProductCategory).where(ProductCategory.is_active.is_(True))
+    if vehicle_type is not None:
+        query = (
+            query.join(Product, ProductCategory.id == Product.category_id)
+            .where(
+                Product.is_active.is_(True),
+                Product.vehicle_type.in_([vehicle_type, "Both"]),
+            )
+            .distinct()
+        )
+    categories = db.scalars(query.order_by(ProductCategory.name, ProductCategory.id)).all()
     return [
         CategoryResponse(
             id=category.id,
@@ -77,7 +86,10 @@ def list_products(
     if category_id is not None:
         filters.append(Product.category_id == category_id)
     if vehicle_type is not None:
-        filters.append(Product.vehicle_type == vehicle_type)
+        if vehicle_type in ("2-Wheeler", "3-Wheeler"):
+            filters.append(Product.vehicle_type.in_([vehicle_type, "Both"]))
+        else:
+            filters.append(Product.vehicle_type == vehicle_type)
     if search:
         pattern = f"%{search}%"
         filters.append(

@@ -156,7 +156,7 @@ class _CustomerCatalogueScreenState extends State<CustomerCatalogueScreen> {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => const TwoWheelerPartsScreen(),
+            builder: (_) => const TwoWheelerPartsScreen(showCategoryList: true),
           ),
         );
       },
@@ -257,7 +257,7 @@ class _CustomerCatalogueScreenState extends State<CustomerCatalogueScreen> {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => const ThreeWheelerPartsScreen(),
+            builder: (_) => const ThreeWheelerPartsScreen(showCategoryList: true),
           ),
         );
       },

@@ -161,7 +161,8 @@ class _PartnerProductCatalogueScreenState
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => const PartnerTwoWheelerCatalogueScreen(),
+            builder: (_) =>
+                const PartnerTwoWheelerCatalogueScreen(showCategoryList: true),
           ),
         );
       },
@@ -262,7 +263,8 @@ class _PartnerProductCatalogueScreenState
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => const PartnerThreeWheelerCatalogueScreen(),
+            builder: (_) =>
+                const PartnerThreeWheelerCatalogueScreen(showCategoryList: true),
           ),
         );
       },

@@ -553,7 +553,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const TwoWheelerPartsScreen(),
+                      builder: (_) =>
+                          const TwoWheelerPartsScreen(showCategoryList: true),
                     ),
                   );
                 },
@@ -570,7 +571,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => const ThreeWheelerPartsScreen(),
+                      builder: (_) =>
+                          const ThreeWheelerPartsScreen(showCategoryList: true),
                     ),
                   );
                 },

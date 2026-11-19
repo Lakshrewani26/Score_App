@@ -20,6 +20,8 @@ class CatalogueProductListScreen extends StatefulWidget {
     this.enablePartnerQuantitySelection = false,
     this.accentColor = const Color(0xFFDCEBFE),
     this.heroIcon,
+    this.initialCategoryId,
+    this.initialCategoryName,
   });
 
   final CatalogueApi api;
@@ -30,6 +32,8 @@ class CatalogueProductListScreen extends StatefulWidget {
   final bool enablePartnerQuantitySelection;
   final Color accentColor;
   final IconData? heroIcon;
+  final int? initialCategoryId;
+  final String? initialCategoryName;
 
   @override
   State<CatalogueProductListScreen> createState() =>
@@ -61,6 +65,7 @@ class _CatalogueProductListScreenState
   @override
   void initState() {
     super.initState();
+    _selectedCategoryId = widget.initialCategoryId;
     _loadData();
   }
 
@@ -105,7 +110,7 @@ class _CatalogueProductListScreenState
 
       try {
         final categories =
-            _categoriesLoaded ? _categories : await widget.api.loadCategories();
+            _categoriesLoaded ? _categories : await widget.api.loadCategories(vehicleType: requestedVehicleType);
         final productPage = await widget.api.loadProducts(
           categoryId: requestedCategoryId,
           vehicleType: requestedVehicleType,
@@ -608,8 +613,16 @@ class _CatalogueProductListScreenState
   }
 
   Widget _buildFilters() {
+    final hasSelectedCategory = _selectedCategoryId == null ||
+        _categories.any((c) => c.id == _selectedCategoryId);
+
     final categoryItems = <DropdownMenuItem<int?>>[
       const DropdownMenuItem<int?>(value: null, child: Text('All categories')),
+      if (!hasSelectedCategory && _selectedCategoryId != null)
+        DropdownMenuItem<int?>(
+          value: _selectedCategoryId,
+          child: Text(widget.initialCategoryName ?? 'Category'),
+        ),
       ..._categories.map(
         (category) => DropdownMenuItem<int?>(
           value: category.id,

@@ -31,6 +31,25 @@ void main() {
       expect(categories.last.description, isNull);
     });
 
+    test('loads categories filtered by vehicle_type', () async {
+      final client = MockClient((request) async {
+        expect(request.url.path, '/api/v1/categories');
+        expect(request.url.queryParameters['vehicle_type'], '2-Wheeler');
+        return http.Response(
+          jsonEncode([
+            {'id': 1, 'name': 'Brake Parts', 'description': 'Brake system parts'},
+          ]),
+          200,
+        );
+      });
+
+      final api = CatalogueApi(client: client, baseUrl: 'http://localhost');
+      final categories = await api.loadCategories(vehicleType: '2-Wheeler');
+
+      expect(categories.length, 1);
+      expect(categories.first.name, 'Brake Parts');
+    });
+
     test('parses null price and product pagination correctly', () async {
       final client = MockClient((request) async {
         expect(request.url.path, '/api/v1/products');

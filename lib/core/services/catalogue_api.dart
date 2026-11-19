@@ -100,10 +100,14 @@ class CatalogueApi {
     return headers;
   }
 
-  Future<List<CatalogueCategory>> loadCategories() async {
+  Future<List<CatalogueCategory>> loadCategories({String? vehicleType}) async {
+    final query = <String, dynamic>{};
+    if (vehicleType != null && vehicleType.trim().isNotEmpty) {
+      query['vehicle_type'] = vehicleType.trim();
+    }
     final headers = await _authHeaders();
     final response = await _client.get(
-      _uri('/api/v1/categories'),
+      _uri('/api/v1/categories', query.isEmpty ? null : query),
       headers: headers.isEmpty ? null : headers,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {

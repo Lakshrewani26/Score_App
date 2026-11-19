@@ -315,3 +315,172 @@ def test_products_assigned_to_inactive_category_are_excluded_from_public_catalog
     # Public product detail for product in inactive category should return 404
     assert client.get("/api/v1/products/201").status_code == 200
     assert client.get("/api/v1/products/202").status_code == 404
+
+
+def test_categories_filtered_by_vehicle_type(client: TestClient) -> None:
+    with next(app.dependency_overrides[get_db]()) as db:
+        cat_2w = ProductCategory(id=30, name="2W Only Category", is_active=True)
+        cat_3w = ProductCategory(id=31, name="3W Only Category", is_active=True)
+        cat_both = ProductCategory(id=32, name="Both Category", is_active=True)
+        cat_empty = ProductCategory(id=33, name="Empty Active Category", is_active=True)
+        cat_inactive = ProductCategory(id=34, name="Inactive 2W Category", is_active=False)
+        db.add_all([cat_2w, cat_3w, cat_both, cat_empty, cat_inactive])
+        db.add_all(
+            [
+                Product(
+                    id=301,
+                    category=cat_2w,
+                    product_code="P2W-1",
+                    name="2W Product 1",
+                    vehicle_type="2-Wheeler",
+                    price=Decimal("100.00"),
+                    is_active=True,
+                ),
+                Product(
+                    id=302,
+                    category=cat_2w,
+                    product_code="P2W-2",
+                    name="2W Product 2",
+                    vehicle_type="2-Wheeler",
+                    price=Decimal("150.00"),
+                    is_active=True,
+                ),
+                Product(
+                    id=303,
+                    category=cat_3w,
+                    product_code="P3W-1",
+                    name="3W Product 1",
+                    vehicle_type="3-Wheeler",
+                    price=Decimal("200.00"),
+                    is_active=True,
+                ),
+                Product(
+                    id=304,
+                    category=cat_both,
+                    product_code="PBOTH-1",
+                    name="Both Product 1",
+                    vehicle_type="Both",
+                    price=Decimal("50.00"),
+                    is_active=True,
+                ),
+                Product(
+                    id=305,
+                    category=cat_inactive,
+                    product_code="PINACT-1",
+                    name="Inactive Category Product",
+                    vehicle_type="2-Wheeler",
+                    price=Decimal("75.00"),
+                    is_active=True,
+                ),
+                Product(
+                    id=306,
+                    category=cat_2w,
+                    product_code="PINACT-PROD",
+                    name="Inactive Product in 2W",
+                    vehicle_type="2-Wheeler",
+                    price=Decimal("80.00"),
+                    is_active=False,
+                ),
+            ]
+        )
+        db.commit()
+
+    # 1. 2-Wheeler query returns only 2W and Both categories, no duplicates, alphabetical
+    res_2w = client.get("/api/v1/categories", params={"vehicle_type": "2-Wheeler"})
+    assert res_2w.status_code == 200
+    names_2w = [c["name"] for c in res_2w.json()]
+    assert names_2w == ["2W Only Category", "Both Category"]
+
+    # 2. 3-Wheeler query returns only 3W and Both categories, no duplicates, alphabetical
+    res_3w = client.get("/api/v1/categories", params={"vehicle_type": "3-Wheeler"})
+    assert res_3w.status_code == 200
+    names_3w = [c["name"] for c in res_3w.json()]
+    assert names_3w == ["3W Only Category", "Both Category"]
+
+    # 3. No vehicle_type filter returns all active categories (including empty ones)
+    res_all = client.get("/api/v1/categories")
+    assert res_all.status_code == 200
+    names_all = [c["name"] for c in res_all.json()]
+    assert "2W Only Category" in names_all
+    assert "3W Only Category" in names_all
+    assert "Both Category" in names_all
+    assert "Empty Active Category" in names_all
+    assert "Inactive 2W Category" not in names_all
+
+    # 4. Invalid vehicle_type query param returns 422
+    res_invalid = client.get("/api/v1/categories", params={"vehicle_type": "4-Wheeler"})
+    assert res_invalid.status_code == 422
+
+
+def test_products_filtered_by_vehicle_type_includes_both(client: TestClient) -> None:
+    with next(app.dependency_overrides[get_db]()) as db:
+        cat = ProductCategory(id=40, name="Universal Parts", is_active=True)
+        db.add(cat)
+        db.add_all(
+            [
+                Product(
+                    id=401,
+                    category=cat,
+                    product_code="P-2W",
+                    name="2W Only Part",
+                    vehicle_type="2-Wheeler",
+                    price=Decimal("100.00"),
+                    is_active=True,
+                ),
+                Product(
+                    id=402,
+                    category=cat,
+                    product_code="P-3W",
+                    name="3W Only Part",
+                    vehicle_type="3-Wheeler",
+                    price=Decimal("200.00"),
+                    is_active=True,
+                ),
+                Product(
+                    id=403,
+                    category=cat,
+                    product_code="P-BOTH",
+                    name="Universal Part",
+                    vehicle_type="Both",
+                    price=Decimal("150.00"),
+                    is_active=True,
+                ),
+                Product(
+                    id=404,
+                    category=cat,
+                    product_code="P-INACTIVE",
+                    name="Inactive Universal Part",
+                    vehicle_type="Both",
+                    price=Decimal("150.00"),
+                    is_active=False,
+                ),
+            ]
+        )
+        db.commit()
+
+    # 1. 2-Wheeler query includes 2W and Both, excludes 3W and inactive
+    res_2w = client.get("/api/v1/products", params={"vehicle_type": "2-Wheeler"})
+    assert res_2w.status_code == 200
+    items_2w = res_2w.json()["items"]
+    codes_2w = [p["product_code"] for p in items_2w]
+    assert "P-2W" in codes_2w
+    assert "P-BOTH" in codes_2w
+    assert "P-3W" not in codes_2w
+    assert "P-INACTIVE" not in codes_2w
+
+    # 2. 3-Wheeler query includes 3W and Both, excludes 2W and inactive
+    res_3w = client.get("/api/v1/products", params={"vehicle_type": "3-Wheeler"})
+    assert res_3w.status_code == 200
+    items_3w = res_3w.json()["items"]
+    codes_3w = [p["product_code"] for p in items_3w]
+    assert "P-3W" in codes_3w
+    assert "P-BOTH" in codes_3w
+    assert "P-2W" not in codes_3w
+    assert "P-INACTIVE" not in codes_3w
+
+    # 3. Both query includes only Both active products
+    res_both = client.get("/api/v1/products", params={"vehicle_type": "Both"})
+    assert res_both.status_code == 200
+    items_both = res_both.json()["items"]
+    codes_both = [p["product_code"] for p in items_both]
+    assert codes_both == ["P-BOTH"]
