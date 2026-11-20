@@ -262,7 +262,7 @@ class AdminHomeScreen extends StatelessWidget {
   Widget _buildHeader(BuildContext context, double width, AdminUser user) {
     return SizedBox(
       width: double.infinity,
-      height: 52,
+      height: 58,
       child: Stack(
         alignment: Alignment.center,
         children: [

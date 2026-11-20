@@ -459,14 +459,12 @@ class _CatalogueProductListScreenState
 
   Widget _buildHeaderRow(BuildContext context, double width) {
     return SizedBox(
-      height: 44,
+      height: 58,
       child: Stack(
         alignment: Alignment.center,
         children: [
           Positioned(
             left: 0,
-            top: 0,
-            bottom: 0,
             child: Material(
               color: Colors.transparent,
               child: InkWell(

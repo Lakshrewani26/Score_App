@@ -6,7 +6,7 @@ enum ScoreLogoSize {
   /// Ideal for compact placements, cards, dialogs, chips, and footers.
   small,
 
-  /// Medium variant (width ~84.3, height 48.0).
+  /// Medium variant (width ~98.4, height 56.0).
   /// Standard consistent size for AppBars, headers, and navigation rows.
   medium,
 
@@ -108,7 +108,7 @@ class ScoreLogo extends StatelessWidget {
   static const Size smallDimensions =
       Size(32.0 * aspectRatio, 32.0); // ~56.2 x 32.0
   static const Size mediumDimensions =
-      Size(48.0 * aspectRatio, 48.0); // ~84.3 x 48.0
+      Size(56.0 * aspectRatio, 56.0); // ~98.4 x 56.0
   static const Size largeDimensions =
       Size(125.0 * aspectRatio, 125.0); // ~219.6 x 125.0
 

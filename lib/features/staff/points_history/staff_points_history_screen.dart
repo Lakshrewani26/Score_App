@@ -257,7 +257,7 @@ class _StaffPointsHistoryScreenState extends State<StaffPointsHistoryScreen> {
   Widget _buildHeaderRow(BuildContext context, double width) {
     return SizedBox(
       width: double.infinity,
-      height: 52,
+      height: 58,
       child: Stack(
         alignment: Alignment.center,
         children: [

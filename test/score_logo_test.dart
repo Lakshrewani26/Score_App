@@ -58,8 +58,8 @@ void main() {
       expect(imageFinder, findsOneWidget);
 
       final logoSize = tester.getSize(logoFinder);
-      expect(logoSize.height, closeTo(48.0, 0.1));
-      expect(logoSize.width, closeTo(48.0 * ScoreLogo.aspectRatio, 0.1));
+      expect(logoSize.height, closeTo(56.0, 0.1));
+      expect(logoSize.width, closeTo(56.0 * ScoreLogo.aspectRatio, 0.1));
       expect(logoSize.width / logoSize.height,
           closeTo(ScoreLogo.aspectRatio, 0.01));
     });
