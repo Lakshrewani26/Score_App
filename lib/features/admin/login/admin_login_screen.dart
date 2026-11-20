@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/services/admin_api.dart';
 import '../../../core/services/admin_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../../welcome/welcome_screen.dart';
 import '../home/admin_home_screen.dart';
 
@@ -173,12 +174,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           SizedBox(height: height * 0.06),
-                          Image.asset(
-                            'assets/images/app_logo_blended.png',
-                            width: math.min(width * 0.44, 165.0),
-                            fit: BoxFit.contain,
-                            opacity: const AlwaysStoppedAnimation(0.96),
-                          ),
+                          const ScoreLogo.large(),
                           const SizedBox(height: 16),
                           const Text(
                             'Admin Login',

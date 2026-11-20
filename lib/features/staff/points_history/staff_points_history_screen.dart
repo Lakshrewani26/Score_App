@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../home/staff_home_screen.dart';
 import '../profile/staff_profile_screen.dart';
 
@@ -144,8 +145,18 @@ class _StaffPointsHistoryScreenState extends State<StaffPointsHistoryScreen> {
 
   String _formatDate(DateTime dt) {
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     final day = dt.day.toString().padLeft(2, '0');
     final month = months[dt.month - 1];
@@ -284,21 +295,8 @@ class _StaffPointsHistoryScreenState extends State<StaffPointsHistoryScreen> {
               ),
             ),
           ),
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-              opacity: const AlwaysStoppedAnimation(0.96),
-              errorBuilder: (context, error, stackTrace) => const Text(
-                'ScorE',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  color: _royalBlue,
-                ),
-              ),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
         ],
       ),

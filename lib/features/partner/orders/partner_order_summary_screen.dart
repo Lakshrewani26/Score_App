@@ -5,6 +5,7 @@ import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/partner_order_api.dart';
 import '../../../core/services/partner_session_manager.dart';
 import '../../../core/services/staff_api.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../catalogue/partner_two_wheeler_catalogue_screen.dart';
 import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 
@@ -56,7 +57,8 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
   PartnerOrderPreviewResponse? _orderPreview;
 
   bool get _isDynamicMode => widget.cartItems != null;
-  bool get _isViewMode => widget.orderId != null || widget.existingOrder != null;
+  bool get _isViewMode =>
+      widget.orderId != null || widget.existingOrder != null;
 
   @override
   void initState() {
@@ -450,7 +452,8 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                               _buildHeaderRow(context),
                               const SizedBox(height: 18),
                               _buildHeaderCard(),
-                              if (_isDynamicMode || (_isViewMode && _loadedOrder != null)) ...[
+                              if (_isDynamicMode ||
+                                  (_isViewMode && _loadedOrder != null)) ...[
                                 const SizedBox(height: 14),
                                 _buildPartnerDetailsCard(),
                               ],
@@ -523,18 +526,8 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
               ),
             ),
           ),
-          Image.asset(
-            'assets/images/app_logo_blended.png',
-            height: 42,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const Text(
-              'ScorE',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
-                color: _royalBlue,
-              ),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
         ],
       ),
@@ -1411,7 +1404,8 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                 if (item.listPrice != null) ...[
                   const SizedBox(height: 1),
                   Text(
-                    item.discountPercentage != null && item.discountPercentage! > 0
+                    item.discountPercentage != null &&
+                            item.discountPercentage! > 0
                         ? 'List Price: ₹ ${item.listPrice!.toStringAsFixed(2)} (-${item.discountPercentage!.toStringAsFixed(1)}%) · ${item.mrp != null ? 'MRP: ₹ ${item.mrp!.toStringAsFixed(2)}' : 'MRP: Not set'}'
                         : 'List Price: ₹ ${item.listPrice!.toStringAsFixed(2)} · ${item.mrp != null ? 'MRP: ₹ ${item.mrp!.toStringAsFixed(2)}' : 'MRP: Not set'}',
                     style: const TextStyle(
@@ -1425,7 +1419,8 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                   Builder(
                     builder: (context) {
                       final fallbackPrice = item.mrp!;
-                      final discText = item.discountPercentage != null && item.discountPercentage! > 0
+                      final discText = item.discountPercentage != null &&
+                              item.discountPercentage! > 0
                           ? ' (-${item.discountPercentage!.toStringAsFixed(1)}%)'
                           : '';
                       return Text(
@@ -1497,8 +1492,7 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
   }
 
   Widget _buildViewGrandTotalFooter(PartnerOrderResponse order) {
-    final hasDiscount =
-        order.totalDiscount != null && order.totalDiscount! > 0;
+    final hasDiscount = order.totalDiscount != null && order.totalDiscount! > 0;
 
     return Container(
       width: double.infinity,
@@ -1773,8 +1767,10 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                           if (h.changedByName != null || h.remarks != null)
                             Text(
                               [
-                                if (h.changedByName != null) 'By ${h.changedByName}',
-                                if (h.remarks != null && h.remarks!.isNotEmpty) h.remarks!,
+                                if (h.changedByName != null)
+                                  'By ${h.changedByName}',
+                                if (h.remarks != null && h.remarks!.isNotEmpty)
+                                  h.remarks!,
                               ].join(' · '),
                               style: const TextStyle(
                                 fontSize: 11,
@@ -1890,7 +1886,8 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                           child: CircularProgressIndicator(
                               color: Colors.white, strokeWidth: 2),
                         )
-                      : const Icon(Icons.check_circle_outline_rounded, size: 20),
+                      : const Icon(Icons.check_circle_outline_rounded,
+                          size: 20),
                   label: Text(
                     _isUpdatingStatus
                         ? 'Updating Status...'
@@ -1965,7 +1962,8 @@ class _PartnerOrderSummaryScreenState extends State<PartnerOrderSummaryScreen> {
                     ),
                   ),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFFF1725), width: 1.5),
+                    side:
+                        const BorderSide(color: Color(0xFFFF1725), width: 1.5),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                   ),
@@ -2068,7 +2066,6 @@ class _OrderSuccessDialogState extends State<_OrderSuccessDialog> {
     _handleWhatsAppFuture(future);
   }
 
-
   Future<void> _downloadPdf() async {
     setState(() => _pdfDownloading = true);
 
@@ -2077,8 +2074,7 @@ class _OrderSuccessDialogState extends State<_OrderSuccessDialog> {
 
       if (!mounted) return;
 
-      final fileName =
-          'Score_Order_${widget.order.orderNumber}.pdf';
+      final fileName = 'Score_Order_${widget.order.orderNumber}.pdf';
 
       final savedPath = await FlutterFileDialog.saveFile(
         params: SaveFileDialogParams(
@@ -2122,7 +2118,6 @@ class _OrderSuccessDialogState extends State<_OrderSuccessDialog> {
       );
     }
   }
-
 
   @override
   Widget build(BuildContext context) {

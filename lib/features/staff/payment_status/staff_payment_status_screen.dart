@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../home/staff_home_screen.dart';
 import '../profile/staff_profile_screen.dart';
 
@@ -225,7 +226,8 @@ class _StaffPaymentStatusScreenState extends State<StaffPaymentStatusScreen> {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Payment ${payment.displayReference} approved successfully.'),
+          content: Text(
+              'Payment ${payment.displayReference} approved successfully.'),
           backgroundColor: const Color(0xFF2E7D32),
           duration: const Duration(seconds: 3),
         ),
@@ -272,7 +274,8 @@ class _StaffPaymentStatusScreenState extends State<StaffPaymentStatusScreen> {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text(
             'Reject Payment',
-            style: TextStyle(color: Color(0xFFC62828), fontWeight: FontWeight.w700),
+            style: TextStyle(
+                color: Color(0xFFC62828), fontWeight: FontWeight.w700),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -380,8 +383,18 @@ class _StaffPaymentStatusScreenState extends State<StaffPaymentStatusScreen> {
 
   String _formatDate(DateTime dt) {
     final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     final day = dt.day.toString().padLeft(2, '0');
     final month = months[dt.month - 1];
@@ -447,7 +460,8 @@ class _StaffPaymentStatusScreenState extends State<StaffPaymentStatusScreen> {
                                 if (_isLoading)
                                   const Center(
                                     child: Padding(
-                                      padding: EdgeInsets.symmetric(vertical: 40),
+                                      padding:
+                                          EdgeInsets.symmetric(vertical: 40),
                                       child: CircularProgressIndicator(
                                         color: _royalBlue,
                                       ),
@@ -460,7 +474,8 @@ class _StaffPaymentStatusScreenState extends State<StaffPaymentStatusScreen> {
                                 else
                                   ..._filteredPayments.map(
                                     (item) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 14),
+                                      padding:
+                                          const EdgeInsets.only(bottom: 14),
                                       child: _buildPaymentCard(item),
                                     ),
                                   ),
@@ -510,9 +525,7 @@ class _StaffPaymentStatusScreenState extends State<StaffPaymentStatusScreen> {
                   color: isSelected ? _royalBlue : Colors.white,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isSelected
-                        ? _royalBlue
-                        : const Color(0xFFCBEBFF),
+                    color: isSelected ? _royalBlue : const Color(0xFFCBEBFF),
                     width: 1.4,
                   ),
                   boxShadow: isSelected
@@ -536,8 +549,7 @@ class _StaffPaymentStatusScreenState extends State<StaffPaymentStatusScreen> {
                   style: TextStyle(
                     color: isSelected ? Colors.white : _royalBlue,
                     fontSize: 13,
-                    fontWeight:
-                        isSelected ? FontWeight.w700 : FontWeight.w600,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
                   ),
                 ),
               ),
@@ -578,13 +590,8 @@ class _StaffPaymentStatusScreenState extends State<StaffPaymentStatusScreen> {
               ),
             ),
           ),
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-              opacity: const AlwaysStoppedAnimation(0.96),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
         ],
       ),
@@ -828,8 +835,7 @@ class _StaffPaymentStatusScreenState extends State<StaffPaymentStatusScreen> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 10),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
                             ),
                           ),
                         ),
@@ -857,8 +863,7 @@ class _StaffPaymentStatusScreenState extends State<StaffPaymentStatusScreen> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 10),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
                             ),
                           ),
                         ),

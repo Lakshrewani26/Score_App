@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../../partner/orders/partner_order_summary_screen.dart';
 import '../home/staff_home_screen.dart';
 import '../profile/staff_profile_screen.dart';
@@ -495,7 +496,11 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
   Widget _buildStatusFilterRow() {
     final filters = [
       ('pending_approval', 'Pending', const Key('filter-chip-pending')),
-      ('approved_processing', 'Processing', const Key('filter-chip-processing')),
+      (
+        'approved_processing',
+        'Processing',
+        const Key('filter-chip-processing')
+      ),
       ('dispatched', 'Dispatched', const Key('filter-chip-dispatched')),
       ('delivered', 'Delivered', const Key('filter-chip-delivered')),
       ('all', 'All', const Key('filter-chip-all')),
@@ -701,13 +706,8 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-              opacity: const AlwaysStoppedAnimation(0.96),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
           Positioned(
             right: 0,
@@ -973,9 +973,8 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
               color: Colors.transparent,
               child: InkWell(
                 key: Key('staff-order-reject-${order.id}'),
-                onTap: _actionOrderId != null
-                    ? null
-                    : () => _handleReject(order),
+                onTap:
+                    _actionOrderId != null ? null : () => _handleReject(order),
                 borderRadius: BorderRadius.circular(20),
                 child: Container(
                   width: 38,
@@ -1016,9 +1015,8 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
               color: Colors.transparent,
               child: InkWell(
                 key: Key('staff-order-approve-${order.id}'),
-                onTap: _actionOrderId != null
-                    ? null
-                    : () => _handleApprove(order),
+                onTap:
+                    _actionOrderId != null ? null : () => _handleApprove(order),
                 borderRadius: BorderRadius.circular(20),
                 child: Container(
                   width: 38,
@@ -1056,9 +1054,8 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
     } else if (order.status == 'approved_processing') {
       return ElevatedButton.icon(
         key: Key('staff-order-dispatch-${order.id}'),
-        onPressed: _actionOrderId != null
-            ? null
-            : () => _handleMarkDispatched(order),
+        onPressed:
+            _actionOrderId != null ? null : () => _handleMarkDispatched(order),
         icon: _actionOrderId == order.id
             ? const SizedBox(
                 width: 14,
@@ -1086,9 +1083,8 @@ class _StaffOrderStatusScreenState extends State<StaffOrderStatusScreen> {
     } else if (order.status == 'dispatched') {
       return ElevatedButton.icon(
         key: Key('staff-order-deliver-${order.id}'),
-        onPressed: _actionOrderId != null
-            ? null
-            : () => _handleMarkDelivered(order),
+        onPressed:
+            _actionOrderId != null ? null : () => _handleMarkDelivered(order),
         icon: _actionOrderId == order.id
             ? const SizedBox(
                 width: 14,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/customer_points_models.dart';
 import '../../../core/services/customer_api.dart';
 import '../../../core/services/customer_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../home/customer_home_screen.dart';
 import '../profile/customer_profile_screen.dart';
 
@@ -239,13 +240,8 @@ class _CustomerTransferHistoryScreenState
             ),
           ),
         ),
-        Center(
-          child: Image.asset(
-            'assets/images/app_logo_blended.png',
-            width: math.min(width * 0.44, 160.0),
-            fit: BoxFit.contain,
-            opacity: const AlwaysStoppedAnimation(0.96),
-          ),
+        const Center(
+          child: ScoreLogo.medium(),
         ),
       ],
     );
@@ -382,9 +378,8 @@ class _CustomerTransferHistoryScreenState
         final item = _items[index];
         final isCredit = item.isCredit;
         final deltaText = isCredit ? '+${item.amount}' : '-${item.amount}';
-        final deltaColor = isCredit
-            ? const Color(0xFF00897B)
-            : const Color(0xFFE53935);
+        final deltaColor =
+            isCredit ? const Color(0xFF00897B) : const Color(0xFFE53935);
 
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),

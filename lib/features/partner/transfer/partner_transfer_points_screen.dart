@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/partner_transfer_models.dart';
 import '../../../core/services/partner_api.dart';
 import '../../../core/services/partner_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../../customer/qr_scanner/customer_qr_scanner.dart';
 import '../home/partner_home_screen.dart';
 import '../profile/partner_profile_screen.dart';
@@ -55,8 +56,8 @@ class _PartnerTransferPointsScreenState
   void initState() {
     super.initState();
     _sessionManager = widget.sessionManager ?? PartnerSessionManager.instance;
-    _partnerApi = widget.partnerApi ??
-        PartnerApi(sessionManager: _sessionManager);
+    _partnerApi =
+        widget.partnerApi ?? PartnerApi(sessionManager: _sessionManager);
 
     _availableBalance = widget.initialBalance;
     _pointsController.addListener(_onPointsChanged);
@@ -476,8 +477,7 @@ class _PartnerTransferPointsScreenState
                           if (!mounted) return;
                           setDialogState(() {
                             _isSubmitting = false;
-                            dialogError =
-                                'Transfer failed: ${e.toString()}';
+                            dialogError = 'Transfer failed: ${e.toString()}';
                           });
                           setState(() {
                             _isSubmitting = false;
@@ -674,21 +674,8 @@ class _PartnerTransferPointsScreenState
               ),
             ),
           ),
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-              opacity: const AlwaysStoppedAnimation(0.96),
-              errorBuilder: (context, error, stackTrace) => const Text(
-                'ScorE',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  color: _royalBlue,
-                ),
-              ),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
         ],
       ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/customer_points_models.dart';
 import '../../../core/services/customer_api.dart';
 import '../../../core/services/customer_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../home/customer_home_screen.dart';
 import '../profile/customer_profile_screen.dart';
 
@@ -199,8 +200,7 @@ class _CustomerBalanceScreenState extends State<CustomerBalanceScreen> {
                                       ),
                                     ),
                                   ),
-                                if (_errorMessage != null)
-                                  _buildErrorCard(),
+                                if (_errorMessage != null) _buildErrorCard(),
                                 const SizedBox(height: 10),
                                 _buildPointsSummaryCard(),
                                 const SizedBox(height: 16),
@@ -290,7 +290,8 @@ class _CustomerBalanceScreenState extends State<CustomerBalanceScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+                  border:
+                      Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
                   boxShadow: const [
                     BoxShadow(
                       color: Color(0x12000000),
@@ -308,13 +309,8 @@ class _CustomerBalanceScreenState extends State<CustomerBalanceScreen> {
             ),
           ),
         ),
-        Center(
-          child: Image.asset(
-            'assets/images/app_logo_blended.png',
-            width: math.min(width * 0.44, 160.0),
-            fit: BoxFit.contain,
-            opacity: const AlwaysStoppedAnimation(0.96),
-          ),
+        const Center(
+          child: ScoreLogo.medium(),
         ),
       ],
     );

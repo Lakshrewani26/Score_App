@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/score_logo.dart';
 import '../home/partner_home_screen.dart';
 import '../profile/partner_profile_screen.dart';
 import 'partner_two_wheeler_catalogue_screen.dart';
@@ -143,13 +144,8 @@ class _PartnerProductCatalogueScreenState
               ),
             ),
           ),
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-              opacity: const AlwaysStoppedAnimation(0.96),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
         ],
       ),
@@ -263,8 +259,8 @@ class _PartnerProductCatalogueScreenState
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) =>
-                const PartnerThreeWheelerCatalogueScreen(showCategoryList: true),
+            builder: (_) => const PartnerThreeWheelerCatalogueScreen(
+                showCategoryList: true),
           ),
         );
       },

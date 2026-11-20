@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/services/customer_api.dart';
 import '../../../core/services/customer_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../home/customer_home_screen.dart';
 import '../login/customer_login_screen.dart';
 
@@ -109,7 +110,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter a valid phone number (at least 10 digits)'),
+          content:
+              Text('Please enter a valid phone number (at least 10 digits)'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -567,13 +569,8 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
             ),
           ),
         ),
-        Center(
-          child: Image.asset(
-            'assets/images/app_logo_blended.png',
-            width: math.min(width * 0.44, 165.0),
-            fit: BoxFit.contain,
-            opacity: const AlwaysStoppedAnimation(0.96),
-          ),
+        const Center(
+          child: ScoreLogo.medium(),
         ),
       ],
     );

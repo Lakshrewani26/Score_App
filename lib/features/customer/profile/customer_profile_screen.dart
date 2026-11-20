@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../../core/services/customer_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../home/customer_home_screen.dart';
 import '../../welcome/welcome_screen.dart';
 
@@ -53,13 +54,8 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               SizedBox(height: height * 0.055),
-                              Center(
-                                child: Image.asset(
-                                  'assets/images/app_logo_blended.png',
-                                  width: math.min(width * 0.44, 160.0),
-                                  fit: BoxFit.contain,
-                                  opacity: const AlwaysStoppedAnimation(0.96),
-                                ),
+                              const Center(
+                                child: ScoreLogo.medium(),
                               ),
                               const SizedBox(height: 16),
                               const Text(
@@ -306,7 +302,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 
-
   Widget _buildLogoutCard() {
     return Container(
       width: double.infinity,
@@ -503,7 +498,6 @@ class _RowDivider extends StatelessWidget {
   }
 }
 
-
 class _CardBottomWavePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -535,4 +529,3 @@ class _CardBottomWavePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-

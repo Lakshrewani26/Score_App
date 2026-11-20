@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../../core/widgets/score_branded_background.dart';
+import '../../core/widgets/score_logo.dart';
 import '../admin/login/admin_login_screen.dart';
 import '../customer/login/customer_login_screen.dart';
 import '../partner/login/partner_login_screen.dart';
@@ -73,11 +74,7 @@ class WelcomeScreen extends StatelessWidget {
                         children: [
                           SizedBox(height: height * 0.065),
                           // Logo
-                          Image.asset(
-                            'assets/images/app_logo_blended.png',
-                            width: math.min(width * 0.64, 250.0),
-                            fit: BoxFit.contain,
-                          ),
+                          const ScoreLogo.large(),
                           SizedBox(height: math.max(10.0, height * 0.016)),
                           // Title
                           Text(

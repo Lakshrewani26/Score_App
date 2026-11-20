@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/partner_order_api.dart';
 import '../../../core/services/partner_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../catalogue/partner_three_wheeler_catalogue_screen.dart';
 import 'partner_order_summary_screen.dart';
 
@@ -145,18 +146,8 @@ class _PartnerThreeWheelerOrderSummaryScreenState
               ),
             ),
           ),
-          Image.asset(
-            'assets/images/app_logo_blended.png',
-            height: 42,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const Text(
-              'ScorE',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
-                color: _royalBlue,
-              ),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
         ],
       ),

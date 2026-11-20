@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/models/catalogue_models.dart';
 import '../../../core/services/catalogue_api.dart';
+import '../../../core/widgets/score_logo.dart';
 
 class CatalogueCategoryListScreen extends StatefulWidget {
   const CatalogueCategoryListScreen({
@@ -198,13 +199,8 @@ class _CatalogueCategoryListScreenState
               ),
             ),
           ),
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-              opacity: const AlwaysStoppedAnimation(0.96),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
         ],
       ),

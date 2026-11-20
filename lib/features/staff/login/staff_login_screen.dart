@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../home/staff_home_screen.dart';
 
 class StaffLoginScreen extends StatefulWidget {
@@ -132,12 +133,7 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           SizedBox(height: height * 0.06),
-                          Image.asset(
-                            'assets/images/app_logo_blended.png',
-                            width: math.min(width * 0.44, 165.0),
-                            fit: BoxFit.contain,
-                            opacity: const AlwaysStoppedAnimation(0.96),
-                          ),
+                          const ScoreLogo.large(),
                           const SizedBox(height: 16),
                           const Text(
                             'Staff Login',

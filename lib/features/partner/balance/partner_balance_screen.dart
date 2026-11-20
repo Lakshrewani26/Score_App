@@ -6,6 +6,7 @@ import '../../../core/models/partner_transfer_models.dart';
 import '../../../core/services/partner_api.dart';
 import '../../../core/services/partner_order_api.dart';
 import '../../../core/services/partner_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../home/partner_home_screen.dart';
 import '../profile/partner_profile_screen.dart';
 
@@ -287,21 +288,8 @@ class _PartnerBalanceScreenState extends State<PartnerBalanceScreen> {
             ),
           ),
         ),
-        Center(
-          child: Image.asset(
-            'assets/images/app_logo_blended.png',
-            width: math.min(width * 0.44, 160.0),
-            fit: BoxFit.contain,
-            opacity: const AlwaysStoppedAnimation(0.96),
-            errorBuilder: (context, error, stackTrace) => const Text(
-              'ScorE',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
-                color: _royalBlue,
-              ),
-            ),
-          ),
+        const Center(
+          child: ScoreLogo.medium(),
         ),
       ],
     );

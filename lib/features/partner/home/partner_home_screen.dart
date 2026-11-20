@@ -5,6 +5,7 @@ import '../../../core/models/catalogue_models.dart';
 import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/partner_order_api.dart';
 import '../../../core/services/partner_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../balance/partner_balance_screen.dart';
 import '../catalogue/partner_three_wheeler_catalogue_screen.dart';
 import '../catalogue/partner_two_wheeler_catalogue_screen.dart';
@@ -147,20 +148,14 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
   }
 
   Widget _buildHeaderRow(BuildContext context, double width) {
-    return Center(
-      child: Image.asset(
-        'assets/images/app_logo_blended.png',
-        width: math.min(width * 0.44, 160.0),
-        fit: BoxFit.contain,
-        opacity: const AlwaysStoppedAnimation(0.96),
-      ),
+    return const Center(
+      child: ScoreLogo.medium(),
     );
   }
 
   Widget _buildPartnerHeader() {
-    final welcomeText = _welcomeName.isNotEmpty
-        ? 'Welcome, $_welcomeName'
-        : 'Welcome, Partner';
+    final welcomeText =
+        _welcomeName.isNotEmpty ? 'Welcome, $_welcomeName' : 'Welcome, Partner';
 
     return Column(
       children: [
@@ -698,8 +693,8 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) =>
-                          const PartnerTwoWheelerCatalogueScreen(showCategoryList: true),
+                      builder: (_) => const PartnerTwoWheelerCatalogueScreen(
+                          showCategoryList: true),
                     ),
                   );
                 },
@@ -716,8 +711,8 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) =>
-                          const PartnerThreeWheelerCatalogueScreen(showCategoryList: true),
+                      builder: (_) => const PartnerThreeWheelerCatalogueScreen(
+                          showCategoryList: true),
                     ),
                   );
                 },

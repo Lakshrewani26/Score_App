@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/score_logo.dart';
 import '../home/customer_home_screen.dart';
 import '../profile/customer_profile_screen.dart';
 import 'two_wheeler_parts_screen.dart';
@@ -139,13 +140,8 @@ class _CustomerCatalogueScreenState extends State<CustomerCatalogueScreen> {
             ),
           ),
         ),
-        Center(
-          child: Image.asset(
-            'assets/images/app_logo_blended.png',
-            width: math.min(width * 0.44, 160.0),
-            fit: BoxFit.contain,
-            opacity: const AlwaysStoppedAnimation(0.96),
-          ),
+        const Center(
+          child: ScoreLogo.medium(),
         ),
       ],
     );
@@ -257,7 +253,8 @@ class _CustomerCatalogueScreenState extends State<CustomerCatalogueScreen> {
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => const ThreeWheelerPartsScreen(showCategoryList: true),
+            builder: (_) =>
+                const ThreeWheelerPartsScreen(showCategoryList: true),
           ),
         );
       },

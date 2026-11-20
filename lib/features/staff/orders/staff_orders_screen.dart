@@ -6,6 +6,7 @@ import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/catalogue_api.dart';
 import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import 'staff_order_summary_screen.dart';
 
 class StaffProductItem {
@@ -455,13 +456,8 @@ class _StaffOrdersScreenState extends State<StaffOrdersScreen> {
               ),
             ),
           ),
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-              opacity: const AlwaysStoppedAnimation(0.96),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
         ],
       ),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/admin_models.dart';
 import '../../../core/services/admin_api.dart';
 import '../../../core/services/admin_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../../welcome/welcome_screen.dart';
 import '../login/admin_login_screen.dart';
 import '../catalogue/admin_catalogue_screen.dart';
@@ -265,12 +266,8 @@ class AdminHomeScreen extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
           Positioned(
             right: 0,

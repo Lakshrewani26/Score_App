@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 
 import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../home/staff_home_screen.dart';
 import '../profile/staff_profile_screen.dart';
 import '../orders/staff_orders_screen.dart';
-
 
 class StaffDealersAssociatedScreen extends StatefulWidget {
   const StaffDealersAssociatedScreen({
@@ -181,13 +181,8 @@ class _StaffDealersAssociatedScreenState
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-              opacity: const AlwaysStoppedAnimation(0.96),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
           Positioned(
             right: 0,
@@ -364,7 +359,8 @@ class _StaffDealersAssociatedScreenState
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                   child: Row(
                     children: [
                       Container(

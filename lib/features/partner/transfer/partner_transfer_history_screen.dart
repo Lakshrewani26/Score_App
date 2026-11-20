@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/partner_transfer_models.dart';
 import '../../../core/services/partner_api.dart';
 import '../../../core/services/partner_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../home/partner_home_screen.dart';
 import '../profile/partner_profile_screen.dart';
 
@@ -240,21 +241,8 @@ class _PartnerTransferHistoryScreenState
             ),
           ),
         ),
-        Center(
-          child: Image.asset(
-            'assets/images/app_logo_blended.png',
-            width: math.min(width * 0.44, 160.0),
-            fit: BoxFit.contain,
-            opacity: const AlwaysStoppedAnimation(0.96),
-            errorBuilder: (context, error, stackTrace) => const Text(
-              'ScorE',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
-                color: _royalBlue,
-              ),
-            ),
-          ),
+        const Center(
+          child: ScoreLogo.medium(),
         ),
       ],
     );
@@ -392,9 +380,8 @@ class _PartnerTransferHistoryScreenState
         final isCredit = item.isCredit;
         final sign = isCredit ? '+' : '−';
         final deltaText = '$sign${item.amount}';
-        final deltaColor = isCredit
-            ? const Color(0xFF00897B)
-            : const Color(0xFFE53935);
+        final deltaColor =
+            isCredit ? const Color(0xFF00897B) : const Color(0xFFE53935);
 
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import 'staff_orders_screen.dart';
 
 class StaffOrderSummaryScreen extends StatefulWidget {
@@ -68,7 +69,8 @@ class _StaffOrderSummaryScreenState extends State<StaffOrderSummaryScreen> {
     super.initState();
     _sessionManager = widget.sessionManager ?? StaffSessionManager.instance;
     _api = widget.orderApi ?? StaffApi(sessionManager: _sessionManager);
-    _items = widget.cartItems != null ? List<CartItem>.from(widget.cartItems!) : [];
+    _items =
+        widget.cartItems != null ? List<CartItem>.from(widget.cartItems!) : [];
   }
 
   void _removeItem(int index) {
@@ -161,11 +163,13 @@ class _StaffOrderSummaryScreenState extends State<StaffOrderSummaryScreen> {
       barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
             mainAxisSize: MainAxisSize.min,
             children: const [
-              Icon(Icons.check_circle_rounded, color: Color(0xFF00897B), size: 28),
+              Icon(Icons.check_circle_rounded,
+                  color: Color(0xFF00897B), size: 28),
               SizedBox(width: 10),
               Flexible(
                 child: Text(
@@ -349,18 +353,8 @@ class _StaffOrderSummaryScreenState extends State<StaffOrderSummaryScreen> {
               ),
             ),
           ),
-          Image.asset(
-            'assets/images/app_logo_blended.png',
-            height: 42,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const Text(
-              'ScorE',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
-                color: _royalBlue,
-              ),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
         ],
       ),
@@ -524,7 +518,8 @@ class _StaffOrderSummaryScreenState extends State<StaffOrderSummaryScreen> {
             else ...[
               for (int i = 0; i < _items.length; i++) ...[
                 _buildDynamicItemRow(_items[i], i),
-                const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
+                const Divider(
+                    height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
               ],
               _buildGrandTotalFooter(),
             ],
@@ -629,7 +624,8 @@ class _StaffOrderSummaryScreenState extends State<StaffOrderSummaryScreen> {
             width: 76,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEAF5FF),
                   borderRadius: BorderRadius.circular(12),
@@ -662,7 +658,8 @@ class _StaffOrderSummaryScreenState extends State<StaffOrderSummaryScreen> {
           SizedBox(
             width: 40,
             child: IconButton(
-              icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFFE53935)),
+              icon: const Icon(Icons.close_rounded,
+                  size: 20, color: Color(0xFFE53935)),
               onPressed: () => _removeItem(index),
               tooltip: 'Remove',
             ),

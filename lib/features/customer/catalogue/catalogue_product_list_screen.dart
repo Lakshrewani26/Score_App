@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/models/catalogue_models.dart';
 import '../../../core/services/catalogue_api.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../../../core/models/partner_order_models.dart';
 import '../../partner/orders/partner_order_summary_screen.dart';
 
@@ -109,8 +110,10 @@ class _CatalogueProductListScreenState
       final requestedVehicleType = widget.vehicleType;
 
       try {
-        final categories =
-            _categoriesLoaded ? _categories : await widget.api.loadCategories(vehicleType: requestedVehicleType);
+        final categories = _categoriesLoaded
+            ? _categories
+            : await widget.api
+                .loadCategories(vehicleType: requestedVehicleType);
         final productPage = await widget.api.loadProducts(
           categoryId: requestedCategoryId,
           vehicleType: requestedVehicleType,
@@ -504,13 +507,8 @@ class _CatalogueProductListScreenState
               ),
             ),
           ),
-          Center(
-            child: Image.asset(
-              'assets/images/app_logo_blended.png',
-              width: math.min(width * 0.44, 160.0),
-              fit: BoxFit.contain,
-              opacity: const AlwaysStoppedAnimation(0.96),
-            ),
+          const Center(
+            child: ScoreLogo.medium(),
           ),
         ],
       ),
@@ -951,8 +949,8 @@ class _CatalogueProductListScreenState
                     ),
                   ] else ...[
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: const Color(0xFFEAF5FF),
                         borderRadius: BorderRadius.circular(14),
@@ -1209,8 +1207,8 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                     ),
                   ] else ...[
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: const Color(0xFFEAF5FF),
                         borderRadius: BorderRadius.circular(12),

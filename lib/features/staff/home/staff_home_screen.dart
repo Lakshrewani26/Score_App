@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/catalogue_models.dart';
 import '../../../core/services/staff_api.dart';
 import '../../../core/services/staff_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../catalogue/staff_three_wheeler_catalogue_screen.dart';
 import '../catalogue/staff_two_wheeler_catalogue_screen.dart';
 import '../dealers/staff_dealers_associated_screen.dart';
@@ -172,13 +173,8 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
 
   /// Centered logo with notification bell completely removed.
   Widget _buildHeaderRow(BuildContext context, double width) {
-    return Center(
-      child: Image.asset(
-        'assets/images/app_logo_blended.png',
-        width: math.min(width * 0.44, 150.0),
-        fit: BoxFit.contain,
-        opacity: const AlwaysStoppedAnimation(0.96),
-      ),
+    return const Center(
+      child: ScoreLogo.medium(),
     );
   }
 
@@ -772,8 +768,8 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) =>
-                          const StaffTwoWheelerCatalogueScreen(showCategoryList: true),
+                      builder: (_) => const StaffTwoWheelerCatalogueScreen(
+                          showCategoryList: true),
                     ),
                   );
                 },
@@ -794,8 +790,8 @@ class _StaffHomeScreenState extends State<StaffHomeScreen> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) =>
-                          const StaffThreeWheelerCatalogueScreen(showCategoryList: true),
+                      builder: (_) => const StaffThreeWheelerCatalogueScreen(
+                          showCategoryList: true),
                     ),
                   );
                 },

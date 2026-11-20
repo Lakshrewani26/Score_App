@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/models/catalogue_models.dart';
 import '../../../core/services/customer_session_manager.dart';
+import '../../../core/widgets/score_logo.dart';
 import '../balance/customer_balance_screen.dart';
 import '../catalogue/three_wheeler_parts_screen.dart';
 import '../catalogue/two_wheeler_parts_screen.dart';
@@ -39,8 +40,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _arrivalsSource =
-        widget.newArrivalsDataSource ?? const PlaceholderNewArrivalsDataSource();
+    _arrivalsSource = widget.newArrivalsDataSource ??
+        const PlaceholderNewArrivalsDataSource();
     _loadNewArrivals();
   }
 
@@ -117,13 +118,8 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   }
 
   Widget _buildHeaderRow(BuildContext context, double width) {
-    return Center(
-      child: Image.asset(
-        'assets/images/app_logo_blended.png',
-        width: math.min(width * 0.44, 160.0),
-        fit: BoxFit.contain,
-        opacity: const AlwaysStoppedAnimation(0.96),
-      ),
+    return const Center(
+      child: ScoreLogo.medium(),
     );
   }
 
