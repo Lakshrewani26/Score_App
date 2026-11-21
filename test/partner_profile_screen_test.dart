@@ -7,7 +7,9 @@ import 'package:score_app/features/welcome/welcome_screen.dart';
 
 void main() {
   group('PartnerProfileScreen Tests', () {
-    testWidgets('renders PartnerProfileScreen without fabricated account details', (WidgetTester tester) async {
+    testWidgets(
+        'renders PartnerProfileScreen without fabricated account details',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -52,7 +54,8 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('17. Tapping Home opens Partner Home', (WidgetTester tester) async {
+    testWidgets('17. Tapping Home opens Partner Home',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -72,7 +75,8 @@ void main() {
       expect(find.text('Welcome, Partner'), findsOneWidget);
     });
 
-    testWidgets('18. Tapping Logout opens Welcome Screen', (WidgetTester tester) async {
+    testWidgets('18. Tapping Logout opens Welcome Screen',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -90,12 +94,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(WelcomeScreen), findsOneWidget);
-      expect(find.text('Customer Login'), findsOneWidget);
-      expect(find.text('Partner Login'), findsOneWidget);
-      expect(find.text('Staff Login'), findsOneWidget);
+      expect(find.text('Login'), findsOneWidget);
+      expect(find.text('Create Account'), findsOneWidget);
     });
 
-    testWidgets('19. Existing Partner Home -> Profile navigation works', (WidgetTester tester) async {
+    testWidgets('19. Existing Partner Home -> Profile navigation works',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
@@ -118,7 +122,8 @@ void main() {
       expect(find.text('Partner'), findsOneWidget);
     });
 
-    testWidgets('20. Partner login does not open home without real credentials', (WidgetTester tester) async {
+    testWidgets('20. Partner login does not open home without real credentials',
+        (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);

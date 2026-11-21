@@ -1,5 +1,5 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 import 'package:score_app/app/app.dart';
 
@@ -15,17 +15,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Welcome!'), findsOneWidget);
-    expect(find.text('Please select your login type'), findsOneWidget);
-    expect(find.text('Customer Login'), findsOneWidget);
-    expect(find.text('Partner Login'), findsOneWidget);
-    expect(find.text('Staff Login'), findsOneWidget);
-    expect(find.text('Admin Login'), findsOneWidget);
+    expect(find.text('Sign in to continue'), findsOneWidget);
+    expect(find.text('Login'), findsOneWidget);
+    expect(find.text('Create Account'), findsOneWidget);
     expect(find.byType(Image), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
 
   testWidgets(
-      'navigates from Welcome screen to Customer Login screen and then to Create Account screen',
+      'navigates from Welcome screen to Unified Login screen and then to Create Account screen',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2280);
     tester.view.devicePixelRatio = 3;
@@ -35,20 +33,19 @@ void main() {
     await tester.pumpWidget(const ScoreApp());
     await tester.pumpAndSettle();
 
-    // 1. Welcome Screen -> Tap Customer Login
-    await tester.tap(find.text('Customer Login'));
+    // 1. Welcome Screen -> Tap Login
+    await tester.tap(find.text('Login'));
     await tester.pumpAndSettle();
 
-    // 2. Customer Login Screen appears
-    expect(find.text('Mobile Number'), findsOneWidget);
-    expect(find.text('Password'), findsOneWidget);
-    expect(find.text('Submit'), findsOneWidget);
+    // 2. Unified Login Screen appears
+    expect(find.text('Phone Number'), findsWidgets);
+    expect(find.text('Password'), findsWidgets);
 
-    // 3. Customer Login Screen -> Tap "Create an account"
+    // 3. Unified Login Screen -> Tap "Create Account"
     final createAccountLink = find.byWidgetPredicate(
       (widget) =>
           widget is RichText &&
-          widget.text.toPlainText().contains('Create an account'),
+          widget.text.toPlainText().contains('Create Account'),
     );
     await tester.tap(createAccountLink);
     await tester.pumpAndSettle();
@@ -58,13 +55,13 @@ void main() {
     expect(find.text('Full Name'), findsOneWidget);
     expect(find.text('Segment'), findsOneWidget);
 
-    // 5. Verify Back Navigation: Create Account -> Customer Login -> Welcome
+    // 5. Verify Back Navigation: Create Account -> Unified Login -> Welcome
     final dynamic widgetsState = tester.state(find.byType(Navigator));
     final NavigatorState navigator = widgetsState as NavigatorState;
 
     navigator.pop();
     await tester.pumpAndSettle();
-    expect(find.text('Mobile Number'), findsOneWidget);
+    expect(find.text('Phone Number'), findsWidgets);
 
     navigator.pop();
     await tester.pumpAndSettle();

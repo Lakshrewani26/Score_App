@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:score_app/app/app.dart';
 import 'package:score_app/core/services/staff_api.dart';
 import 'package:score_app/core/services/staff_session_manager.dart';
 import 'package:score_app/features/customer/login/customer_login_screen.dart';
 import 'package:score_app/features/partner/login/partner_login_screen.dart';
 import 'package:score_app/features/staff/login/staff_login_screen.dart';
 import 'package:score_app/features/staff/home/staff_home_screen.dart';
-import 'package:score_app/features/welcome/welcome_screen.dart';
 
 class _FakeStaffApi extends StaffApi {
   _FakeStaffApi({this.shouldFail = false});
@@ -245,20 +243,18 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('navigates from Welcome screen to Staff Login screen',
+    testWidgets('renders StaffLoginScreen directly',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(const ScoreApp());
-      await tester.pumpAndSettle();
-
-      expect(find.byType(WelcomeScreen), findsOneWidget);
-
-      // Tap Staff Login option on Welcome screen
-      await tester.tap(find.text('Staff Login'));
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: StaffLoginScreen(),
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(StaffLoginScreen), findsOneWidget);
@@ -267,28 +263,26 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets(
-        'existing Customer and Partner navigation flows remain unaffected',
+    testWidgets('existing Customer and Partner login screens render directly',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(const ScoreApp());
-      await tester.pumpAndSettle();
-
-      // Customer Login navigation check
-      await tester.tap(find.text('Customer Login'));
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: CustomerLoginScreen(),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(CustomerLoginScreen), findsOneWidget);
 
-      // Pop back to Welcome
-      Navigator.of(tester.element(find.byType(CustomerLoginScreen))).pop();
-      await tester.pumpAndSettle();
-
-      // Partner Login navigation check
-      await tester.tap(find.text('Partner Login'));
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: PartnerLoginScreen(),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(PartnerLoginScreen), findsOneWidget);
 

@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import '../../../core/services/customer_api.dart';
 import '../../../core/services/customer_session_manager.dart';
 import '../../../core/widgets/score_logo.dart';
+import '../../auth/login/unified_login_screen.dart';
 import '../home/customer_home_screen.dart';
-import '../login/customer_login_screen.dart';
 
 class CreateAccountScreen extends StatefulWidget {
   const CreateAccountScreen({
@@ -584,7 +584,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
         } else {
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
-              builder: (_) => const CustomerLoginScreen(),
+              builder: (_) => const UnifiedLoginScreen(),
             ),
           );
         }

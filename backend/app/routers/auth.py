@@ -25,18 +25,119 @@ from app.schemas.auth import (
     CustomerTokenResponse,
     CustomerUserResponse,
     PartnerLoginRequest,
+    PartnerProfileData,
     PartnerTokenResponse,
     PartnerUserResponse,
     StaffLoginRequest,
     StaffTokenResponse,
     StaffUserResponse,
     TokenResponse,
+    UnifiedLoginRequest,
+    UnifiedTokenResponse,
+    UnifiedUserData,
+    CustomerProfileData,
 )
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 # Standard bcrypt hash for timing-safe comparison on nonexistent users
 _TIMING_SAFE_DUMMY_HASH = "$2b$12$e868d44747792ecf69d3eO1l69V4v13nBvR6c.g6U8l5K4D.nL5ea"
+
+
+@router.post("/login", response_model=UnifiedTokenResponse)
+def unified_login(
+    payload: UnifiedLoginRequest,
+    db: Session = Depends(get_db),
+) -> UnifiedTokenResponse:
+    cleaned_mobile = payload.mobile.strip()
+    user = db.scalars(
+        select(User)
+        .options(
+            selectinload(User.customer_profile),
+            selectinload(User.partner_profile),
+            selectinload(User.staff_profile),
+        )
+        .where(User.mobile == cleaned_mobile)
+    ).first()
+
+    if user is None:
+        # Perform dummy verification to prevent timing-based user enumeration
+        verify_password(payload.password, _TIMING_SAFE_DUMMY_HASH)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid mobile number or password",
+        )
+
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid mobile number or password",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated",
+        )
+
+    if user.role not in ("customer", "partner", "staff", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Invalid account role",
+        )
+
+    staff_id = (
+        user.staff_profile.staff_id
+        if (user.staff_profile is not None and user.role == "staff")
+        else None
+    )
+    customer_profile_data = (
+        CustomerProfileData.model_validate(user.customer_profile)
+        if (user.customer_profile is not None and user.role == "customer")
+        else None
+    )
+    partner_profile_data = (
+        PartnerProfileData.model_validate(user.partner_profile)
+        if (user.partner_profile is not None and user.role == "partner")
+        else None
+    )
+
+    user_data = UnifiedUserData(
+        id=user.id,
+        name=user.name,
+        mobile=user.mobile,
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        staff_id=staff_id,
+        customer_profile=customer_profile_data,
+        partner_profile=partner_profile_data,
+    )
+
+    expires_delta = timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    token = create_access_token(
+        subject=str(user.id),
+        role=user.role,
+        mobile=user.mobile,
+        expires_delta=expires_delta,
+    )
+
+    return UnifiedTokenResponse(
+        access_token=token,
+        token_type="bearer",
+        expires_in=int(expires_delta.total_seconds()),
+        user_id=user.id,
+        id=user.id,
+        name=user.name,
+        mobile=user.mobile,
+        role=user.role,
+        is_active=user.is_active,
+        created_at=user.created_at,
+        staff_id=staff_id,
+        customer_profile=customer_profile_data,
+        partner_profile=partner_profile_data,
+        user=user_data,
+    )
 
 
 @router.post("/admin/login", response_model=TokenResponse)

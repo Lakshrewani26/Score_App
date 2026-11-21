@@ -12,9 +12,8 @@ import 'package:score_app/core/services/admin_session_manager.dart';
 import 'package:score_app/features/admin/home/admin_home_screen.dart';
 import 'package:score_app/features/admin/login/admin_login_screen.dart';
 import 'package:score_app/features/admin/settings/admin_settings_screen.dart';
-import 'package:score_app/features/customer/login/customer_login_screen.dart';
-import 'package:score_app/features/partner/login/partner_login_screen.dart';
-import 'package:score_app/features/staff/login/staff_login_screen.dart';
+import 'package:score_app/features/auth/login/unified_login_screen.dart';
+import 'package:score_app/features/customer/create_account/create_account_screen.dart';
 import 'package:score_app/features/welcome/welcome_screen.dart';
 
 void main() {
@@ -50,7 +49,7 @@ void main() {
   };
 
   group('WelcomeScreen Admin Login Navigation Tests', () {
-    testWidgets('Welcome screen displays the Admin Login option',
+    testWidgets('Welcome screen displays the Login and Create Account options',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
@@ -61,15 +60,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Welcome!'), findsOneWidget);
-      expect(find.text('Please select your login type'), findsOneWidget);
-      expect(find.text('Customer Login'), findsOneWidget);
-      expect(find.text('Partner Login'), findsOneWidget);
-      expect(find.text('Staff Login'), findsOneWidget);
-      expect(find.text('Admin Login'), findsOneWidget);
+      expect(find.text('Sign in to continue'), findsOneWidget);
+      expect(find.text('Login'), findsOneWidget);
+      expect(find.text('Create Account'), findsOneWidget);
     });
 
-    testWidgets(
-        'Selecting Admin Login on Welcome screen opens AdminLoginScreen',
+    testWidgets('Selecting Login on Welcome screen opens UnifiedLoginScreen',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
@@ -79,17 +75,16 @@ void main() {
       await tester.pumpWidget(const ScoreApp());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Admin Login'));
+      await tester.tap(find.text('Login'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(AdminLoginScreen), findsOneWidget);
-      expect(find.text('Admin Login'), findsOneWidget);
-      expect(find.text('Mobile Number'), findsOneWidget);
-      expect(find.text('Password'), findsOneWidget);
+      expect(find.byType(UnifiedLoginScreen), findsOneWidget);
+      expect(find.text('Phone Number'), findsWidgets);
+      expect(find.text('Password'), findsWidgets);
     });
 
     testWidgets(
-        'Existing Customer, Partner, and Staff navigation remain unaffected',
+        'Selecting Create Account on Welcome screen opens CreateAccountScreen',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
@@ -99,29 +94,11 @@ void main() {
       await tester.pumpWidget(const ScoreApp());
       await tester.pumpAndSettle();
 
-      // 1. Customer Login navigation
-      await tester.tap(find.text('Customer Login'));
-      await tester.pumpAndSettle();
-      expect(find.byType(CustomerLoginScreen), findsOneWidget);
-      Navigator.of(tester.element(find.byType(CustomerLoginScreen))).pop();
+      await tester.tap(find.text('Create Account'));
       await tester.pumpAndSettle();
 
-      // 2. Partner Login navigation
-      await tester.tap(find.text('Partner Login'));
-      await tester.pumpAndSettle();
-      expect(find.byType(PartnerLoginScreen), findsOneWidget);
-      Navigator.of(tester.element(find.byType(PartnerLoginScreen))).pop();
-      await tester.pumpAndSettle();
-
-      // 3. Staff Login navigation
-      await tester.tap(find.text('Staff Login'));
-      await tester.pumpAndSettle();
-      expect(find.byType(StaffLoginScreen), findsOneWidget);
-      Navigator.of(tester.element(find.byType(StaffLoginScreen))).pop();
-      await tester.pumpAndSettle();
-
-      // Confirm back on Welcome
-      expect(find.byType(WelcomeScreen), findsOneWidget);
+      expect(find.byType(CreateAccountScreen), findsOneWidget);
+      expect(find.text('Full Name'), findsOneWidget);
     });
   });
 
@@ -240,10 +217,11 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(const ScoreApp());
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Admin Login'));
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AdminLoginScreen(),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(AdminLoginScreen), findsOneWidget);
 

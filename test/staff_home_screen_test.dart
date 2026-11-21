@@ -4,8 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:score_app/app/app.dart';
 import 'package:score_app/core/services/staff_api.dart';
-import 'package:score_app/features/customer/login/customer_login_screen.dart';
-import 'package:score_app/features/partner/login/partner_login_screen.dart';
+import 'package:score_app/core/services/staff_session_manager.dart';
+import 'package:score_app/features/auth/login/unified_login_screen.dart';
 import 'package:score_app/features/staff/catalogue/staff_three_wheeler_catalogue_screen.dart';
 import 'package:score_app/features/staff/catalogue/staff_two_wheeler_catalogue_screen.dart';
 import 'package:score_app/features/staff/dealers/staff_dealers_associated_screen.dart';
@@ -317,28 +317,13 @@ void main() {
       await tester.pumpWidget(const ScoreApp());
       await tester.pumpAndSettle();
 
-      // Customer Login navigation check
-      await tester.tap(find.text('Customer Login'));
+      // Open Unified Login
+      await tester.tap(find.text('Login'));
       await tester.pumpAndSettle();
-      expect(find.byType(CustomerLoginScreen), findsOneWidget);
+      expect(find.byType(UnifiedLoginScreen), findsOneWidget);
 
-      // Pop back to Welcome
-      Navigator.of(tester.element(find.byType(CustomerLoginScreen))).pop();
-      await tester.pumpAndSettle();
-
-      // Partner Login navigation check
-      await tester.tap(find.text('Partner Login'));
-      await tester.pumpAndSettle();
-      expect(find.byType(PartnerLoginScreen), findsOneWidget);
-
-      // Pop back to Welcome
-      Navigator.of(tester.element(find.byType(PartnerLoginScreen))).pop();
-      await tester.pumpAndSettle();
-
-      // Staff login is available and must not grant access without backend auth.
-      await tester.tap(find.text('Staff Login'));
-      await tester.pumpAndSettle();
-      expect(find.byType(StaffLoginScreen), findsOneWidget);
+      // Verify session manager remains unauthenticated without successful backend response
+      expect(StaffSessionManager.instance.isAuthenticated, isFalse);
 
       expect(tester.takeException(), isNull);
     });

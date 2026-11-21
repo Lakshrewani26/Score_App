@@ -156,3 +156,53 @@ class CustomerTokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: CustomerUserResponse
+
+
+class UnifiedLoginRequest(BaseModel):
+    mobile: str = Field(..., description="Mobile number / Phone number")
+    password: str = Field(..., description="Account password")
+
+    @field_validator("mobile")
+    @classmethod
+    def validate_mobile(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Mobile number cannot be empty")
+        return v.strip()
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Password cannot be empty")
+        return v
+
+
+class UnifiedUserData(BaseModel):
+    id: int
+    name: str
+    mobile: str
+    role: str
+    is_active: bool
+    created_at: datetime
+    staff_id: str | None = None
+    customer_profile: CustomerProfileData | None = None
+    partner_profile: PartnerProfileData | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UnifiedTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user_id: int
+    id: int
+    name: str
+    mobile: str
+    role: str
+    is_active: bool
+    created_at: datetime
+    staff_id: str | None = None
+    customer_profile: CustomerProfileData | None = None
+    partner_profile: PartnerProfileData | None = None
+    user: UnifiedUserData

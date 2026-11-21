@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:score_app/app/app.dart';
 import 'package:score_app/features/customer/create_account/create_account_screen.dart';
 import 'package:score_app/features/customer/login/customer_login_screen.dart';
 import 'package:score_app/features/partner/login/partner_login_screen.dart';
@@ -63,28 +62,24 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets(
-        'navigates Welcome -> Partner Login and back button returns to Welcome screen',
+    testWidgets('Partner Login back button returns to Welcome screen',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(const ScoreApp());
-      await tester.pumpAndSettle();
-
-      // Verify Welcome screen initial state
-      expect(find.byType(WelcomeScreen), findsOneWidget);
-
-      // 10. Partner button on Welcome opens PartnerLoginScreen
-      await tester.tap(find.text('Partner Login'));
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: PartnerLoginScreen(),
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(PartnerLoginScreen), findsOneWidget);
       expect(find.text('Mobile Number'), findsOneWidget);
 
-      // 9. Back button returns to Welcome
+      // Back button returns to Welcome
       final backButtonFinder = find.byIcon(Icons.arrow_back_rounded);
       expect(backButtonFinder, findsOneWidget);
 
@@ -105,17 +100,17 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(const ScoreApp());
-      await tester.pumpAndSettle();
-
-      // 11. Existing Customer Login navigation still works
-      await tester.tap(find.text('Customer Login'));
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: CustomerLoginScreen(),
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(CustomerLoginScreen), findsOneWidget);
       expect(find.text('Mobile Number'), findsOneWidget);
 
-      // 12. Existing Customer Create Account navigation still works
+      // Existing Customer Create Account navigation still works
       final createAccountLink = find.byWidgetPredicate(
         (widget) =>
             widget is RichText &&

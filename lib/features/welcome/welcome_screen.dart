@@ -3,10 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/widgets/score_branded_background.dart';
 import '../../core/widgets/score_logo.dart';
-import '../admin/login/admin_login_screen.dart';
-import '../customer/login/customer_login_screen.dart';
-import '../partner/login/partner_login_screen.dart';
-import '../staff/login/staff_login_screen.dart';
+import '../auth/login/unified_login_screen.dart';
+import '../customer/create_account/create_account_screen.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -91,7 +89,7 @@ class WelcomeScreen extends StatelessWidget {
                           const SizedBox(height: 6),
                           // Subtitle
                           Text(
-                            'Please select your login type',
+                            'Sign in to continue',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               color: _royalBlue,
@@ -110,56 +108,28 @@ class WelcomeScreen extends StatelessWidget {
                             child: Column(
                               children: [
                                 _LoginChoice(
-                                  label: 'Customer Login',
-                                  icon: Icons.person_outline_rounded,
+                                  label: 'Login',
+                                  icon: Icons.login_rounded,
                                   height: buttonHeight,
                                   onTap: () {
                                     Navigator.of(context).push(
                                       MaterialPageRoute(
                                         builder: (_) =>
-                                            const CustomerLoginScreen(),
+                                            const UnifiedLoginScreen(),
                                       ),
                                     );
                                   },
                                 ),
                                 SizedBox(height: buttonGap),
                                 _LoginChoice(
-                                  label: 'Partner Login',
-                                  icon: Icons.handshake_rounded,
+                                  label: 'Create Account',
+                                  icon: Icons.person_add_alt_1_rounded,
                                   height: buttonHeight,
                                   onTap: () {
                                     Navigator.of(context).push(
                                       MaterialPageRoute(
                                         builder: (_) =>
-                                            const PartnerLoginScreen(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                SizedBox(height: buttonGap),
-                                _LoginChoice(
-                                  label: 'Staff Login',
-                                  icon: Icons.groups_rounded,
-                                  height: buttonHeight,
-                                  onTap: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const StaffLoginScreen(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                SizedBox(height: buttonGap),
-                                _LoginChoice(
-                                  label: 'Admin Login',
-                                  icon: Icons.admin_panel_settings_rounded,
-                                  height: buttonHeight,
-                                  onTap: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const AdminLoginScreen(),
+                                            const CreateAccountScreen(),
                                       ),
                                     );
                                   },

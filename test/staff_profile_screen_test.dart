@@ -141,9 +141,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(WelcomeScreen), findsOneWidget);
-      expect(find.text('Customer Login'), findsOneWidget);
-      expect(find.text('Partner Login'), findsOneWidget);
-      expect(find.text('Staff Login'), findsOneWidget);
+      expect(find.text('Login'), findsOneWidget);
+      expect(find.text('Create Account'), findsOneWidget);
     });
 
     testWidgets('17. Existing Staff Home -> Profile navigation works',
