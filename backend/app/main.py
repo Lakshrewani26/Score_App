@@ -56,6 +56,18 @@ app.include_router(staff_router)
 app.include_router(qr_scan_router)
 
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "message": "Welcome to Score API",
+        "status": "online",
+        "service": "Score App Backend",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
 @app.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
