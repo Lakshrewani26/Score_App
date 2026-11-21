@@ -1,12 +1,11 @@
 import '../../../../core/models/catalogue_models.dart';
+import '../../../../core/services/new_arrivals_service.dart';
 
-abstract class NewArrivalsDataSource {
-  Future<List<CatalogueProduct>> getNewArrivals();
-}
+export '../../../../core/services/new_arrivals_service.dart'
+    show NewArrivalsDataSource, ApiNewArrivalsDataSource;
 
 /// Isolated data source providing clearly marked placeholder products
-/// for the New Arrivals section. Real backend integration can replace
-/// this implementation seamlessly without modifying the Home UI.
+/// for the New Arrivals section. Used in UI widget tests when mock data is needed.
 class PlaceholderNewArrivalsDataSource implements NewArrivalsDataSource {
   const PlaceholderNewArrivalsDataSource({
     this.customProducts,
@@ -17,7 +16,7 @@ class PlaceholderNewArrivalsDataSource implements NewArrivalsDataSource {
   final Duration delay;
 
   @override
-  Future<List<CatalogueProduct>> getNewArrivals() async {
+  Future<List<CatalogueProduct>> getNewArrivals({int limit = 5}) async {
     if (delay > Duration.zero) {
       await Future.delayed(delay);
     }

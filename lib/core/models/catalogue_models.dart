@@ -53,6 +53,7 @@ class CatalogueProduct {
     this.price,
     this.listPrice,
     this.imageUrl,
+    this.createdAt,
   });
 
   final int id;
@@ -65,6 +66,7 @@ class CatalogueProduct {
   final num? price;
   final num? listPrice;
   final String? imageUrl;
+  final DateTime? createdAt;
 
   num? get calculationPrice => listPrice ?? price;
 
@@ -81,6 +83,12 @@ class CatalogueProduct {
       parsedListPrice = num.tryParse(rawListPrice.toString());
     }
 
+    final rawCreatedAt = json['created_at'];
+    DateTime? parsedCreatedAt;
+    if (rawCreatedAt != null && rawCreatedAt.toString().trim().isNotEmpty) {
+      parsedCreatedAt = DateTime.tryParse(rawCreatedAt.toString());
+    }
+
     return CatalogueProduct(
       id: json['id'] as int? ?? 0,
       categoryId: json['category_id'] as int? ?? 0,
@@ -92,6 +100,7 @@ class CatalogueProduct {
       price: parsedPrice,
       listPrice: parsedListPrice,
       imageUrl: json['image_url'] as String?,
+      createdAt: parsedCreatedAt,
     );
   }
 

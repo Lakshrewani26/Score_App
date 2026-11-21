@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -22,6 +23,7 @@ class ProductResponse(BaseModel):
     price: Decimal | None = None
     list_price: Decimal | None = None
     image_url: str | None
+    created_at: datetime | None = None
 
 
 class ProductPagination(BaseModel):

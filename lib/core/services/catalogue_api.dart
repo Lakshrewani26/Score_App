@@ -169,6 +169,32 @@ class CatalogueApi {
     return ProductPage.fromJson(decoded);
   }
 
+  Future<List<CatalogueProduct>> getNewArrivals({int limit = 5}) async {
+    final query = <String, dynamic>{
+      'limit': limit,
+    };
+    final headers = await _authHeaders();
+    final response = await _client.get(
+      _uri('/api/v1/products/new-arrivals', query),
+      headers: headers.isEmpty ? null : headers,
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw CatalogueApiException(
+        'Unable to load new arrivals',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! List) {
+      throw const FormatException('New arrivals response is invalid');
+    }
+
+    return decoded
+        .map((dynamic item) => CatalogueProduct.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<CatalogueProduct> getProduct(int productId) async {
     final headers = await _authHeaders();
     final response = await _client.get(

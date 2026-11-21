@@ -23,6 +23,9 @@ def _product_response(
     extra = {}
     if can_see_list_price:
         extra["list_price"] = product.list_price
+    created_at = getattr(product, "created_at", None)
+    if created_at is not None:
+        extra["created_at"] = created_at
     return ProductResponse(
         id=product.id,
         category_id=product.category_id,
@@ -128,6 +131,37 @@ def list_products(
             total_pages=(total + page_size - 1) // page_size,
         ),
     )
+
+
+@router.get("/products/new-arrivals", response_model=list[ProductResponse], response_model_exclude_unset=True)
+def get_new_arrivals(
+    limit: int = Query(default=5, ge=1, le=5),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_active_user),
+) -> list[ProductResponse]:
+    can_see_list_price = current_user is not None and current_user.role in (
+        "admin",
+        "partner",
+        "staff",
+    )
+    query = (
+        select(Product, ProductCategory.name)
+        .join(ProductCategory, Product.category_id == ProductCategory.id)
+        .where(
+            Product.is_active.is_(True),
+            ProductCategory.is_active.is_(True),
+        )
+    )
+    if hasattr(Product, "created_at"):
+        query = query.order_by(Product.created_at.desc(), Product.id.desc())
+    else:
+        query = query.order_by(Product.id.desc())
+
+    product_rows = db.execute(query.limit(limit)).all()
+    return [
+        _product_response(product, category_name, can_see_list_price=can_see_list_price)
+        for product, category_name in product_rows
+    ]
 
 
 @router.get("/products/{product_id}", response_model=ProductResponse, response_model_exclude_unset=True)

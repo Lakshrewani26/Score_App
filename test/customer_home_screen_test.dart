@@ -14,6 +14,15 @@ import 'catalogue_test_support.dart';
 
 void main() {
   group('CustomerHomeScreen Redesign UI Tests', () {
+    setUp(() {
+      CustomerHomeScreen.defaultDataSource =
+          const PlaceholderNewArrivalsDataSource();
+    });
+
+    tearDown(() {
+      CustomerHomeScreen.defaultDataSource = null;
+    });
+
     testWidgets('1. Displays redesigned CustomerHomeScreen with header, New Arrivals, and 6 action buttons', (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);
       tester.view.devicePixelRatio = 3;

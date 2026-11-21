@@ -5,6 +5,7 @@ import '../../../core/models/catalogue_models.dart';
 import '../../../core/models/partner_order_models.dart';
 import '../../../core/services/partner_order_api.dart';
 import '../../../core/services/partner_session_manager.dart';
+import '../../../core/widgets/new_arrivals_section.dart';
 import '../../../core/widgets/score_logo.dart';
 import '../balance/partner_balance_screen.dart';
 import '../catalogue/partner_three_wheeler_catalogue_screen.dart';
@@ -26,6 +27,7 @@ class PartnerHomeScreen extends StatefulWidget {
   final PartnerSessionManager? sessionManager;
   final PartnerOrderApi? orderApi;
   final PartnerNewArrivalsDataSource? newArrivalsDataSource;
+  static PartnerNewArrivalsDataSource? defaultDataSource;
 
   @override
   State<PartnerHomeScreen> createState() => _PartnerHomeScreenState();
@@ -37,11 +39,15 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
 
   late final PartnerSessionManager _sessionManager;
   late final PartnerOrderApi _orderApi;
-  late final PartnerNewArrivalsDataSource _arrivalsSource;
+  final GlobalKey<NewArrivalsSectionState> _newArrivalsKey =
+      GlobalKey<NewArrivalsSectionState>();
 
   PartnerDashboardStats? _stats;
-  List<CatalogueProduct> _newArrivals = const [];
-  bool _isLoadingArrivals = true;
+
+  PartnerNewArrivalsDataSource get _effectiveArrivalsSource =>
+      widget.newArrivalsDataSource ??
+      PartnerHomeScreen.defaultDataSource ??
+      ApiNewArrivalsDataSource();
 
   String get _welcomeName => _sessionManager.currentUser?.name.trim() ?? '';
   String get _totalPoints =>
@@ -57,10 +63,7 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
     _sessionManager = widget.sessionManager ?? PartnerSessionManager.instance;
     _orderApi =
         widget.orderApi ?? PartnerOrderApi(sessionManager: _sessionManager);
-    _arrivalsSource = widget.newArrivalsDataSource ??
-        const PlaceholderPartnerNewArrivalsDataSource();
     _loadStats();
-    _loadNewArrivals();
   }
 
   Future<void> _loadStats() async {
@@ -75,22 +78,20 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
     }
   }
 
-  Future<void> _loadNewArrivals() async {
-    try {
-      final items = await _arrivalsSource.getNewArrivals();
-      if (mounted) {
-        setState(() {
-          _newArrivals = items;
-          _isLoadingArrivals = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _newArrivals = const [];
-          _isLoadingArrivals = false;
-        });
-      }
+  Future<void> _refreshHome() async {
+    await Future.wait([
+      _loadStats(),
+      _newArrivalsKey.currentState?.reload() ?? Future.value(),
+    ]);
+  }
+
+  Future<void> _pushAndReload(Widget screen) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => screen),
+    );
+    if (mounted) {
+      _loadStats();
+      _newArrivalsKey.currentState?.reload();
     }
   }
 
@@ -110,28 +111,34 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
               fit: StackFit.expand,
               children: [
                 const SizedBox.expand(),
-                SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: height - 70),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Center(
-                        child: SizedBox(
-                          width: contentWidth,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              SizedBox(height: height * 0.055),
-                              _buildHeaderRow(context, width),
-                              const SizedBox(height: 12),
-                              _buildPartnerHeader(),
-                              const SizedBox(height: 18),
-                              _buildNewArrivalsSection(),
-                              const SizedBox(height: 20),
-                              _buildSixActionButtonsGrid(context),
-                              const SizedBox(height: 24),
-                            ],
+                RefreshIndicator(
+                  color: _royalBlue,
+                  onRefresh: _refreshHome,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: height - 70),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Center(
+                          child: SizedBox(
+                            width: contentWidth,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                SizedBox(height: height * 0.055),
+                                _buildHeaderRow(context, width),
+                                const SizedBox(height: 12),
+                                _buildPartnerHeader(),
+                                const SizedBox(height: 18),
+                                _buildNewArrivalsSection(),
+                                const SizedBox(height: 20),
+                                _buildSixActionButtonsGrid(context),
+                                const SizedBox(height: 24),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -187,258 +194,11 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
   }
 
   Widget _buildNewArrivalsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Expanded(
-              child: Text(
-                'New Arrivals',
-                style: TextStyle(
-                  color: _royalBlue,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEAF5FF),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: _cardBorderBlue, width: 1),
-              ),
-              child: const Text(
-                'Newly Added',
-                style: TextStyle(
-                  color: _royalBlue,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        if (_isLoadingArrivals)
-          Container(
-            height: 182,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: _cardBorderBlue, width: 1.2),
-            ),
-            child: const Center(
-              child: CircularProgressIndicator(
-                color: _royalBlue,
-                strokeWidth: 2.5,
-              ),
-            ),
-          )
-        else if (_newArrivals.isEmpty)
-          _buildNewArrivalsEmptyState()
-        else
-          SizedBox(
-            height: 182,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: _newArrivals.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (context, index) {
-                return _buildNewArrivalCard(_newArrivals[index]);
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildNewArrivalsEmptyState() {
-    return Container(
-      width: double.infinity,
-      height: 130,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _cardBorderBlue, width: 1.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x140755B5),
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(
-              Icons.inventory_2_outlined,
-              color: Color(0xFF8A98A8),
-              size: 32,
-            ),
-            SizedBox(height: 8),
-            Text(
-              'No new arrivals available at this time.',
-              style: TextStyle(
-                color: Color(0xFF4A6B94),
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNewArrivalCard(CatalogueProduct product) {
-    return Container(
-      width: 142,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _cardBorderBlue, width: 1.2),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x180755B5),
-            blurRadius: 12,
-            spreadRadius: 0,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => _showProductDetailsSheet(product),
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 44,
-                  child: CustomPaint(
-                    painter: _ProductCardWavePainter(),
-                  ),
-                ),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _buildProductImageOrPlaceholder(product.imageUrl),
-                      const SizedBox(height: 2),
-                      Text(
-                        product.name,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _royalBlue,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          height: 1.15,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      if (product.listPrice != null) ...[
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 2,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFE8F5E9),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: const Color(0xFFA5D6A7),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: Text(
-                                product.displayListPrice,
-                                style: const TextStyle(
-                                  color: Color(0xFF2E7D32),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              'MRP: ${product.displayPrice}',
-                              style: const TextStyle(
-                                color: Color(0xFF757575),
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ] else ...[
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 2,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFF8E1),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: const Color(0xFFFFE082),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: Text(
-                                product.displayPrice,
-                                style: const TextStyle(
-                                  color: Color(0xFFE65100),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              'MRP (fallback): ${product.displayPrice}',
-                              style: const TextStyle(
-                                color: Color(0xFF757575),
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return NewArrivalsSection(
+      key: _newArrivalsKey,
+      role: NewArrivalsRole.partner,
+      dataSource: _effectiveArrivalsSource,
+      onProductTap: _showProductDetailsSheet,
     );
   }
 
@@ -691,11 +451,8 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 label: '2 Wheeler',
                 accentColor: const Color(0xFF00B0FF),
                 onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const PartnerTwoWheelerCatalogueScreen(
-                          showCategoryList: true),
-                    ),
+                  _pushAndReload(
+                    const PartnerTwoWheelerCatalogueScreen(showCategoryList: true),
                   );
                 },
               ),
@@ -709,11 +466,8 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 label: '3 Wheeler',
                 accentColor: const Color(0xFFFF5252),
                 onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const PartnerThreeWheelerCatalogueScreen(
-                          showCategoryList: true),
-                    ),
+                  _pushAndReload(
+                    const PartnerThreeWheelerCatalogueScreen(showCategoryList: true),
                   );
                 },
               ),
@@ -730,18 +484,13 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 iconBgColor: const Color(0xFFFFDDE2),
                 label: 'My Orders',
                 accentColor: const Color(0xFFFF4081),
-                onTap: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => PartnerMyOrdersScreen(
-                        api: _orderApi,
-                        sessionManager: _sessionManager,
-                      ),
+                onTap: () {
+                  _pushAndReload(
+                    PartnerMyOrdersScreen(
+                      api: _orderApi,
+                      sessionManager: _sessionManager,
                     ),
                   );
-                  if (mounted) {
-                    _loadStats();
-                  }
                 },
               ),
             ),
@@ -753,15 +502,10 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 iconBgColor: const Color(0xFFD2F5EC),
                 label: 'Transfer Points',
                 accentColor: const Color(0xFF14B8A6),
-                onTap: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const PartnerTransferPointsScreen(),
-                    ),
+                onTap: () {
+                  _pushAndReload(
+                    const PartnerTransferPointsScreen(),
                   );
-                  if (mounted) {
-                    _loadStats();
-                  }
                 },
               ),
             ),
@@ -777,17 +521,12 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 iconBgColor: const Color(0xFFFEF3C7),
                 label: 'Points History',
                 accentColor: const Color(0xFFF59E0B),
-                onTap: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => PartnerTransferHistoryScreen(
-                        sessionManager: _sessionManager,
-                      ),
+                onTap: () {
+                  _pushAndReload(
+                    PartnerTransferHistoryScreen(
+                      sessionManager: _sessionManager,
                     ),
                   );
-                  if (mounted) {
-                    _loadStats();
-                  }
                 },
               ),
             ),
@@ -799,21 +538,16 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
                 iconBgColor: const Color(0xFFEADBFF),
                 label: 'Balance',
                 accentColor: const Color(0xFF9C27B0),
-                onTap: () async {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => PartnerBalanceScreen(
-                        sessionManager: _sessionManager,
-                        orderApi: _orderApi,
-                        pointsEarned: _totalPoints,
-                        pointsSpent: _pointsUsed,
-                        remainingBalance: _remainingBalance,
-                      ),
+                onTap: () {
+                  _pushAndReload(
+                    PartnerBalanceScreen(
+                      sessionManager: _sessionManager,
+                      orderApi: _orderApi,
+                      pointsEarned: _totalPoints,
+                      pointsSpent: _pointsUsed,
+                      remainingBalance: _remainingBalance,
                     ),
                   );
-                  if (mounted) {
-                    _loadStats();
-                  }
                 },
               ),
             ),
@@ -963,10 +697,8 @@ class _PartnerHomeScreenState extends State<PartnerHomeScreen> {
           Expanded(
             child: InkWell(
               onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const PartnerProfileScreen(),
-                  ),
+                _pushAndReload(
+                  const PartnerProfileScreen(),
                 );
               },
               child: Column(
@@ -1093,57 +825,4 @@ class _CardAccentWavePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _ProductCardWavePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final wave1 = Paint()
-      ..color = const Color(0xFFCBE8FF).withAlpha(120)
-      ..style = PaintingStyle.fill;
 
-    final wave2 = Paint()
-      ..color = const Color(0xFFA5D7FE).withAlpha(150)
-      ..style = PaintingStyle.fill;
-
-    final path1 = Path()
-      ..moveTo(0, size.height * 0.45)
-      ..quadraticBezierTo(
-        size.width * 0.28,
-        size.height * 0.1,
-        size.width * 0.58,
-        size.height * 0.5,
-      )
-      ..quadraticBezierTo(
-        size.width * 0.82,
-        size.height * 0.82,
-        size.width,
-        size.height * 0.38,
-      )
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-
-    final path2 = Path()
-      ..moveTo(0, size.height * 0.62)
-      ..quadraticBezierTo(
-        size.width * 0.32,
-        size.height * 0.35,
-        size.width * 0.68,
-        size.height * 0.7,
-      )
-      ..quadraticBezierTo(
-        size.width * 0.86,
-        size.height * 0.88,
-        size.width,
-        size.height * 0.58,
-      )
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
-      ..close();
-
-    canvas.drawPath(path1, wave1);
-    canvas.drawPath(path2, wave2);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

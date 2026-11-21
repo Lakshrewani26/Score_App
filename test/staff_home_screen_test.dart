@@ -12,6 +12,7 @@ import 'package:score_app/features/staff/dealers/staff_dealers_associated_screen
 import 'package:score_app/features/staff/home/staff_home_screen.dart';
 import 'package:score_app/features/staff/profile/staff_profile_screen.dart';
 import 'package:score_app/features/staff/login/staff_login_screen.dart';
+import 'package:score_app/features/staff/home/services/staff_new_arrivals_service.dart';
 import 'package:score_app/features/staff/orders/staff_order_status_screen.dart';
 import 'package:score_app/features/staff/payment_status/staff_payment_status_screen.dart';
 import 'package:score_app/features/staff/points_history/staff_points_history_screen.dart';
@@ -19,6 +20,15 @@ import 'catalogue_test_support.dart';
 
 void main() {
   group('StaffHomeScreen Tests', () {
+    setUp(() {
+      StaffHomeScreen.defaultDataSource =
+          const PlaceholderStaffNewArrivalsDataSource();
+    });
+
+    tearDown(() {
+      StaffHomeScreen.defaultDataSource = null;
+    });
+
     testWidgets('renders redesigned StaffHomeScreen with header, New Arrivals, and 6 action buttons',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2280);

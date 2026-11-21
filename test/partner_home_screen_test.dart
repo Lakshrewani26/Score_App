@@ -15,6 +15,15 @@ import 'catalogue_test_support.dart';
 
 void main() {
   group('PartnerHomeScreen Redesign UI Tests', () {
+    setUp(() {
+      PartnerHomeScreen.defaultDataSource =
+          const PlaceholderPartnerNewArrivalsDataSource();
+    });
+
+    tearDown(() {
+      PartnerHomeScreen.defaultDataSource = null;
+    });
+
     testWidgets(
         '1. Displays redesigned PartnerHomeScreen with header, New Arrivals, and 6 action buttons',
         (WidgetTester tester) async {
