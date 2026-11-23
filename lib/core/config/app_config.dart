@@ -7,7 +7,7 @@ class AppConfig {
   static const String desktopBaseUrl = 'http://127.0.0.1:8000';
 
   static const String productionBaseUrl =
-      'https://score-app-stae.onrender.com';
+      'https://scoreapp-production-057d6479.up.railway.app';
 
   static String get baseUrl {
     const configuredOverride =
