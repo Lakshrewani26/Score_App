@@ -23,6 +23,8 @@ from app.routers.staff import router as staff_router
 
 app = FastAPI(title=settings.app_name)
 
+logger = logging.getLogger(__name__)
+
 if settings.environment.lower() == "development":
     app.add_middleware(
         CORSMiddleware,
@@ -31,14 +33,23 @@ if settings.environment.lower() == "development":
         allow_headers=["Accept", "Content-Type", "Authorization"],
     )
 elif settings.cors_allowed_origins:
+    logger.info(
+        "CORS middleware configured for %d origin(s): %s",
+        len(settings.cors_allowed_origins),
+        ", ".join(settings.cors_allowed_origins),
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allowed_origins,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Accept", "Content-Type", "Authorization"],
     )
-
-logger = logging.getLogger(__name__)
+else:
+    logger.warning(
+        "CORS middleware is NOT configured: environment=%r but CORS_ALLOWED_ORIGINS is empty. "
+        "Browser-based clients will be blocked by the same-origin policy.",
+        settings.environment,
+    )
 
 app.include_router(auth_router)
 app.include_router(customer_router)
