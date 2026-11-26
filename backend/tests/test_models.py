@@ -1,6 +1,7 @@
 import ast
 import importlib.util
 from pathlib import Path
+import pytest
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
@@ -37,6 +38,7 @@ EXPECTED_TABLES = {
     "zones",
     "point_transactions",
     "point_transfers",
+    "notifications",
 }
 
 INITIAL_EXPECTED_TABLES = EXPECTED_TABLES - {
@@ -47,6 +49,7 @@ INITIAL_EXPECTED_TABLES = EXPECTED_TABLES - {
     "zones",
     "point_transactions",
     "point_transfers",
+    "notifications",
 }
 
 
@@ -83,7 +86,7 @@ def test_required_unique_constraints_and_foreign_keys_exist() -> None:
     } == {"users.id"}
     assert any(
         index.unique
-        and index.name == "uq_staff_partner_assignments_active_partner"
+        and index.name == "uq_staff_partner_assignments_active_pair"
         and "is_active" in str(index.dialect_options["postgresql"]["where"])
         for index in assignments.indexes
     )
@@ -94,6 +97,13 @@ def test_required_unique_constraints_and_foreign_keys_exist() -> None:
     assert any(
         foreign_key.target_fullname == "staff_profiles.user_id"
         for foreign_key in orders.c.assigned_staff_id.foreign_keys
+    )
+    notifications = Base.metadata.tables["notifications"]
+    assert any(
+        isinstance(constraint, UniqueConstraint)
+        and {column.name for column in constraint.columns} == {"user_id", "order_id"}
+        and constraint.name == "uq_notifications_user_order"
+        for constraint in notifications.constraints
     )
 
 
@@ -139,11 +149,14 @@ def test_single_initial_alembic_revision_is_available() -> None:
     scripts = ScriptDirectory.from_config(config)
 
     assert len(scripts.get_heads()) == 1
-    assert len(list(scripts.walk_revisions())) == 11
-    latest_revision = scripts.get_revision("e6f7a8b9c0d1")
+    assert len(list(scripts.walk_revisions())) == 12
+    latest_revision = scripts.get_revision("g1h2i3j4k5l6")
     assert latest_revision is not None
-    assert latest_revision.down_revision == "d5e6f7a8b9c0"
-    assert scripts.get_heads() == ["e6f7a8b9c0d1"]
+    assert latest_revision.down_revision == "e6f7a8b9c0d1"
+    assert scripts.get_heads() == ["g1h2i3j4k5l6"]
+    prev_head = scripts.get_revision("e6f7a8b9c0d1")
+    assert prev_head is not None
+    assert prev_head.down_revision == "d5e6f7a8b9c0"
     previous_revision = scripts.get_revision("d5e6f7a8b9c0")
     assert previous_revision is not None
     assert previous_revision.down_revision == "c4d5e6f7a8b9"
@@ -433,5 +446,224 @@ def test_payment_status_lifecycle_migration_upgrade_and_downgrade() -> None:
 
         columns_after = {c["name"]: c for c in inspect(connection).get_columns("payment_status_history")}
         assert "remarks" not in columns_after
+
+    engine.dispose()
+
+
+def test_m2m_staff_partner_session_notifications_migration_upgrade_and_downgrade() -> None:
+    backend_dir = Path(__file__).resolve().parents[1]
+    migration_path = (
+        backend_dir
+        / "migrations"
+        / "versions"
+        / "g1h2i3j4k5l6_m2m_staff_partner_session_notifications.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "m2m_staff_partner_session_notifications_migration", migration_path
+    )
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        # 1. Setup pre-migration schema matching state after e6f7a8b9c0d1
+        connection.exec_driver_sql(
+            "CREATE TABLE users ("
+            "    id INTEGER PRIMARY KEY,"
+            "    name VARCHAR(150) NOT NULL,"
+            "    mobile VARCHAR(20) NOT NULL UNIQUE,"
+            "    password_hash VARCHAR(255) NOT NULL,"
+            "    role VARCHAR(20) NOT NULL,"
+            "    is_active BOOLEAN NOT NULL DEFAULT 1,"
+            "    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
+            ")"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE partner_profiles ("
+            "    user_id INTEGER PRIMARY KEY,"
+            "    business_name VARCHAR(200) NOT NULL,"
+            "    business_address TEXT NOT NULL"
+            ")"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE staff_profiles ("
+            "    user_id INTEGER PRIMARY KEY,"
+            "    staff_id VARCHAR(50) NOT NULL UNIQUE"
+            ")"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE orders ("
+            "    id INTEGER PRIMARY KEY,"
+            "    order_number VARCHAR(50) NOT NULL"
+            ")"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE staff_partner_assignments ("
+            "    id INTEGER PRIMARY KEY,"
+            "    staff_id INTEGER NOT NULL REFERENCES staff_profiles(user_id),"
+            "    partner_id INTEGER NOT NULL REFERENCES partner_profiles(user_id),"
+            "    assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+            "    is_active BOOLEAN NOT NULL DEFAULT 1,"
+            "    deactivated_at TIMESTAMP,"
+            "    deactivated_by INTEGER REFERENCES users(id)"
+            ")"
+        )
+        # Prior 1:1 active index created in d5e6f7a8b9c0
+        connection.exec_driver_sql(
+            "CREATE UNIQUE INDEX uq_staff_partner_assignments_active_partner "
+            "ON staff_partner_assignments (partner_id) "
+            "WHERE is_active = 1"
+        )
+
+        # Seed data: Admin, Staff1, Staff2, Partner1, Partner2, Orders
+        connection.exec_driver_sql(
+            "INSERT INTO users (id, name, mobile, password_hash, role) VALUES "
+            "(1, 'Admin', '9000000001', 'hash', 'admin'), "
+            "(2, 'Staff 1', '9000000002', 'hash', 'staff'), "
+            "(3, 'Staff 2', '9000000003', 'hash', 'staff'), "
+            "(4, 'Partner 1', '9000000004', 'hash', 'partner'), "
+            "(5, 'Partner 2', '9000000005', 'hash', 'partner')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO staff_profiles (user_id, staff_id) VALUES (2, 'STF-01'), (3, 'STF-02')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO partner_profiles (user_id, business_name, business_address) VALUES "
+            "(4, 'Partner Store 1', 'City A'), (5, 'Partner Store 2', 'City B')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO orders (id, order_number) VALUES (101, 'ORD-101'), (102, 'ORD-102')"
+        )
+
+        # Under the old index, only 1 active staff can be assigned to Partner 4
+        connection.exec_driver_sql(
+            "INSERT INTO staff_partner_assignments (id, staff_id, partner_id, is_active) VALUES (1, 2, 4, 1)"
+        )
+        with pytest.raises(Exception):
+            connection.exec_driver_sql(
+                "INSERT INTO staff_partner_assignments (id, staff_id, partner_id, is_active) VALUES (2, 3, 4, 1)"
+            )
+
+        # =====================================================================
+        # 2. UPGRADE
+        # =====================================================================
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+
+        # A. Old assignment index is replaced with correct pair-level index
+        inspector = inspect(connection)
+        spa_indexes = {idx["name"]: idx for idx in inspector.get_indexes("staff_partner_assignments")}
+        assert "uq_staff_partner_assignments_active_partner" not in spa_indexes
+        assert "uq_staff_partner_assignments_active_pair" in spa_indexes
+        assert spa_indexes["uq_staff_partner_assignments_active_pair"]["unique"] == 1
+
+        # B. Multiple staff can be active for one partner
+        connection.exec_driver_sql(
+            "INSERT INTO staff_partner_assignments (id, staff_id, partner_id, is_active) VALUES (2, 3, 4, 1)"
+        )
+
+        # C. Multiple partners can be assigned to one staff
+        connection.exec_driver_sql(
+            "INSERT INTO staff_partner_assignments (id, staff_id, partner_id, is_active) VALUES (3, 2, 5, 1)"
+        )
+
+        # D. Duplicate active pairs are rejected by the database
+        with pytest.raises(Exception):
+            connection.exec_driver_sql(
+                "INSERT INTO staff_partner_assignments (id, staff_id, partner_id, is_active) VALUES (4, 2, 4, 1)"
+            )
+
+        # Inactive duplicate pairs are allowed
+        connection.exec_driver_sql(
+            "INSERT INTO staff_partner_assignments (id, staff_id, partner_id, is_active) VALUES (5, 2, 4, 0)"
+        )
+
+        # E. session_token column and index are created
+        user_cols = {c["name"]: c for c in inspector.get_columns("users")}
+        assert "session_token" in user_cols
+        assert user_cols["session_token"]["nullable"] is True
+        user_indexes = {idx["name"] for idx in inspector.get_indexes("users")}
+        assert "ix_users_session_token" in user_indexes
+
+        # F. Notifications table, columns, foreign keys, indexes, and unique constraint
+        tables = set(inspector.get_table_names())
+        assert "notifications" in tables
+
+        notif_cols = {c["name"]: c for c in inspector.get_columns("notifications")}
+        assert {"id", "user_id", "type", "title", "body", "order_id", "is_read", "created_at"}.issubset(notif_cols)
+
+        notif_indexes = {idx["name"] for idx in inspector.get_indexes("notifications")}
+        assert {"ix_notifications_user_id", "ix_notifications_is_read", "ix_notifications_created_at"}.issubset(
+            notif_indexes
+        )
+
+        notif_uqs = inspector.get_unique_constraints("notifications")
+        user_order_uq = [uq for uq in notif_uqs if set(uq["column_names"]) == {"user_id", "order_id"}]
+        assert len(user_order_uq) == 1
+        assert user_order_uq[0]["name"] == "uq_notifications_user_order"
+
+        # Unique user/order constraint is enforced by the database
+        connection.exec_driver_sql(
+            "INSERT INTO notifications (id, user_id, type, title, body, order_id, is_read) "
+            "VALUES (1, 2, 'new_order', 'Order 101', 'Details', 101, 0)"
+        )
+        with pytest.raises(Exception):
+            connection.exec_driver_sql(
+                "INSERT INTO notifications (id, user_id, type, title, body, order_id, is_read) "
+                "VALUES (2, 2, 'new_order', 'Duplicate', 'Details', 101, 0)"
+            )
+
+        # =====================================================================
+        # 3. DOWNGRADE SAFETY
+        # Multiple active staff (Staff 1 and Staff 2) exist for Partner 4.
+        # Downgrade must fail safely before making any schema or data changes.
+        # =====================================================================
+        with Operations.context(MigrationContext.configure(connection)):
+            with pytest.raises(RuntimeError) as exc_info:
+                migration.downgrade()
+            assert "multiple active staff" in str(exc_info.value)
+            assert "4" in str(exc_info.value)
+
+        # Verify failed downgrade does NOT leave the database partially downgraded:
+        inspector_after_failed = inspect(connection)
+        assert "notifications" in set(inspector_after_failed.get_table_names())
+        assert "session_token" in {c["name"] for c in inspector_after_failed.get_columns("users")}
+        assert "uq_staff_partner_assignments_active_pair" in {
+            idx["name"] for idx in inspector_after_failed.get_indexes("staff_partner_assignments")
+        }
+
+        # Verify no assignment data was deleted
+        row_count = connection.exec_driver_sql("SELECT COUNT(*) FROM staff_partner_assignments").scalar()
+        assert row_count == 4
+
+        # =====================================================================
+        # 4. NORMAL DOWNGRADE
+        # Resolve the conflict by deactivating the second staff for Partner 4.
+        # =====================================================================
+        connection.exec_driver_sql(
+            "UPDATE staff_partner_assignments SET is_active = 0 WHERE id = 2"
+        )
+
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+
+        # Verify normal downgrade succeeds and restores old index
+        inspector_downgraded = inspect(connection)
+        assert "notifications" not in set(inspector_downgraded.get_table_names())
+        assert "session_token" not in {c["name"] for c in inspector_downgraded.get_columns("users")}
+
+        downgraded_spa_indexes = {
+            idx["name"]: idx for idx in inspector_downgraded.get_indexes("staff_partner_assignments")
+        }
+        assert "uq_staff_partner_assignments_active_pair" not in downgraded_spa_indexes
+        assert "uq_staff_partner_assignments_active_partner" in downgraded_spa_indexes
+        assert downgraded_spa_indexes["uq_staff_partner_assignments_active_partner"]["unique"] == 1
+
+        # Restored index prevents multiple active staff for Partner 4 again
+        with pytest.raises(Exception):
+            connection.exec_driver_sql(
+                "INSERT INTO staff_partner_assignments (id, staff_id, partner_id, is_active) VALUES (6, 3, 4, 1)"
+            )
 
     engine.dispose()

@@ -1,3 +1,5 @@
+import 'notification_service.dart';
+
 class StaffUser {
   const StaffUser({
     required this.id,
@@ -65,13 +67,20 @@ class InMemoryStaffTokenStorage implements StaffTokenStorage {
 }
 
 class StaffSessionManager {
-  StaffSessionManager({StaffTokenStorage? tokenStorage})
-      : _tokenStorage = tokenStorage ?? InMemoryStaffTokenStorage();
+  StaffSessionManager({
+    StaffTokenStorage? tokenStorage,
+    NotificationService? notificationService,
+  })  : _tokenStorage = tokenStorage ?? InMemoryStaffTokenStorage(),
+        _notificationService = notificationService;
 
   static final StaffSessionManager instance = StaffSessionManager();
 
   final StaffTokenStorage _tokenStorage;
+  final NotificationService? _notificationService;
   StaffUser? _currentUser;
+
+  NotificationService get notificationService =>
+      _notificationService ?? NotificationService.instance;
 
   StaffUser? get currentUser => _currentUser;
   bool get isAuthenticated => _currentUser != null;
@@ -79,9 +88,13 @@ class StaffSessionManager {
   Future<void> saveSession({
     required String token,
     required StaffUser user,
+    bool startNotificationPolling = true,
   }) async {
     await _tokenStorage.saveToken(token);
     _currentUser = user;
+    if (startNotificationPolling) {
+      notificationService.startPolling(role: 'staff');
+    }
   }
 
   Future<String?> getToken() => _tokenStorage.getToken();
@@ -89,5 +102,6 @@ class StaffSessionManager {
   Future<void> clearSession() async {
     await _tokenStorage.clearToken();
     _currentUser = null;
+    notificationService.stopPolling();
   }
 }

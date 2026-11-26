@@ -44,6 +44,11 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Single-session enforcement: each login generates a new token stored here and
+    # embedded in the JWT as the "sid" claim. Requests with a mismatched sid are rejected.
+    session_token: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, index=True
+    )
 
     customer_profile: Mapped[Optional[CustomerProfile]] = relationship(
         back_populates="user", passive_deletes="all"
@@ -473,8 +478,8 @@ class StockRequestStatusHistory(Base):
             name="supported_new_status",
         ),
         CheckConstraint(
-            "old_status IS NULL OR old_status IN "
-            "('pending_approval', 'approved', 'rejected')",
+            "old_status IS NULL OR old_status IN \
+('pending_approval', 'approved', 'rejected')",
             name="supported_old_status",
         ),
         Index("ix_stock_request_status_history_request_id", "stock_request_id"),
@@ -501,8 +506,11 @@ class StockRequestStatusHistory(Base):
 class StaffPartnerAssignment(Base):
     __tablename__ = "staff_partner_assignments"
     __table_args__ = (
+        # M2M: one partner can have many staff, one staff can have many partners.
+        # Only prevent the exact same (staff_id, partner_id) pair from being active twice.
         Index(
-            "uq_staff_partner_assignments_active_partner",
+            "uq_staff_partner_assignments_active_pair",
+            "staff_id",
             "partner_id",
             unique=True,
             postgresql_where=text("is_active IS TRUE"),
@@ -898,3 +906,33 @@ class PointTransfer(Base):
     qr_code: Mapped[Optional[QrCode]] = relationship(foreign_keys=[qr_code_id])
 
 
+class Notification(Base):
+    """In-app notification for new orders, dispatched to Staff and Admin users."""
+    __tablename__ = "notifications"
+    __table_args__ = (
+        Index("ix_notifications_user_id", "user_id"),
+        Index("ix_notifications_is_read", "is_read"),
+        Index("ix_notifications_created_at", "created_at"),
+        # Prevent duplicate notifications for the same order+user combination
+        UniqueConstraint("user_id", "order_id", name="uq_notifications_user_order"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    type: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g. "new_order"
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    order_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("orders.id", ondelete="SET NULL"), nullable=True
+    )
+    is_read: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    user: Mapped[User] = relationship(foreign_keys=[user_id])
+    order: Mapped[Optional[Order]] = relationship()

@@ -8,6 +8,7 @@ import '../models/partner_order_models.dart';
 import '../models/staff_payment_models.dart';
 import '../models/staff_points_models.dart';
 import 'staff_session_manager.dart';
+import 'session_revocation_handler.dart';
 
 export '../models/staff_payment_models.dart';
 export '../models/staff_points_models.dart';
@@ -144,6 +145,10 @@ class StaffApi {
       }
     } on FormatException {
       // Keep the status-specific fallback when the response is not JSON.
+    }
+    if (response.statusCode == 401 &&
+        SessionRevocationHandler.isSessionRevokedError(message)) {
+      SessionRevocationHandler.handleSessionRevocation(role: 'staff');
     }
     return StaffApiException(message, statusCode: response.statusCode);
   }

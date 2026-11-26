@@ -34,8 +34,8 @@ void main() {
     );
     expect(find.text('Welcome!'), findsOneWidget);
 
-    for (final role in ['Customer', 'Partner', 'Staff', 'Admin']) {
-      await tester.tap(find.text('$role Login').first);
+    for (final label in ['Login', 'Create Account']) {
+      await tester.tap(find.text(label).first);
       await tester.pumpAndSettle();
 
       final routePainters = tester

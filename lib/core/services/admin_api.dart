@@ -11,6 +11,7 @@ import 'admin_reports_api.dart';
 import 'admin_qr_api.dart';
 import 'admin_settings_api.dart';
 import 'admin_session_manager.dart';
+import 'session_revocation_handler.dart';
 
 class AdminApiException implements Exception {
   AdminApiException(this.message, {this.statusCode, this.detail});
@@ -94,11 +95,15 @@ class AdminApi {
         detail: detail,
       );
     } else if (response.statusCode == 401) {
-      return AdminApiException(
+      final ex = AdminApiException(
         errorMessage.isNotEmpty ? errorMessage : 'Invalid or expired session',
         statusCode: 401,
         detail: detail,
       );
+      if (SessionRevocationHandler.isSessionRevokedError(errorMessage)) {
+        SessionRevocationHandler.handleSessionRevocation(role: 'admin');
+      }
+      return ex;
     } else if (response.statusCode == 403) {
       return AdminApiException(
         errorMessage.isNotEmpty

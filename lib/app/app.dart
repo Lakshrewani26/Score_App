@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../core/services/notification_service.dart';
+import '../core/services/session_revocation_handler.dart';
 import '../core/widgets/score_branded_background.dart';
 import '../features/admin/login/admin_login_screen.dart';
 import '../features/welcome/welcome_screen.dart';
@@ -10,7 +12,10 @@ class ScoreApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    NotificationService.instance.attachBinding();
     return MaterialApp(
+      navigatorKey: SessionRevocationHandler.navigatorKey,
+      scaffoldMessengerKey: SessionRevocationHandler.messengerKey,
       debugShowCheckedModeBanner: false,
       title: 'Score',
       theme: ThemeData(

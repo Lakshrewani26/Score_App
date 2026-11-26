@@ -177,7 +177,14 @@ def test_assignment_lifecycle_and_automatic_deactivation(
     assert asgn_b["is_active"] is True
     assert asgn_b["staff_id"] == staff_b.id
 
-    # 3. Verify Staff A's assignment was automatically deactivated
+    # 3. Under M2M, both Staff A and Staff B are active. Deactivate Staff A's assignment explicitly.
+    res_deact = client.patch(
+        f"/api/v1/admin/staff-partner-assignments/{asgn_a_id}/status",
+        headers=admin_headers,
+        json={"is_active": False},
+    )
+    assert res_deact.status_code == 200
+
     db_session.expire_all()
     old_a = db_session.get(StaffPartnerAssignment, asgn_a_id)
     assert old_a is not None
@@ -186,7 +193,7 @@ def test_assignment_lifecycle_and_automatic_deactivation(
     assert old_a.deactivated_at is not None
     assert old_a.deactivated_by == admin.id
 
-    # 4. At most one active assignment exists for partner
+    # 4. Only Staff B active assignment exists for partner
     active_count = db_session.scalar(
         select(func.count(StaffPartnerAssignment.id)).where(
             StaffPartnerAssignment.partner_id == partner.id,
@@ -312,11 +319,12 @@ def test_historical_attribution_preserved_across_reassignments(
     staff_a_headers = _auth_header(staff_a_token)
 
     # 1. Partner assigned to Staff A
-    client.post(
+    res_asgn_a = client.post(
         "/api/v1/admin/staff-partner-assignments",
         headers=admin_headers,
         json={"staff_id": staff_a.id, "partner_id": partner.id},
     )
+    asgn_a_id = res_asgn_a.json()["id"]
 
     # Partner creates Order 1
     res_ord1 = client.post(
@@ -342,7 +350,12 @@ def test_historical_attribution_preserved_across_reassignments(
     assert ord_a_data["created_by_user_id"] == staff_a.id
     assert ord_a_data["staff_attribution_status"] == "assigned"
 
-    # 2. Partner is reassigned to Staff B
+    # 2. Partner is reassigned to Staff B (deactivate Staff A)
+    client.patch(
+        f"/api/v1/admin/staff-partner-assignments/{asgn_a_id}/status",
+        headers=admin_headers,
+        json={"is_active": False},
+    )
     client.post(
         "/api/v1/admin/staff-partner-assignments",
         headers=admin_headers,

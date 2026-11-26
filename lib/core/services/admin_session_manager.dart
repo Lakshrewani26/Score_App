@@ -1,4 +1,5 @@
 import '../models/admin_models.dart';
+import 'notification_service.dart';
 
 /// Abstract storage strategy for Admin authentication tokens.
 abstract class AdminTokenStorage {
@@ -37,13 +38,20 @@ class InMemoryAdminTokenStorage implements AdminTokenStorage {
 
 /// Manages the authenticated Admin session and in-memory state.
 class AdminSessionManager {
-  AdminSessionManager({AdminTokenStorage? tokenStorage})
-      : _tokenStorage = tokenStorage ?? InMemoryAdminTokenStorage();
+  AdminSessionManager({
+    AdminTokenStorage? tokenStorage,
+    NotificationService? notificationService,
+  })  : _tokenStorage = tokenStorage ?? InMemoryAdminTokenStorage(),
+        _notificationService = notificationService;
 
   static AdminSessionManager instance = AdminSessionManager();
 
   final AdminTokenStorage _tokenStorage;
+  final NotificationService? _notificationService;
   AdminUser? _currentUser;
+
+  NotificationService get notificationService =>
+      _notificationService ?? NotificationService.instance;
 
   AdminTokenStorage get tokenStorage => _tokenStorage;
   AdminUser? get currentUser => _currentUser;
@@ -53,9 +61,13 @@ class AdminSessionManager {
   Future<void> saveSession({
     required String token,
     required AdminUser user,
+    bool startNotificationPolling = true,
   }) async {
     await _tokenStorage.saveToken(token);
     _currentUser = user;
+    if (startNotificationPolling) {
+      notificationService.startPolling(role: 'admin');
+    }
   }
 
   /// Retrieves the stored access token.
@@ -67,5 +79,6 @@ class AdminSessionManager {
   Future<void> clearSession() async {
     await _tokenStorage.clearToken();
     _currentUser = null;
+    notificationService.stopPolling();
   }
 }

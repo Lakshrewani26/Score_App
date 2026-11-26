@@ -11,7 +11,12 @@ from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    SESSION_REVOKED_DETAIL,
+    create_access_token,
+    hash_password,
+    verify_password,
+)
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
@@ -716,6 +721,12 @@ def test_last_active_admin_protection(client: TestClient, db_session: Session) -
 
     # Now Admin 2 is inactive, and Admin 1 is the LAST active admin.
     # If Admin 2 tries to login, they are deactivated (403).
+    res_inactive_login = client.post(
+        "/api/v1/auth/admin/login",
+        json={"mobile": admin2.mobile, "password": "SecurePass123!"},
+    )
+    assert res_inactive_login.status_code == 403
+
     # Admin 1 reactivates Admin 2
     res_reactivate = client.post(
         f"/api/v1/admin/users/{admin2.id}/status",
@@ -725,8 +736,15 @@ def test_last_active_admin_protection(client: TestClient, db_session: Session) -
     assert res_reactivate.status_code == 200
     assert res_reactivate.json()["is_active"] is True
 
+    # Reactivated Admin 2 logs in to establish an active session
+    login_res = client.post(
+        "/api/v1/auth/admin/login",
+        json={"mobile": admin2.mobile, "password": "SecurePass123!"},
+    )
+    assert login_res.status_code == 200
+    headers2 = {"Authorization": f"Bearer {login_res.json()['access_token']}"}
+
     # Now Admin 2 deactivates Admin 1
-    headers2 = _auth_header(admin2)
     res_deact1 = client.post(
         f"/api/v1/admin/users/{admin1.id}/status",
         json={"is_active": False},
@@ -828,6 +846,15 @@ def test_user_deletion_with_point_transactions_soft_deactivates(deletion_client:
     headers = _auth_header(admin)
 
     user = _create_user(deletion_db, role="customer", mobile="9890000003")
+    user.session_token = "sess-pre-delete-token"
+    deletion_db.add(CustomerProfile(user_id=user.id, state="MH", city="Mumbai", segment="Retail"))
+    deletion_db.commit()
+    user_token = create_access_token(
+        subject=str(user.id),
+        role=user.role,
+        mobile=user.mobile,
+        session_id=user.session_token,
+    )
     rule, code = _seed_points_rule_and_qr_code(deletion_db)
 
     tx = PointTransaction(
@@ -851,11 +878,20 @@ def test_user_deletion_with_point_transactions_soft_deactivates(deletion_client:
     assert data["user_id"] == user.id
     assert data["message"] == "Account has associated transaction history and has been deactivated to preserve records."
 
-    # Verify user still exists in database and is deactivated
+    # Verify user still exists in database and is deactivated with session revoked
     deletion_db.expire_all()
     reloaded_user = deletion_db.get(User, user.id)
     assert reloaded_user is not None
     assert reloaded_user.is_active is False
+    assert reloaded_user.session_token == "REVOKED"
+
+    # Verify old token is rejected after soft deletion (inactive account check)
+    user_res = deletion_client.get(
+        "/api/v1/auth/customer/me",
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert user_res.status_code == 403
+    assert "deactivated" in user_res.json()["detail"].lower()
 
     # Finding 3.1: Reload the transaction and confirm row still exists and values remain unchanged
     reloaded_tx = deletion_db.get(PointTransaction, tx_id)
@@ -1334,4 +1370,213 @@ def test_last_active_admin_safeguard_direct_check(client: TestClient, db_session
     )
     assert res_self.status_code == 400
     assert "Cannot deactivate your own admin account" in res_self.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# 8. User Update Mobile Session Revocation Tests
+# ---------------------------------------------------------------------------
+
+
+def test_admin_update_user_mobile_change_revokes_session(
+    client: TestClient, db_session: Session
+) -> None:
+    """When an admin changes a user's mobile number, the active session is revoked."""
+    admin = _create_user(db_session, role="admin", mobile="9896000001")
+    admin_headers = _auth_header(admin)
+
+    customer = _create_user(
+        db_session,
+        name="Mobile Test Customer",
+        role="customer",
+        mobile="9896000002",
+        password="CustomerPassword123!",
+    )
+    db_session.add(CustomerProfile(user_id=customer.id, city="Delhi"))
+    db_session.commit()
+
+    # Customer logs in
+    login_resp = client.post(
+        "/api/v1/auth/customer/login",
+        json={"mobile": "9896000002", "password": "CustomerPassword123!"},
+    )
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+
+    # Customer token works
+    res_before = client.get(
+        "/api/v1/auth/customer/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res_before.status_code == 200
+
+    # Admin updates customer's mobile number to a new number
+    update_resp = client.put(
+        f"/api/v1/admin/users/{customer.id}",
+        json={"mobile": "9896000099"},
+        headers=admin_headers,
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["mobile"] == "9896000099"
+
+    # In database, session_token must be REVOKED
+    db_session.expire_all()
+    reloaded_cust = db_session.get(User, customer.id)
+    assert reloaded_cust is not None
+    assert reloaded_cust.mobile == "9896000099"
+    assert reloaded_cust.session_token == "REVOKED"
+
+    # Customer's previous token is now rejected with 401 session revoked
+    res_after = client.get(
+        "/api/v1/auth/customer/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res_after.status_code == 401
+    assert res_after.json()["detail"] == SESSION_REVOKED_DETAIL
+
+
+def test_admin_update_user_mobile_change_allows_relogin_with_new_mobile(
+    client: TestClient, db_session: Session
+) -> None:
+    """After mobile number update, user can log in with new mobile and get a valid session."""
+    admin = _create_user(db_session, role="admin", mobile="9897000001")
+    admin_headers = _auth_header(admin)
+
+    customer = _create_user(
+        db_session,
+        name="Relogin Customer",
+        role="customer",
+        mobile="9897000002",
+        password="CustomerPassword123!",
+    )
+    db_session.add(CustomerProfile(user_id=customer.id))
+    db_session.commit()
+
+    # Admin updates mobile to new number
+    update_resp = client.put(
+        f"/api/v1/admin/users/{customer.id}",
+        json={"mobile": "9897000099"},
+        headers=admin_headers,
+    )
+    assert update_resp.status_code == 200
+
+    # Old mobile login fails
+    old_login = client.post(
+        "/api/v1/auth/customer/login",
+        json={"mobile": "9897000002", "password": "CustomerPassword123!"},
+    )
+    assert old_login.status_code == 401
+
+    # New mobile login succeeds
+    new_login = client.post(
+        "/api/v1/auth/customer/login",
+        json={"mobile": "9897000099", "password": "CustomerPassword123!"},
+    )
+    assert new_login.status_code == 200
+    new_token = new_login.json()["access_token"]
+
+    # New token works
+    valid_res = client.get(
+        "/api/v1/auth/customer/me",
+        headers={"Authorization": f"Bearer {new_token}"},
+    )
+    assert valid_res.status_code == 200
+    assert valid_res.json()["mobile"] == "9897000099"
+
+
+def test_admin_update_user_non_mobile_fields_preserves_session(
+    client: TestClient, db_session: Session
+) -> None:
+    """Updating fields other than mobile does not revoke the user's active session."""
+    admin = _create_user(db_session, role="admin", mobile="9898000001")
+    admin_headers = _auth_header(admin)
+
+    customer = _create_user(
+        db_session,
+        name="Original Name",
+        role="customer",
+        mobile="9898000002",
+        password="CustomerPassword123!",
+    )
+    db_session.add(CustomerProfile(user_id=customer.id, city="Pune", segment="B2C"))
+    db_session.commit()
+
+    # Customer logs in
+    login_resp = client.post(
+        "/api/v1/auth/customer/login",
+        json={"mobile": "9898000002", "password": "CustomerPassword123!"},
+    )
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+
+    # Admin updates name and profile fields only (no mobile in payload)
+    update_resp = client.put(
+        f"/api/v1/admin/users/{customer.id}",
+        json={"name": "Updated Name Only", "city": "Mumbai"},
+        headers=admin_headers,
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["name"] == "Updated Name Only"
+
+    # User's existing token remains valid and works
+    res = client.get(
+        "/api/v1/auth/customer/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200
+    assert res.json()["name"] == "Updated Name Only"
+
+    # session_token in DB is not REVOKED
+    db_session.expire_all()
+    reloaded_cust = db_session.get(User, customer.id)
+    assert reloaded_cust is not None
+    assert reloaded_cust.session_token != "REVOKED"
+
+
+def test_admin_update_user_same_mobile_preserves_session(
+    client: TestClient, db_session: Session
+) -> None:
+    """Submitting the exact same mobile number does not revoke the active session."""
+    admin = _create_user(db_session, role="admin", mobile="9899000001")
+    admin_headers = _auth_header(admin)
+
+    customer = _create_user(
+        db_session,
+        name="Same Mobile User",
+        role="customer",
+        mobile="9899000002",
+        password="CustomerPassword123!",
+    )
+    db_session.add(CustomerProfile(user_id=customer.id))
+    db_session.commit()
+
+    # Customer logs in
+    login_resp = client.post(
+        "/api/v1/auth/customer/login",
+        json={"mobile": "9899000002", "password": "CustomerPassword123!"},
+    )
+    assert login_resp.status_code == 200
+    token = login_resp.json()["access_token"]
+
+    # Admin updates user submitting the exact same mobile number (with spaces to test strip)
+    update_resp = client.put(
+        f"/api/v1/admin/users/{customer.id}",
+        json={"mobile": " 9899000002 ", "name": "Renamed Same Mobile"},
+        headers=admin_headers,
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["mobile"] == "9899000002"
+    assert update_resp.json()["name"] == "Renamed Same Mobile"
+
+    # User's existing token remains valid and works
+    res = client.get(
+        "/api/v1/auth/customer/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200
+
+    # session_token in DB is not REVOKED
+    db_session.expire_all()
+    reloaded_cust = db_session.get(User, customer.id)
+    assert reloaded_cust is not None
+    assert reloaded_cust.session_token != "REVOKED"
 

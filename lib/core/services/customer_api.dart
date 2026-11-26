@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../models/customer_points_models.dart';
 import 'customer_session_manager.dart';
+import 'session_revocation_handler.dart';
 
 class CustomerApiException implements Exception {
   const CustomerApiException(this.message, {this.statusCode});
@@ -94,7 +95,7 @@ class CustomerApi {
       } on FormatException {
         // Keep status-based message
       }
-      throw CustomerApiException(message, statusCode: response.statusCode);
+      _throwCustomerException(message, response.statusCode);
     }
 
     try {
@@ -174,7 +175,7 @@ class CustomerApi {
       } on FormatException {
         // Keep status-based message
       }
-      throw CustomerApiException(message, statusCode: response.statusCode);
+      _throwCustomerException(message, response.statusCode);
     }
 
     try {
@@ -228,7 +229,7 @@ class CustomerApi {
       } on FormatException {
         // fallback
       }
-      throw CustomerApiException(message, statusCode: response.statusCode);
+      _throwCustomerException(message, response.statusCode);
     }
 
     try {
@@ -282,7 +283,7 @@ class CustomerApi {
       } on FormatException {
         // fallback
       }
-      throw CustomerApiException(message, statusCode: response.statusCode);
+      _throwCustomerException(message, response.statusCode);
     }
 
     try {
@@ -342,7 +343,7 @@ class CustomerApi {
       } on FormatException {
         // fallback
       }
-      throw CustomerApiException(message, statusCode: response.statusCode);
+      _throwCustomerException(message, response.statusCode);
     }
 
     try {
@@ -357,5 +358,13 @@ class CustomerApi {
         statusCode: response.statusCode,
       );
     }
+  }
+
+  Never _throwCustomerException(String message, int statusCode) {
+    if (statusCode == 401 &&
+        SessionRevocationHandler.isSessionRevokedError(message)) {
+      SessionRevocationHandler.handleSessionRevocation(role: 'customer');
+    }
+    throw CustomerApiException(message, statusCode: statusCode);
   }
 }

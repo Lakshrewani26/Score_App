@@ -34,6 +34,7 @@ from app.schemas.orders import (
     PartnerDashboardStatsResponse,
     WhatsAppDeliveryResult,
 )
+from app.services.notification_service import create_order_notifications
 from app.services.pdf_service import generate_order_pdf
 from app.services.points_service import get_user_points_balance
 from app.services.whatsapp_service import whatsapp_service
@@ -372,11 +373,14 @@ def create_partner_order(
             detail="Partner profile not found.",
         )
 
-    # Look up Partner's active Staff assignment
+    # Look up Partner's active Staff assignment (most recent if multiple)
     active_assignment = db.scalar(
         select(StaffPartnerAssignment).where(
             StaffPartnerAssignment.partner_id == current_partner.id,
             StaffPartnerAssignment.is_active.is_(True),
+        ).order_by(
+            StaffPartnerAssignment.assigned_at.desc(),
+            StaffPartnerAssignment.id.desc(),
         )
     )
     if active_assignment is not None:
@@ -509,6 +513,9 @@ def create_partner_order(
         )
         .where(Order.id == new_order.id)
     ).first()
+
+    # Trigger notifications for assigned staff & admins
+    create_order_notifications(db, saved_order)
 
     return _build_order_response(saved_order)
 

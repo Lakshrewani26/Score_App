@@ -710,7 +710,6 @@ def test_sqlite_uniqueness_conflict_real_partial_index(
     """Verify real SQLite partial unique index fires and is translated to HTTP 409 when race condition bypasses pre-check."""
     admin = _create_user(db_session, name="Admin", mobile="9000000121", role="admin")
     staff1 = _create_staff(db_session, name="Staff 1", mobile="9000000122", staff_id="STF-122")
-    staff2 = _create_staff(db_session, name="Staff 2", mobile="9000000124", staff_id="STF-124")
     partner = _create_partner(db_session, name="Partner", mobile="9000000123")
 
     assignment1 = StaffPartnerAssignment(staff_id=staff1.id, partner_id=partner.id, is_active=True)
@@ -719,24 +718,21 @@ def test_sqlite_uniqueness_conflict_real_partial_index(
 
     admin_headers = _authorization(admin)
 
-    # Bypass the auto-deactivation query in create_staff_partner_assignment (simulating race condition before commit)
-    original_scalars = Session.scalars
+    # Bypass the pre-check query in create_staff_partner_assignment (simulating race condition before commit)
+    original_scalar = Session.scalar
 
-    def mocked_scalars(self, statement, *args, **kwargs):
+    def mocked_scalar(self, statement, *args, **kwargs):
         stmt_str = str(statement)
-        if "staff_partner_assignments.partner_id" in stmt_str and "is_active" in stmt_str:
-            class EmptyScalars:
-                def all(self):
-                    return []
-            return EmptyScalars()
-        return original_scalars(self, statement, *args, **kwargs)
+        if "staff_partner_assignments.staff_id" in stmt_str and "staff_partner_assignments.partner_id" in stmt_str and "is_active" in stmt_str:
+            return None
+        return original_scalar(self, statement, *args, **kwargs)
 
-    monkeypatch.setattr(Session, "scalars", mocked_scalars)
+    monkeypatch.setattr(Session, "scalar", mocked_scalar)
 
     res = client.post(
         "/api/v1/admin/staff-partner-assignments",
         headers=admin_headers,
-        json={"staff_id": staff2.id, "partner_id": partner.id},
+        json={"staff_id": staff1.id, "partner_id": partner.id},
     )
     assert res.status_code == 409
     assert "already" in res.json()["detail"].lower()

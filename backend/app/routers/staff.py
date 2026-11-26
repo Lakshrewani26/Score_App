@@ -45,6 +45,7 @@ from app.schemas.staff import (
     StaffQrResolveRequest,
     StaffQrResolveResponse,
 )
+from app.services.notification_service import create_order_notifications
 from app.services.order_service import (
     apply_order_status_transition,
     verify_staff_partner_assignment,
@@ -871,6 +872,9 @@ def create_staff_order(
         )
         .where(Order.id == new_order.id)
     ).first()
+
+    # Trigger notifications for assigned staff & admins
+    create_order_notifications(db, saved_order)
 
     return _build_order_response(saved_order)
 

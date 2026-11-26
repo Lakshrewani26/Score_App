@@ -14,6 +14,10 @@ from app.db.session import get_db
 from app.main import app
 from app.models import (
     CustomerProfile,
+    Notification,
+    Order,
+    OrderItem,
+    OrderStatusHistory,
     PartnerProfile,
     StaffPartnerAssignment,
     StaffProfile,
@@ -45,6 +49,10 @@ def test_engine():
             PartnerProfile.__table__,
             StaffProfile.__table__,
             StaffPartnerAssignment.__table__,
+            Order.__table__,
+            OrderItem.__table__,
+            OrderStatusHistory.__table__,
+            Notification.__table__,
         ],
     )
     yield engine

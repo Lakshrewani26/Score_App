@@ -151,6 +151,8 @@ def update_current_admin_password(
 
     # Hash new password using bcrypt
     current_admin.password_hash = hash_password(payload.new_password)
+    # Revoke active session so all previous tokens immediately become invalid
+    current_admin.session_token = "REVOKED"
     db.commit()
 
     return AdminPasswordUpdateResponse(message="Password updated successfully")
@@ -358,17 +360,10 @@ def create_staff_partner_assignment(
 
         now_utc = datetime.now(timezone.utc)
 
-        # If a different Staff assignment is active for this Partner, deactivate it atomically
-        other_active_assignments = db.scalars(
-            select(StaffPartnerAssignment).where(
-                StaffPartnerAssignment.partner_id == payload.partner_id,
-                StaffPartnerAssignment.is_active.is_(True),
-            )
-        ).all()
-        for other in other_active_assignments:
-            other.is_active = False
-            other.deactivated_at = now_utc
-            other.deactivated_by = current_admin.id
+        # M2M: Multiple staff can be assigned to one partner and vice versa.
+        # No need to deactivate other staff assignments for this partner.
+        # The unique index uq_staff_partner_assignments_active_pair on (staff_id, partner_id)
+        # already prevents the exact same pair from being active twice.
 
         # Create new assignment record representing this new assignment period
         assignment = StaffPartnerAssignment(
@@ -868,6 +863,8 @@ def update_user_status(
                     asgn.deactivated_by = current_admin.id
 
         target_user.is_active = payload.is_active
+        if not payload.is_active:
+            target_user.session_token = "REVOKED"
         db.commit()
         db.refresh(target_user)
     except Exception:
@@ -923,6 +920,7 @@ def update_user(
                     detail="A user with this mobile number already exists",
                 )
             target_user.mobile = clean_mobile
+            target_user.session_token = "REVOKED"
 
     # 2. Update role-specific fields
     if target_user.role == "customer":
@@ -1192,6 +1190,7 @@ def delete_user(
 
             # Step 7: Set the Staff account inactive and commit atomically
             target_user.is_active = False
+            target_user.session_token = "REVOKED"
             db.commit()
             return AdminUserDeleteResponse(
                 message="Account has associated transaction history and has been deactivated to preserve records.",

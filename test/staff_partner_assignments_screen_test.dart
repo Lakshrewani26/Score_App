@@ -646,7 +646,7 @@ void main() {
 
     expect(
       find.text(
-        'A Partner can have at most one active Staff assignment. Assigning a different Staff member automatically closes the previous assignment period and creates a new one.',
+        'Staff members and Partners have many-to-many associations. A Partner can be associated with multiple Staff members, and a Staff member can manage multiple Partners.',
       ),
       findsOneWidget,
     );
@@ -875,6 +875,8 @@ void main() {
     expect(find.byKey(const Key('reassign_assignment_51')), findsOneWidget);
 
     // Tap Reassign button
+    await tester.ensureVisible(find.byKey(const Key('reassign_assignment_51')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('reassign_assignment_51')));
     await tester.pumpAndSettle();
 

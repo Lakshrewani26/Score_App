@@ -15,7 +15,7 @@ import '../settings/admin_settings_screen.dart';
 import '../users/admin_users_screen.dart';
 import 'widgets/admin_update_password_dialog.dart';
 
-class AdminHomeScreen extends StatelessWidget {
+class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({
     super.key,
     this.adminUser,
@@ -27,13 +27,20 @@ class AdminHomeScreen extends StatelessWidget {
   final AdminSessionManager? sessionManager;
   final AdminApi? adminApi;
 
+  @override
+  State<AdminHomeScreen> createState() => _AdminHomeScreenState();
+}
+
+class _AdminHomeScreenState extends State<AdminHomeScreen> {
   static const _royalBlue = Color(0xFF083FA5);
   static const _deepBlue = Color(0xFF072763);
 
   AdminSessionManager get _activeSession =>
-      sessionManager ?? AdminSessionManager.instance;
+      widget.sessionManager ?? AdminSessionManager.instance;
 
-  AdminUser? get _resolvedUser => adminUser ?? _activeSession.currentUser;
+  AdminUser? get _resolvedUser => widget.adminUser ?? _activeSession.currentUser;
+
+
 
   Future<void> _handleLogout(BuildContext context) async {
     final confirmed = await showDialog<bool>(
@@ -115,7 +122,7 @@ class AdminHomeScreen extends StatelessWidget {
     final updated = await showDialog<bool>(
       context: context,
       builder: (_) => AdminUpdatePasswordDialog(
-        adminApi: adminApi,
+        adminApi: widget.adminApi,
       ),
     );
     if (updated == true && context.mounted) {
@@ -262,12 +269,12 @@ class AdminHomeScreen extends StatelessWidget {
   Widget _buildHeader(BuildContext context, double width, AdminUser user) {
     return SizedBox(
       width: double.infinity,
-      height: 58,
+      height: 130,
       child: Stack(
         alignment: Alignment.center,
         children: [
           const Center(
-            child: ScoreLogo.medium(),
+            child: ScoreLogo.large(),
           ),
           Positioned(
             right: 0,
@@ -672,7 +679,7 @@ class AdminHomeScreen extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => AdminAllOrdersScreen(
                     sessionManager: _activeSession,
-                    adminApi: adminApi,
+                    adminApi: widget.adminApi,
                   ),
                 ),
               );
@@ -684,7 +691,7 @@ class AdminHomeScreen extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => AdminUsersScreen(
                     sessionManager: _activeSession,
-                    adminApi: adminApi,
+                    adminApi: widget.adminApi,
                   ),
                 ),
               );
@@ -696,7 +703,7 @@ class AdminHomeScreen extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => AdminCatalogueScreen(
                     sessionManager: _activeSession,
-                    adminApi: adminApi,
+                    adminApi: widget.adminApi,
                   ),
                 ),
               );
@@ -708,7 +715,7 @@ class AdminHomeScreen extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) => AdminSettingsScreen(
                     sessionManager: _activeSession,
-                    adminApi: adminApi,
+                    adminApi: widget.adminApi,
                   ),
                 ),
               );
@@ -925,8 +932,8 @@ class AdminHomeScreen extends StatelessWidget {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => AdminQrGenerationScreen(
-                  adminApi: adminApi,
-                  qrApi: adminApi?.qr,
+                  adminApi: widget.adminApi,
+                  qrApi: widget.adminApi?.qr,
                 ),
               ),
             );

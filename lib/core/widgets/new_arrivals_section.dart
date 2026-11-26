@@ -457,6 +457,14 @@ class NewArrivalsSectionState extends State<NewArrivalsSection> {
             ),
           ),
         ),
+        Text(
+          'MRP (fallback): ${product.displayPrice}',
+          style: const TextStyle(
+            color: Color(0xFF757575),
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     );
   }

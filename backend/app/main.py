@@ -16,6 +16,7 @@ from app.routers.admin_zones import router as admin_zones_router
 from app.routers.auth import router as auth_router
 from app.routers.catalogue import router as catalogue_router
 from app.routers.customer import router as customer_router
+from app.routers.notifications import router as notifications_router
 from app.routers.orders import router as orders_router
 from app.routers.partner import router as partner_router
 from app.routers.qr_scan import router as qr_scan_router
@@ -65,6 +66,7 @@ app.include_router(admin_settings_router)
 app.include_router(admin_zones_router)
 app.include_router(staff_router)
 app.include_router(qr_scan_router)
+app.include_router(notifications_router)
 
 
 @app.get("/")

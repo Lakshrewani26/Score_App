@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
+    generate_session_token,
+    get_current_active_user,
     hash_password,
     require_customer,
     require_partner,
@@ -115,11 +117,16 @@ def unified_login(
     )
 
     expires_delta = timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    # Single-session: generate new token, invalidating previous session.
+    new_session_token = generate_session_token()
+    user.session_token = new_session_token
+    db.commit()
     token = create_access_token(
         subject=str(user.id),
         role=user.role,
         mobile=user.mobile,
         expires_delta=expires_delta,
+        session_id=new_session_token,
     )
 
     return UnifiedTokenResponse(
@@ -175,11 +182,16 @@ def admin_login(
         )
 
     expires_delta = timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    # Single-session: generate new token, invalidating previous session.
+    new_session_token = generate_session_token()
+    user.session_token = new_session_token
+    db.commit()
     token = create_access_token(
         subject=str(user.id),
         role=user.role,
         mobile=user.mobile,
         expires_delta=expires_delta,
+        session_id=new_session_token,
     )
 
     return TokenResponse(
@@ -228,11 +240,16 @@ def partner_login(
         )
 
     expires_delta = timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    # Single-session: generate new token, invalidating previous session.
+    new_session_token = generate_session_token()
+    user.session_token = new_session_token
+    db.commit()
     token = create_access_token(
         subject=str(user.id),
         role=user.role,
         mobile=user.mobile,
         expires_delta=expires_delta,
+        session_id=new_session_token,
     )
 
     return PartnerTokenResponse(
@@ -282,11 +299,16 @@ def staff_login(
         )
 
     expires_delta = timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    # Single-session: generate new token, invalidating previous session.
+    new_session_token = generate_session_token()
+    user.session_token = new_session_token
+    db.commit()
     token = create_access_token(
         subject=str(user.id),
         role=user.role,
         mobile=user.mobile,
         expires_delta=expires_delta,
+        session_id=new_session_token,
     )
     return StaffTokenResponse(
         access_token=token,
@@ -350,12 +372,14 @@ def customer_register(
         )
 
     try:
+        session_token = generate_session_token()
         user = User(
             name=cleaned_name,
             mobile=cleaned_mobile,
             password_hash=hash_password(payload.password),
             role="customer",
             is_active=True,
+            session_token=session_token,
         )
         db.add(user)
         db.flush()
@@ -396,6 +420,7 @@ def customer_register(
         role=fresh_user.role,
         mobile=fresh_user.mobile,
         expires_delta=expires_delta,
+        session_id=fresh_user.session_token,
     )
 
     return CustomerTokenResponse(
@@ -444,11 +469,16 @@ def customer_login(
         )
 
     expires_delta = timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    # Single-session: generate new token, invalidating previous session.
+    new_session_token = generate_session_token()
+    user.session_token = new_session_token
+    db.commit()
     token = create_access_token(
         subject=str(user.id),
         role=user.role,
         mobile=user.mobile,
         expires_delta=expires_delta,
+        session_id=new_session_token,
     )
 
     return CustomerTokenResponse(
@@ -472,3 +502,17 @@ def customer_me(
     if user is None:
         raise HTTPException(status_code=404, detail="Customer account not found")
     return CustomerUserResponse.model_validate(user)
+
+
+@router.post("/logout", status_code=status.HTTP_200_OK)
+def logout(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Invalidates the active session by revoking the user's session_token.
+
+    Subsequent requests with the previous token will receive HTTP 401.
+    """
+    current_user.session_token = "REVOKED"
+    db.commit()
+    return {"message": "Successfully logged out"}

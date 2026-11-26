@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -16,6 +17,11 @@ from app.models import User
 # Bearer token scheme; auto_error=False to allow custom 401 handling
 bearer_scheme = HTTPBearer(auto_error=False)
 
+# Error detail returned when a session is revoked (device B invalidates device A)
+SESSION_REVOKED_DETAIL = (
+    "Your account was logged in on another device. Please log in again."
+)
+
 
 class SecurityConfigurationError(RuntimeError):
     """Raised when critical security configuration is missing or invalid."""
@@ -30,6 +36,11 @@ def get_jwt_secret_key() -> str:
             "JWT_SECRET_KEY is not configured. Set it in the environment or backend/.env."
         )
     return key.strip()
+
+
+def generate_session_token() -> str:
+    """Generate a cryptographically secure 64-hex-character session token."""
+    return secrets.token_hex(32)
 
 
 def hash_password(password: str) -> str:
@@ -53,14 +64,33 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
+# Claims that are set by create_access_token itself and must not be overridden
+# via the extra_claims argument.
+_RESERVED_JWT_CLAIMS: frozenset[str] = frozenset(
+    {"sub", "role", "iat", "nbf", "exp", "mobile", "sid"}
+)
+
+
 def create_access_token(
     subject: str,
     role: str,
     mobile: str | None = None,
     expires_delta: timedelta | None = None,
     extra_claims: dict[str, Any] | None = None,
+    session_id: str | None = None,
 ) -> str:
-    """Generate a signed expiring JWT access token."""
+    """Generate a signed expiring JWT access token.
+
+    Args:
+        subject: User ID string.
+        role: User role.
+        mobile: Optional mobile number.
+        expires_delta: Optional token lifetime override.
+        extra_claims: Optional additional JWT claims.
+        session_id: Optional session token (sid claim). When provided, the backend
+            will verify this claim against the stored session_token on every request,
+            enforcing single-active-session per account.
+    """
     secret_key = get_jwt_secret_key()
     now = datetime.now(timezone.utc)
     if expires_delta:
@@ -77,7 +107,14 @@ def create_access_token(
     }
     if mobile:
         payload["mobile"] = mobile
+    if session_id:
+        payload["sid"] = session_id
     if extra_claims:
+        conflicts = sorted(extra_claims.keys() & _RESERVED_JWT_CLAIMS)
+        if conflicts:
+            raise ValueError(
+                f"extra_claims must not override reserved JWT claims: {conflicts}"
+            )
         payload.update(extra_claims)
 
     return jwt.encode(payload, secret_key, algorithm=settings.jwt_algorithm)
@@ -92,6 +129,121 @@ def decode_access_token(token: str) -> dict[str, Any]:
         algorithms=[settings.jwt_algorithm],
         options={"require": ["exp", "sub", "role"]},
     )
+
+
+def _verify_session_token(payload: dict[str, Any], user: User) -> None:
+    """Validate the JWT sid claim against the stored session_token.
+
+    Strict single-session rules:
+    1. If the user account has a session_token set in the database:
+       The token MUST carry an 'sid' claim and it MUST match user.session_token.
+       Tokens without 'sid' (legacy tokens) or with mismatched 'sid' (old devices)
+       are immediately rejected with HTTP 401.
+    2. If the user's session was revoked or cleared:
+       Any token carrying an 'sid' is immediately rejected with HTTP 401.
+    """
+    sid = payload.get("sid")
+    if user.session_token is not None:
+        if not sid or user.session_token != sid:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=SESSION_REVOKED_DETAIL,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return
+
+    # If user.session_token is None:
+    # Any token carrying a session_id claim is invalid because the session was cleared.
+    if sid is not None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=SESSION_REVOKED_DETAIL,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def _resolve_user_from_token(
+    credentials: HTTPAuthorizationCredentials | None,
+    db: Session,
+    require_role: str | None = None,
+) -> tuple[User, dict[str, Any]]:
+    """Shared helper: validates bearer token, loads user, checks active status.
+
+    Returns (user, payload) on success.
+    Raises HTTPException on any validation failure.
+    """
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials were not provided or are invalid",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+    try:
+        payload = decode_access_token(token)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id_str = payload.get("sub")
+    if not user_id_str:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        user_id = int(user_id_str)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is deactivated",
+        )
+
+    # Single-session check: validate sid if present in token
+    _verify_session_token(payload, user)
+
+    if require_role is not None:
+        token_role = payload.get("role")
+        if token_role != require_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN if token_role else status.HTTP_401_UNAUTHORIZED,
+                detail=f"{require_role.capitalize()} privileges required",
+                headers={"WWW-Authenticate": "Bearer"} if not token_role else None,
+            )
+        if user.role != require_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"{require_role.capitalize()} privileges required",
+            )
+
+    return user, payload
 
 
 def require_admin(
@@ -164,6 +316,9 @@ def require_admin(
             detail="Admin privileges required",
         )
 
+    # Single-session check
+    _verify_session_token(payload, user)
+
     return user
 
 
@@ -228,6 +383,9 @@ def get_current_active_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated",
         )
+
+    # Single-session check
+    _verify_session_token(payload, user)
 
     return user
 
@@ -367,5 +525,8 @@ def get_optional_current_active_user(
             detail="User account is inactive",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Single-session check for optional auth too
+    _verify_session_token(payload, user)
 
     return user

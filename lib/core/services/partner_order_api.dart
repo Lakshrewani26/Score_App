@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../models/partner_order_models.dart';
 import 'partner_session_manager.dart';
+import 'session_revocation_handler.dart';
 import 'staff_session_manager.dart';
 
 class PartnerOrderApiException implements Exception {
@@ -79,7 +80,7 @@ class PartnerOrderApi {
         return PartnerOrderPreviewResponse.fromJson(data);
       }
 
-      final errorBody = _parseError(response.body);
+      final errorBody = _parseError(response.body, statusCode: response.statusCode);
       throw PartnerOrderApiException(
         message: errorBody,
         statusCode: response.statusCode,
@@ -129,7 +130,7 @@ class PartnerOrderApi {
         return PartnerOrderResponse.fromJson(data);
       }
 
-      final errorBody = _parseError(response.body);
+      final errorBody = _parseError(response.body, statusCode: response.statusCode);
       throw PartnerOrderApiException(
         message: errorBody,
         statusCode: response.statusCode,
@@ -172,7 +173,7 @@ class PartnerOrderApi {
       }
 
       throw PartnerOrderApiException(
-        message: _parseError(response.body),
+        message: _parseError(response.body, statusCode: response.statusCode),
         statusCode: response.statusCode,
       );
     } on TimeoutException {
@@ -204,7 +205,7 @@ class PartnerOrderApi {
         return PartnerOrderResponse.fromJson(data);
       }
 
-      final errorBody = _parseError(response.body);
+      final errorBody = _parseError(response.body, statusCode: response.statusCode);
       throw PartnerOrderApiException(
         message: errorBody,
         statusCode: response.statusCode,
@@ -233,7 +234,7 @@ class PartnerOrderApi {
         return response.bodyBytes;
       }
 
-      final errorBody = _parseError(response.body);
+      final errorBody = _parseError(response.body, statusCode: response.statusCode);
       throw PartnerOrderApiException(
         message: errorBody,
         statusCode: response.statusCode,
@@ -263,7 +264,7 @@ class PartnerOrderApi {
         return WhatsAppDeliveryResult.fromJson(data);
       }
 
-      final errorBody = _parseError(response.body);
+      final errorBody = _parseError(response.body, statusCode: response.statusCode);
       return WhatsAppDeliveryResult(
         success: false,
         status: 'failed',
@@ -306,7 +307,7 @@ class PartnerOrderApi {
         return PartnerOrderResponse.fromJson(data);
       }
 
-      final errorBody = _parseError(response.body);
+      final errorBody = _parseError(response.body, statusCode: response.statusCode);
       throw PartnerOrderApiException(
         message: errorBody,
         statusCode: response.statusCode,
@@ -336,7 +337,7 @@ class PartnerOrderApi {
         return PartnerDashboardStats.fromJson(data);
       }
 
-      final errorBody = _parseError(response.body);
+      final errorBody = _parseError(response.body, statusCode: response.statusCode);
       throw PartnerOrderApiException(
         message: errorBody,
         statusCode: response.statusCode,
@@ -354,20 +355,34 @@ class PartnerOrderApi {
     }
   }
 
-  String _parseError(String body) {
+  String _parseError(String body, {int? statusCode}) {
+    String message;
     try {
       final json = jsonDecode(body);
       if (json is Map && json.containsKey('detail')) {
         final detail = json['detail'];
-        if (detail is String) return detail;
-        if (detail is List && detail.isNotEmpty) {
+        if (detail is String) {
+          message = detail;
+        } else if (detail is List && detail.isNotEmpty) {
           final first = detail.first;
           if (first is Map && first.containsKey('msg')) {
-            return first['msg'].toString();
+            message = first['msg'].toString();
+          } else {
+            message = 'An unexpected error occurred while communicating with the server.';
           }
+        } else {
+          message = 'An unexpected error occurred while communicating with the server.';
         }
+      } else {
+        message = 'An unexpected error occurred while communicating with the server.';
       }
-    } catch (_) {}
-    return 'An unexpected error occurred while communicating with the server.';
+    } catch (_) {
+      message = 'An unexpected error occurred while communicating with the server.';
+    }
+    if (statusCode == 401 &&
+        SessionRevocationHandler.isSessionRevokedError(message)) {
+      SessionRevocationHandler.handleSessionRevocation(role: 'partner');
+    }
+    return message;
   }
 }
